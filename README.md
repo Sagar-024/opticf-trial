@@ -72,6 +72,22 @@ Notes:
   seed as part of the build. To commit them, remove the `data/*.csv` line from `.gitignore`.
 - After deploy, check `POST /api/chat` (or the Chat tab) and confirm the LLM env vars are set.
 
+## Themes
+
+Light and dark are driven by CSS variables in `src/app/globals.css` (the shadcn
+pattern), switched with `next-themes` (system default, manual toggle in the top bar,
+persisted, no flash on load).
+
+- Light: warm cream canvas, navy ink, coral accent.
+- Dark: blue-tinted near-black (base `#090B10`, rail `#07090D`, card `#121621`,
+  border `#232937`), not pure black. Near-black plus layered surfaces avoids the
+  harsh contrast and OLED smearing of `#000`, and keeps room to show elevation.
+  The coral accent (`#E08C73`) is kept in both modes. Contrast on the base:
+  body text 16.4:1, muted text 7.4:1, coral 7.6:1.
+
+Both palettes are defined once; every component inherits them. Charts read
+`--chart-1` to `--chart-5`, so they follow the theme automatically.
+
 ## Architecture
 
 ```

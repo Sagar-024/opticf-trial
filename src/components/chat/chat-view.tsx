@@ -47,7 +47,7 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns, loading]);
 
   async function send(question: string): Promise<void> {
@@ -69,7 +69,6 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
       const data = (await response.json()) as ChatApiResponse;
       if (!response.ok) {
         setError(data.error ?? `Request failed (${response.status}).`);
-        setLoading(false);
         return;
       }
       contextRef.current = data.context;
@@ -87,34 +86,36 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
   const empty = turns.length === 0;
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col px-6">
+    <div className="flex h-full flex-col">
       <ScrollArea className="min-h-0 flex-1">
-        <div className="px-2 py-8">
+        <div className="mx-auto w-full max-w-3xl px-6">
           {empty ? (
-            <>
-              <p className="label-caps">Ask Optific</p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight">What needs your attention?</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
+            <div className="flex min-h-[58vh] flex-col items-center justify-center py-14 text-center">
+              <span className="grid size-10 place-items-center rounded-full bg-rail-active">
+                <Sparkles className="size-5 text-coral" />
+              </span>
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight">What needs your attention?</h1>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">
                 Ask about your practices. Answers, numbers and charts all come from the loaded data.
               </p>
-              <div className="mt-6 flex flex-wrap gap-2">
+              <div className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((suggestion) => (
                   <button
                     key={suggestion}
                     onClick={() => send(suggestion)}
-                    className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-panel transition-colors hover:bg-rail-active hover:text-foreground"
+                    className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-panel transition-colors hover:bg-accent hover:text-foreground"
                   >
                     {suggestion}
                   </button>
                 ))}
               </div>
-            </>
+            </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-6 py-8">
               {turns.map((turn, index) => (
                 <div key={index} className={cn('flex', turn.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {turn.role === 'user' ? (
-                    <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+                    <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
                       {turn.text}
                     </div>
                   ) : (
@@ -132,7 +133,7 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
                       {turn.mapHighlight.length > 0 ? (
                         <button
                           onClick={() => onShowMap(turn.mapHighlight)}
-                          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-panel transition-colors hover:bg-rail-active"
+                          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-panel transition-colors hover:bg-accent"
                         >
                           <MapPin className="size-3.5 text-coral" />
                           Show {turn.mapHighlight.length} practices on the map
@@ -142,6 +143,7 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
                   )}
                 </div>
               ))}
+
               {loading ? (
                 <div className="w-full space-y-3">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -151,6 +153,7 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
                   <Skeleton className="h-40 w-full rounded-xl" />
                 </div>
               ) : null}
+
               {error ? (
                 <Card className="border-destructive/40">
                   <CardContent className="flex items-center gap-2 p-3 text-xs text-destructive">
@@ -158,37 +161,52 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
                   </CardContent>
                 </Card>
               ) : null}
+
               <div ref={bottomRef} />
             </div>
           )}
         </div>
       </ScrollArea>
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send(input);
-        }}
-        className="sticky bottom-0 flex items-end gap-2 border-t border-border bg-background/90 py-4 backdrop-blur"
-      >
-        <Textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void send(input);
-            }
+      {/* Composer: centred, same column as the conversation */}
+      <div className="shrink-0 border-t border-border bg-background/95 backdrop-blur">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send(input);
           }}
-          placeholder="Ask your group a question..."
-          rows={1}
-          className="min-h-11 resize-none bg-card"
-          disabled={loading}
-        />
-        <Button type="submit" size="icon" disabled={loading || !input.trim()} aria-label="Send question">
-          {loading ? <Loader2 className="animate-spin" /> : <ArrowUp />}
-        </Button>
-      </form>
+          className="mx-auto w-full max-w-3xl px-6 py-4"
+        >
+          <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-2 shadow-soft transition-shadow focus-within:ring-2 focus-within:ring-ring/40">
+            <Textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void send(input);
+                }
+              }}
+              placeholder="Ask your group a question..."
+              rows={1}
+              className="min-h-9 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+              disabled={loading}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="shrink-0 rounded-xl"
+              disabled={loading || !input.trim()}
+              aria-label="Send question"
+            >
+              {loading ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+            </Button>
+          </div>
+          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+            Live AI, fictional data. Every number comes from the loaded data.
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

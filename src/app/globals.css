@@ -62,6 +62,50 @@
     --chart-5: 220 37% 16%;          /* ink */
 
     --radius: 0.75rem;
+
+    color-scheme: light;
+  }
+
+  /*
+   * Dark theme: blue-tinted near-black (Linear / GitHub / Geist style), not
+   * pure black. Layers: base, rail, card, popover, with hairline borders and
+   * slightly desaturated text. The coral accent is kept in both modes.
+   */
+  .dark {
+    --background: 223 26% 5%;
+    --foreground: 218 21% 93%;
+    --card: 223 28% 10%;
+    --card-foreground: 218 21% 93%;
+    --popover: 222 27% 12%;
+    --popover-foreground: 218 21% 93%;
+    --primary: 218 21% 93%;
+    --primary-foreground: 223 26% 5%;
+    --secondary: 222 27% 12%;
+    --secondary-foreground: 218 21% 93%;
+    --muted: 222 27% 12%;
+    --muted-foreground: 219 13% 64%;
+    --accent: 221 28% 16%;
+    --accent-foreground: 218 21% 93%;
+    --coral: 14 64% 67%;
+    --coral-deep: 16 76% 75%;
+    --ink: 218 21% 93%;
+    --border: 222 22% 18%;
+    --input: 222 22% 18%;
+    --ring: 14 64% 67%;
+    --destructive: 11 57% 59%;
+    --destructive-foreground: 40 82% 96%;
+    --rail: 220 27% 4%;
+    --rail-active: 221 28% 16%;
+    --map-bg: 223 26% 5%;
+    --map-fg: 218 21% 93%;
+    --map-muted: 219 13% 64%;
+    --chart-1: 14 64% 67%;
+    --chart-2: 211 45% 70%;
+    --chart-3: 158 28% 56%;
+    --chart-4: 35 55% 62%;
+    --chart-5: 214 24% 83%;
+
+    color-scheme: dark;
   }
 
   * {

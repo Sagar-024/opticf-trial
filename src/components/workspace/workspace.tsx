@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   Map as MapIcon,
   MessageSquare,
+  PanelLeft,
   Sparkles,
   TrendingDown,
   Users,
@@ -21,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/components/chat/chat-view';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 const NAV = [
   { key: 'workspace', label: 'Workspace', icon: LayoutGrid },
@@ -114,6 +116,7 @@ export function Workspace({
   const [dest, setDest] = useState<'workspace' | 'automations' | 'people' | 'brain'>('workspace');
   const [tab, setTab] = useState('today');
   const [highlighted, setHighlighted] = useState<string[]>([]);
+  const [railOpen, setRailOpen] = useState(true);
 
   function showOnMap(practiceIds: string[]): void {
     setHighlighted(practiceIds);
@@ -134,9 +137,18 @@ export function Workspace({
   }
 
   return (
-    <div className="grid h-dvh grid-cols-[220px_minmax(0,1fr)] overflow-hidden">
-      {/* Rail */}
-      <aside className="flex flex-col border-r border-border bg-rail px-4 py-6">
+    <div
+      className="grid h-dvh overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
+      style={{ gridTemplateColumns: railOpen ? '220px minmax(0,1fr)' : '0px minmax(0,1fr)' }}
+    >
+      {/* Rail (closable) */}
+      <aside
+        className={cn(
+          'flex flex-col overflow-hidden border-r border-border bg-rail px-4 py-6 transition-opacity duration-200',
+          railOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+        aria-hidden={!railOpen}
+      >
         <div className="mb-7 flex items-center gap-2 px-2 text-[22px] font-bold tracking-tight">
           <Sparkles className="size-5 text-coral" /> Optific<span className="text-coral">+</span>
         </div>
@@ -186,11 +198,23 @@ export function Workspace({
 
       {/* Main */}
       <main className="flex min-h-0 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-6">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Northstar Group</span>
-            <span>/</span>
-            <span>{latestMonth}</span>
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setRailOpen((open) => !open)}
+              aria-label={railOpen ? 'Close sidebar' : 'Open sidebar'}
+              aria-expanded={railOpen}
+              title={railOpen ? 'Close sidebar' : 'Open sidebar'}
+            >
+              <PanelLeft />
+            </Button>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Northstar Group</span>
+              <span>/</span>
+              <span>{latestMonth}</span>
+            </div>
           </div>
           <Tabs value={tab} onValueChange={gotoTopTab}>
             <TabsList>
@@ -200,7 +224,10 @@ export function Workspace({
               <TabsTrigger value="brain"><FileText className="mr-1 size-3.5" />Brain</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Badge variant="outline" className="text-[10px]">Prototype</Badge>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <Badge variant="outline" className="text-[10px]">Prototype</Badge>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1">

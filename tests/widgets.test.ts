@@ -41,6 +41,16 @@ describe('dashboard widgets', () => {
     }
   });
 
+  it('labels region groups with region names, not practice names', () => {
+    const tool = getTool('build_dashboard')!;
+    const output = tool.run(dataset, { metrics: ['revenue'], group_by: 'group' });
+    const chart = output.widgets.find((w) => w.type === 'chart');
+    if (chart?.type === 'chart') {
+      const labels = chart.series[0].points.map((point) => point.label).sort();
+      expect(labels).toEqual(['Midlands', 'North West', 'Scotland', 'South East', 'South West']);
+    }
+  });
+
   it('emits no chart for a single practice scope', () => {
     const tool = getTool('build_dashboard')!;
     const output = tool.run(dataset, { metrics: ['revenue'], group_by: 'group', filters: { practiceIds: ['P001'] } });

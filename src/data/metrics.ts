@@ -187,6 +187,7 @@ function groupRows(
   rows: MonthlyPerformance[],
   keyOfRow: (row: MonthlyPerformance) => string,
   keyOfPractice: (practiceId: string) => string,
+  labelOf: (key: string, samplePracticeId: string) => string,
   practiceIds: string[],
   dataset: Dataset,
 ): MetricsBreakdownRow[] {
@@ -210,7 +211,7 @@ function groupRows(
       const practice = byId.get(bucket[0].practiceId);
       return {
         key,
-        label: practice?.name ?? key,
+        label: labelOf(key, bucket[0].practiceId),
         region: practice?.region,
         metrics: aggregateMetrics(bucket, countByKey.get(key) ?? 1),
       };
@@ -237,8 +238,12 @@ export function query_metrics(dataset: Dataset, query: MetricsQuery = {}): Metri
   const keyOfRow = groupBy === 'region'
     ? (row: MonthlyPerformance) => byId.get(row.practiceId)?.region ?? 'Unknown'
     : (row: MonthlyPerformance) => row.practiceId;
+  // Region groups are labelled by the region itself, not by a practice name.
+  const labelOf = groupBy === 'region'
+    ? (key: string) => key
+    : (key: string, samplePracticeId: string) => byId.get(samplePracticeId)?.name ?? key;
 
-  return { ...base, breakdown: groupRows(rows, keyOfRow, keyOfPractice, practiceIds, dataset) };
+  return { ...base, breakdown: groupRows(rows, keyOfRow, keyOfPractice, labelOf, practiceIds, dataset) };
 }
 
 /** Convenience: metrics for a single named month (defaults to the latest). */
