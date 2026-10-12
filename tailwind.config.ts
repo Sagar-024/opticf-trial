@@ -2,63 +2,67 @@ import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 
 /**
- * Tailwind theme for Optific+ — mapped from the reference HTML tokens.
- * The shadcn CSS variables live in `src/app/globals.css`.
+ * Tailwind theme for Optific+.
+ *
+ * Colours are oklch component triples stored in `src/app/globals.css` and
+ * referenced here with the `<alpha-value>` placeholder, so opacity modifiers
+ * like `bg-card/80` keep working.
  */
+const token = (name: string) => `oklch(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: ['class'],
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: token('border'),
+        input: token('input'),
+        ring: token('ring'),
+        background: token('background'),
+        foreground: token('foreground'),
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: token('primary'),
+          foreground: token('primary-foreground'),
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: token('secondary'),
+          foreground: token('secondary-foreground'),
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT: token('destructive'),
+          foreground: token('destructive-foreground'),
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: token('muted'),
+          foreground: token('muted-foreground'),
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: token('accent'),
+          foreground: token('accent-foreground'),
         },
         popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
+          DEFAULT: token('popover'),
+          foreground: token('popover-foreground'),
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: token('card'),
+          foreground: token('card-foreground'),
         },
-        // Brand tokens carried straight from the reference.
+        // Brand tokens carried from the reference.
         coral: {
-          DEFAULT: 'hsl(var(--coral))',
-          deep: 'hsl(var(--coral-deep))',
+          DEFAULT: token('coral'),
+          deep: token('coral-deep'),
         },
-        ink: 'hsl(var(--ink))',
+        ink: token('ink'),
         rail: {
-          DEFAULT: 'hsl(var(--rail))',
-          active: 'hsl(var(--rail-active))',
+          DEFAULT: token('rail'),
+          active: token('rail-active'),
         },
-        // Dark map canvas (the "reference-led black canvas" direction).
         map: {
-          bg: 'hsl(var(--map-bg))',
-          fg: 'hsl(var(--map-fg))',
-          muted: 'hsl(var(--map-muted))',
+          bg: token('map-bg'),
+          fg: token('map-fg'),
+          muted: token('map-muted'),
         },
       },
       borderRadius: {

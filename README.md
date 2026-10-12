@@ -75,18 +75,19 @@ Notes:
 ## Themes
 
 Light and dark are driven by CSS variables in `src/app/globals.css` (the shadcn
-pattern), switched with `next-themes` (system default, manual toggle in the top bar,
-persisted, no flash on load).
+pattern, oklch), switched with `next-themes` (system default, manual toggle in the
+top bar, persisted, no flash on load).
 
 - Light: warm cream canvas, navy ink, coral accent.
-- Dark: blue-tinted near-black (base `#090B10`, rail `#07090D`, card `#121621`,
-  border `#232937`), not pure black. Near-black plus layered surfaces avoids the
-  harsh contrast and OLED smearing of `#000`, and keeps room to show elevation.
-  The coral accent (`#E08C73`) is kept in both modes. Contrast on the base:
-  body text 16.4:1, muted text 7.4:1, coral 7.6:1.
+- Dark: neutral surfaces on a near-black base, using the shadcn dark neutrals:
+  `card` and `popover` are `oklch(0.205 0 0)`, and `secondary`, `muted` and
+  `accent` are `oklch(0.269 0 0)`, on a `oklch(0.145 0 0)` background. The coral
+  accent is kept in both modes.
 
-Both palettes are defined once; every component inherits them. Charts read
-`--chart-1` to `--chart-5`, so they follow the theme automatically.
+Every colour is stored as a bare oklch triple and referenced as
+`oklch(var(--token) / <alpha-value>)` in `tailwind.config.ts`, so opacity
+modifiers like `bg-card/80` keep working. Charts read `--chart-1` to `--chart-5`,
+so they follow the theme automatically.
 
 ## Architecture
 
