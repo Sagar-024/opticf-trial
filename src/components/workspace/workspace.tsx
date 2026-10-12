@@ -22,6 +22,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatView } from '@/components/chat/chat-view';
 import { BrainView } from '@/components/brain/brain-view';
+import { Logo } from '@/components/logo';
 import { MapView, type MapIntent } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
@@ -151,6 +152,7 @@ export function Workspace({
   const [highlighted, setHighlighted] = useState<string[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [mapIntent, setMapIntent] = useState<MapIntent | null>(null);
+  const [brainDocument, setBrainDocument] = useState<string | null>(null);
 
   function openPracticeOnMap(practiceId: string): void {
     setHighlighted([practiceId]);
@@ -183,6 +185,12 @@ export function Workspace({
   function showOnMap(practiceIds: string[]): void {
     setHighlighted(practiceIds);
     setView('map');
+  }
+
+  /** Clicking a Brain source in chat opens that document. */
+  function openBrainDocument(title: string): void {
+    setBrainDocument(title);
+    setView('brain');
   }
 
   // A shared map link opens the map once, parsed here so the map never reads
@@ -244,7 +252,7 @@ export function Workspace({
       >
         <div className="flex h-full flex-col px-3 py-5">
           <div className="mb-5 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
-            <Sparkles className="size-4 text-coral" /> Optific<span className="text-coral">+</span>
+            <Logo className="size-6" /> Optific<span className="text-coral">+</span>
           </div>
 
           <div className="mb-4 flex items-center gap-2 border-y border-border px-1.5 py-2.5">
@@ -333,6 +341,7 @@ export function Workspace({
           {view === 'chat' ? (
             <ChatView
               onShowMap={showOnMap}
+              onOpenBrain={openBrainDocument}
               pendingQuestion={pendingQuestion}
               onPendingHandled={() => setPendingQuestion(null)}
             />
@@ -351,7 +360,9 @@ export function Workspace({
             />
           ) : null}
 
-          {view === 'brain' ? <BrainView /> : null}
+          {view === 'brain' ? (
+            <BrainView openDocumentTitle={brainDocument} onOpened={() => setBrainDocument(null)} />
+          ) : null}
 
           {view === 'automations' ? (
             <PlaceholderPage

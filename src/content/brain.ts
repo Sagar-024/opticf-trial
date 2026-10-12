@@ -157,3 +157,22 @@ export const BRAIN_DOCUMENTS: BrainDocument[] = [
 export function brainDocumentById(id: string): BrainDocument | undefined {
   return BRAIN_DOCUMENTS.find((document) => document.id === id);
 }
+
+/**
+ * Apply the user's local edits over the shipped guidance, so the AI answers
+ * from the current wording rather than the original text.
+ */
+export function mergeBrainDocuments(
+  overrides: Record<string, { content?: string; owner?: string; conflict?: boolean }>,
+): BrainDocument[] {
+  return BRAIN_DOCUMENTS.map((document) => {
+    const override = overrides[document.id];
+    if (!override) return document;
+    return {
+      ...document,
+      content: override.content ?? document.content,
+      owner: override.owner ?? document.owner,
+      conflict: override.conflict ?? document.conflict,
+    };
+  });
+}

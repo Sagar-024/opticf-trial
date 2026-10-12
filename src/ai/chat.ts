@@ -2,7 +2,8 @@ import { monthsOf } from '../data/index';
 import { monthLabel } from '../lib/months';
 import { getDataset } from './dataset';
 import { buildSystemPrompt } from './system-prompt';
-import { getTool, llmToolDefinitions } from './tools';
+import { getTool, llmToolDefinitions, type ToolContext } from './tools';
+import { mergeBrainDocuments } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
 import {
   createLlmClient,
@@ -29,6 +30,8 @@ export interface RunChatInput {
   context?: ChatContext | null;
   client?: LlmClient;
   model?: string;
+  /** Local guidance edits from the Brain tab, applied over the shipped documents. */
+  brainOverrides?: Record<string, { content?: string; owner?: string; conflict?: boolean }>;
 }
 
 export interface RunChatHandlers {
@@ -123,6 +126,9 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 
   const lastUser = [...input.messages].reverse().find((m) => m.role === 'user');
   const system = buildSystemPrompt(latest, input.context ?? null);
+  const toolContext: ToolContext = {
+    brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
+  };
   const messages: LlmMessage[] = [
     { role: 'system', content: system },
     ...input.messages.map((m) => ({ role: m.role, content: m.content }) as LlmMessage),
@@ -180,7 +186,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
         } else {
           const tool = getTool(call.name);
           output = tool
-            ? tool.run(dataset, parsed.value)
+            ? tool.run(dataset, parsed.value, toolContext)
             : { summary: `Unknown tool ${call.name}.`, widgets: [], numbers: [] };
           memo.set(memoKey, output);
         }

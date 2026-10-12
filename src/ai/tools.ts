@@ -496,9 +496,10 @@ function searchBrain(documents: BrainDocument[], query: string, limit: number): 
     .slice(0, limit);
 }
 
-function runSearchBrain(_ds: Dataset, input: Record<string, unknown>): ToolOutput {
+function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: ToolContext): ToolOutput {
   const query = String(input.query ?? '').trim();
   const limit = Math.min(6, Math.max(1, Number(input.limit) || 3));
+  const documents = ctx?.brainDocuments ?? BRAIN_DOCUMENTS;
 
   if (query.length === 0) {
     return withNumbers({
@@ -508,7 +509,7 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>): ToolOutpu
     });
   }
 
-  const matches = searchBrain(BRAIN_DOCUMENTS, query, limit);
+  const matches = searchBrain(documents, query, limit);
 
   if (matches.length === 0) {
     return withNumbers({
@@ -557,9 +558,15 @@ export interface ToolDefinition {
   input_schema: Record<string, unknown>;
 }
 
+/** Per-request context the tools may need beyond the dataset. */
+export interface ToolContext {
+  /** Group guidance with any local edits applied. */
+  brainDocuments?: BrainDocument[];
+}
+
 export interface Tool {
   definition: ToolDefinition;
-  run: (ds: Dataset, input: Record<string, unknown>) => ToolOutput;
+  run: (ds: Dataset, input: Record<string, unknown>, ctx?: ToolContext) => ToolOutput;
 }
 
 const MONTH_DESC = 'Month key YYYY-MM. Omit to use the latest month in the data ("this month").';

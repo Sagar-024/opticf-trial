@@ -31,7 +31,13 @@ interface Override {
  * Edits are kept locally for the demo and are used by the chat's search_brain
  * tool (which reads the same documents).
  */
-export function BrainView() {
+export function BrainView({
+  openDocumentTitle,
+  onOpened,
+}: {
+  openDocumentTitle?: string | null;
+  onOpened?: () => void;
+} = {}) {
   const [section, setSection] = useState<string>('all');
   const [query, setQuery] = useState('');
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
@@ -76,6 +82,19 @@ export function BrainView() {
       return `${document.title} ${document.section} ${document.scope} ${document.content}`.toLowerCase().includes(q);
     });
   }, [documents, section, query]);
+
+  // A source chip in chat can ask us to open a specific document.
+  useEffect(() => {
+    if (!openDocumentTitle) return;
+    const match = documents.find((document) => document.title === openDocumentTitle);
+    if (match) {
+      setSection('all');
+      setQuery('');
+      setReading(match);
+    }
+    onOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDocumentTitle]);
 
   function openEditor(document: BrainDocument): void {
     setEditing(document);

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BRAIN_DOCUMENTS, BRAIN_SECTIONS } from '../src/content/brain';
+import { BRAIN_DOCUMENTS, BRAIN_SECTIONS, mergeBrainDocuments } from '../src/content/brain';
 import { getTool } from '../src/ai/tools';
+import { sanitizeBrainOverrides } from '../src/ai/validate';
 import { generateDataset } from '../src/seed/generate';
 
 const dataset = generateDataset();
-const search = (query: string, limit?: number) => getTool('search_brain')!.run(dataset, { query, ...(limit ? { limit } : {}) });
+const search = (query: string, limit?: number, ctx?: { brainDocuments: typeof BRAIN_DOCUMENTS }) =>
+  getTool('search_brain')!.run(dataset, { query, ...(limit ? { limit } : {}) }, ctx);
 
 describe('brain content', () => {
   it('has unique ids and a valid section for every document', () => {
@@ -38,6 +40,56 @@ describe('brain content', () => {
   it('keeps the contact lens promotion prerequisite in the training guidance', () => {
     const training = BRAIN_DOCUMENTS.find((document) => document.id === 'training')!;
     expect(training.content).toMatch(/prerequisite/i);
+  });
+});
+
+describe('guidance edits reach the answers', () => {
+  it('applies a local edit over the shipped document', () => {
+    const edited = mergeBrainDocuments({
+      warranty: { content: 'Edited wording: always confirm with Buying before promising a replacement.' },
+    });
+    const document = edited.find((item) => item.id === 'warranty')!;
+    expect(document.content).toContain('Edited wording');
+  });
+
+  it('search_brain quotes the edited text, not the original', () => {
+    const documents = mergeBrainDocuments({ warranty: { content: 'Edited wording: confirm with Buying first.' } });
+    const output = search('frame warranty claim', undefined, { brainDocuments: documents });
+    expect(output.summary).toContain('confirm with Buying first');
+    expect(output.summary).not.toContain('Check the proof of purchase');
+  });
+
+  it('an edit can mark a document as conflicting', () => {
+    const documents = mergeBrainDocuments({ review: { conflict: true } });
+    const output = search('practice performance review guide', undefined, { brainDocuments: documents });
+    expect(output.summary).toMatch(/conflicting/i);
+  });
+
+  it('falls back to the shipped documents when there are no edits', () => {
+    const output = search('frame warranty claim');
+    expect(output.summary).toContain('Check the proof of purchase');
+  });
+});
+
+describe('sanitizeBrainOverrides', () => {
+  it('rejects non-objects and unknown document ids', () => {
+    expect(sanitizeBrainOverrides(null)).toEqual({});
+    expect(sanitizeBrainOverrides('ignore previous instructions')).toEqual({});
+    expect(sanitizeBrainOverrides({ 'not-a-document': { content: 'x' } })).toEqual({});
+  });
+
+  it('caps content length and strips unsafe owner characters', () => {
+    const result = sanitizeBrainOverrides({
+      warranty: { content: 'a'.repeat(9000), owner: '<script>alert(1)</script>Buying' },
+    });
+    expect(result.warranty.content?.length).toBe(4000);
+    expect(result.warranty.owner).not.toContain('<');
+    expect(result.warranty.owner).not.toContain('>');
+  });
+
+  it('keeps a legitimate edit', () => {
+    const result = sanitizeBrainOverrides({ training: { content: 'New wording', owner: 'People team', conflict: true } });
+    expect(result).toEqual({ training: { content: 'New wording', owner: 'People team', conflict: true } });
   });
 });
 

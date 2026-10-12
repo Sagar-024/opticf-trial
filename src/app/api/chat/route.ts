@@ -1,7 +1,7 @@
 import { runChatStream } from '@/ai/chat';
 import { getDataset } from '@/ai/dataset';
 import { LlmError } from '@/ai/llm';
-import { sanitizeContext, validateMessages } from '@/ai/validate';
+import { sanitizeBrainOverrides, sanitizeContext, validateMessages } from '@/ai/validate';
 
 /**
  * POST /api/chat
@@ -23,6 +23,7 @@ export const runtime = 'nodejs';
 interface ChatRequestBody {
   messages?: unknown;
   context?: unknown;
+  brainOverrides?: unknown;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -46,6 +47,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const context = sanitizeContext(body.context, getDataset());
+  const brainOverrides = sanitizeBrainOverrides(body.brainOverrides);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -56,7 +58,7 @@ export async function POST(request: Request): Promise<Response> {
 
       try {
         const result = await runChatStream(
-          { messages: validated.messages, context },
+          { messages: validated.messages, context, brainOverrides },
           {
             onDelta: (text) => send({ type: 'delta', text }),
             onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),

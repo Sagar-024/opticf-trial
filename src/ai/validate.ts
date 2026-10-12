@@ -1,4 +1,5 @@
 import type { Dataset } from '../data/index';
+import { BRAIN_DOCUMENTS } from '../content/brain';
 import type { ChatContext, ChatMessage } from './types';
 
 /**
@@ -50,6 +51,47 @@ export function validateMessages(raw: unknown): ValidationResult {
 /** Metrics are single tokens like `revenue+conversion`; nothing else is allowed. */
 function safeMetric(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z+]{1,40}$/.test(value) ? value : undefined;
+}
+
+/** A local edit to a guidance document, sent from the Brain tab. */
+export interface BrainOverride {
+  content?: string;
+  owner?: string;
+  conflict?: boolean;
+}
+
+/**
+ * Guidance edits are the one piece of user content that reaches the model, so
+ * they are treated as untrusted: ids must exist, text is capped, and the owner
+ * field is restricted to a safe character set.
+ */
+export function sanitizeBrainOverrides(raw: unknown): Record<string, BrainOverride> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const known = new Set(BRAIN_DOCUMENTS.map((document) => document.id));
+
+  const out: Record<string, BrainOverride> = {};
+  let accepted = 0;
+
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (accepted >= 50) break;
+    if (!known.has(id)) continue;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+
+    const source = value as Record<string, unknown>;
+    const override: BrainOverride = {};
+    if (typeof source.content === 'string') override.content = source.content.slice(0, 4000);
+    if (typeof source.owner === 'string') {
+      override.owner = source.owner.replace(/[^\w\s&.,'-]/g, '').trim().slice(0, 100);
+    }
+    if (typeof source.conflict === 'boolean') override.conflict = source.conflict;
+
+    if (Object.keys(override).length > 0) {
+      out[id] = override;
+      accepted += 1;
+    }
+  }
+
+  return out;
 }
 
 /** Drop anything that is not a known region or practice id in the dataset. */

@@ -5,10 +5,10 @@ import {
   ArrowUp,
   Check,
   Copy,
+  FileText,
   Loader2,
   MapPin,
   RefreshCw,
-  Sparkles,
   Square,
   Trash2,
   TriangleAlert,
@@ -21,6 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { Logo } from '@/components/logo';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
 
@@ -64,10 +65,12 @@ type StreamEvent =
 
 export function ChatView({
   onShowMap,
+  onOpenBrain,
   pendingQuestion,
   onPendingHandled,
 }: {
   onShowMap: (practiceIds: string[]) => void;
+  onOpenBrain?: (documentTitle: string) => void;
   pendingQuestion?: string | null;
   onPendingHandled?: () => void;
 }) {
@@ -133,10 +136,20 @@ export function ChatView({
       const messages = history.map((turn) => ({ role: turn.role, content: turn.text }));
 
       try {
+        // Guidance edits live in this browser, so send them with the question.
+        // The server validates them before they reach the model.
+        let brainOverrides: unknown = {};
+        try {
+          const raw = localStorage.getItem('opticf-brain-v1');
+          if (raw) brainOverrides = JSON.parse(raw);
+        } catch {
+          brainOverrides = {};
+        }
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages, context: contextRef.current }),
+          body: JSON.stringify({ messages, context: contextRef.current, brainOverrides }),
           signal: controller.signal,
         });
 
@@ -259,9 +272,7 @@ export function ChatView({
         <div className="mx-auto w-full max-w-3xl px-6">
           {empty ? (
             <div className="flex min-h-[58vh] flex-col items-center justify-center py-14 text-center">
-              <span className="grid size-10 place-items-center rounded-full bg-rail-active">
-                <Sparkles className="size-5 text-coral" />
-              </span>
+              <Logo className="size-12" />
               <h1 className="mt-4 text-2xl font-semibold tracking-tight">What needs your attention?</h1>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">
                 Ask about your practices. Answers, numbers and charts all come from the loaded data.
@@ -297,7 +308,7 @@ export function ChatView({
                   <div key={index} className="w-full space-y-3">
                     <div className="flex items-center gap-2">
                       <span className="grid size-6 place-items-center rounded-full bg-rail-active">
-                        <Sparkles className="size-3.5 text-coral" />
+                        <Logo className="size-4" />
                       </span>
                       <span className="text-xs font-semibold">Optific</span>
                       {turn.tools && turn.tools.length > 0 ? (
@@ -343,11 +354,25 @@ export function ChatView({
                     {turn.sources.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-[10px] uppercase tracking-[1.3px] text-muted-foreground">Sources</span>
-                        {turn.sources.map((source) => (
-                          <Badge key={source} variant="secondary" className="text-[10px] font-normal">
-                            {source}
-                          </Badge>
-                        ))}
+                        {turn.sources.map((source) => {
+                          const isBrain = source.startsWith('Brain: ');
+                          const title = isBrain ? source.slice('Brain: '.length) : source;
+                          return isBrain && onOpenBrain ? (
+                            <button
+                              key={source}
+                              onClick={() => onOpenBrain(title)}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-normal transition-colors hover:bg-accent"
+                              title="Open this guidance in the Brain"
+                            >
+                              <FileText className="size-3 text-coral" />
+                              {title}
+                            </button>
+                          ) : (
+                            <Badge key={source} variant="secondary" className="text-[10px] font-normal">
+                              {source}
+                            </Badge>
+                          );
+                        })}
                       </div>
                     ) : null}
 
