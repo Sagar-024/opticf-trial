@@ -271,14 +271,14 @@ export function Workspace({
         </div>
       </aside>
 
-      <main className="flex min-h-0 flex-1 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Top bar: no tabs here, navigation lives in the rail. */}
         <header
           className={cn(
             'shrink-0 overflow-hidden bg-background/80 transition-[height,opacity] duration-300 ease-out',
             mapFocus ? 'border-b-0' : 'border-b border-border',
           )}
-          style={{ height: mapFocus ? 0 : 56, opacity: mapFocus ? 1 : 0 }}
+          style={{ height: mapFocus ? 0 : 56, opacity: mapFocus ? 0 : 1 }}
           aria-hidden={mapFocus}
         >
           <div className="flex h-14 items-center gap-2 px-4">
@@ -305,7 +305,7 @@ export function Workspace({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
           {view === 'today' ? (
             <ScrollArea className="h-full">
               <div className="mx-auto max-w-4xl px-8 py-8">
@@ -384,7 +384,7 @@ export function Workspace({
             'shrink-0 overflow-hidden transition-[height,opacity] duration-300 ease-out',
             mapFocus ? 'border-t-0' : 'border-t border-border',
           )}
-          style={{ height: mapFocus ? 0 : 36, opacity: mapFocus ? 1 : 0 }}
+          style={{ height: mapFocus ? 0 : 36, opacity: mapFocus ? 0 : 1 }}
           aria-hidden={mapFocus}
         >
           <div className="flex h-9 items-center gap-4 px-6 text-[11px] text-muted-foreground">

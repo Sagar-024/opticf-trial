@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, Minus, Plus } from 'lucide-react';
+import { Frame, Maximize2, Minimize2, Minus, Plus } from 'lucide-react';
 import type { MapPractice, MapModel } from '@/data/map-model';
 import {
   boundsOfSubset,
@@ -37,6 +37,9 @@ export interface MapCanvasProps {
   onSelect: (practiceId: string | null) => void;
   onDrillRegion: (region: string) => void;
   onReset: () => void;
+  /** Immersive mode toggle, shown in the zoom cluster. */
+  focus?: boolean;
+  onToggleFocus?: () => void;
   className?: string;
 }
 
@@ -63,6 +66,8 @@ export function MapCanvas({
   onSelect,
   onDrillRegion,
   onReset,
+  focus = false,
+  onToggleFocus,
   className,
 }: MapCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -519,10 +524,10 @@ export function MapCanvas({
       : `Northstar Group: ${model.practices.length} practices across ${model.regions.length} regions`;
 
   return (
-    <div ref={wrapRef} className={cn('relative h-full w-full overflow-hidden', className)}>
+    <div ref={wrapRef} className={cn('relative h-full w-full min-w-0 overflow-hidden', className)}>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', height: '100%', maxWidth: '100%' }}
         role="img"
         aria-label={`Interactive organisation map. ${label}.`}
         tabIndex={0}
@@ -555,6 +560,7 @@ export function MapCanvas({
         </div>
       ) : null}
 
+      {/* View controls, bottom centre so they are always easy to find. */}
       <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-soft backdrop-blur">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 transition-transform active:scale-90" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value / 1.3))}>
           <Minus className="size-3.5" />
@@ -567,15 +573,31 @@ export function MapCanvas({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 transition-transform active:scale-90"
-          aria-label="Fit to view"
+          className="h-7 gap-1.5 px-2 text-[11px] transition-transform active:scale-90"
+          aria-label="Fit graph to view"
           onClick={() => {
             setZoom(1);
             setPan({ x: 0, y: 0 });
           }}
         >
-          <Maximize2 className="size-3.5" />
+          <Frame className="size-3.5" /> Fit
         </Button>
+        {onToggleFocus ? (
+          <>
+            <span className="mx-1 h-4 w-px bg-border" />
+            <Button
+              variant={focus ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-[11px] transition-transform active:scale-90"
+              aria-label={focus ? 'Exit focus mode' : 'Enter focus mode'}
+              title={focus ? 'Exit focus mode (Esc)' : 'Full screen graph'}
+              onClick={() => onToggleFocus()}
+            >
+              {focus ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+              {focus ? 'Exit focus' : 'Focus'}
+            </Button>
+          </>
+        ) : null}
       </div>
     </div>
   );

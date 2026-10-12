@@ -173,7 +173,7 @@ export function MapView({
   const matches = (practice: MapPractice) => filter.match(practice);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       {/* Breadcrumb + counters. In focus mode only the essentials remain. */}
       <motion.div
         layout
@@ -221,17 +221,6 @@ export function MapView({
         ) : null}
 
         <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant={focus ? 'default' : 'outline'}
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            aria-label={focus ? 'Exit focus mode' : 'Enter focus mode'}
-            title={focus ? 'Exit focus mode (Esc)' : 'Full screen graph (Esc to exit)'}
-            onClick={() => onToggleFocus?.()}
-          >
-            {focus ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-            {focus ? 'Exit focus' : 'Focus'}
-          </Button>
           {!focus ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -343,7 +332,7 @@ export function MapView({
       </AnimatePresence>
 
       {/* Canvas or list */}
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1">
         {showList && !focus ? (
           <div className="h-full overflow-y-auto px-4 pb-4">
             <Table>
@@ -408,6 +397,8 @@ export function MapView({
                 setRegion(null);
                 onHighlightChange([]);
               }}
+              focus={focus}
+              onToggleFocus={onToggleFocus}
             />
           </motion.div>
         )}
