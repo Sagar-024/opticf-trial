@@ -61,13 +61,30 @@ function metricValueType(key: MetricKey): 'currency' | 'percent' | 'number' {
   return 'currency';
 }
 
+/**
+ * A group-level dashboard with a single data point is useless (one giant bar,
+ * a one-row table). So when the request is group level we chart the region
+ * breakdown instead, and when the scope is a single region we chart practices.
+ * The KPI card still shows the group totals.
+ */
+function resolveBreakdown(
+  requested: 'group' | 'region' | 'practice',
+  regions: string[] | undefined,
+  practiceIds: string[] | undefined,
+): { groupBy: 'group' | 'region' | 'practice'; label: string } {
+  if (requested === 'practice') return { groupBy: 'practice', label: 'practice' };
+  if (requested === 'region') return { groupBy: 'region', label: 'region' };
+  if (practiceIds && practiceIds.length > 0) return { groupBy: 'practice', label: 'practice' };
+  if (regions && regions.length === 1) return { groupBy: 'practice', label: 'practice' };
+  return { groupBy: 'region', label: 'region' };
+}
+
 interface ScopeRow {
   label: string;
   metrics: SeriesMetrics;
 }
 
-function scopeRows(m: { breakdown?: MetricsBreakdownRow[] } & SeriesMetrics): ScopeRow[] {
-  if (m.breakdown && m.breakdown.length > 0) {
+function scopeRows(m: { breakdown?: MetricsBreakdownRow[] } & SeriesMetrics): ScopeRow[] {  if (m.breakdown && m.breakdown.length > 0) {
     return m.breakdown.map((row) => ({ label: row.label, metrics: row.metrics }));
   }
   return [{ label: 'Group', metrics: m }];
@@ -87,11 +104,11 @@ function kpiWidget(id: string, title: string, m: SeriesMetrics): Widget {
   };
 }
 
-function chartWidgets(rows: ScopeRow[], keys: MetricKey[], idPrefix: string): Widget[] {
+function chartWidgets(rows: ScopeRow[], keys: MetricKey[], idPrefix: string, groupLabel = 'group'): Widget[] {
   return keys.map((key) => ({
     type: 'chart',
     id: `${idPrefix}-${key}`,
-    title: `${METRIC_LABEL[key]} by group`,
+    title: `${METRIC_LABEL[key]} by ${groupLabel}`,
     chart: 'bar',
     valueType: metricValueType(key),
     series: [
@@ -139,17 +156,18 @@ function withNumbers(output: Omit<ToolOutput, 'numbers'>): ToolOutput {
 
 function runQueryMetrics(ds: Dataset, input: Record<string, unknown>): ToolOutput {
   const latest = monthsOf(ds).at(-1);
-  const groupBy = (input.group_by as 'group' | 'region' | 'practice') ?? 'group';
+  const requested = (input.group_by as 'group' | 'region' | 'practice') ?? 'group';
   const regions = input.regions as string[] | undefined;
   const practiceIds = input.practiceIds as string[] | undefined;
   const month = (input.month as string) ?? latest;
+  const { groupBy, label } = resolveBreakdown(requested, regions, practiceIds);
 
   const m = query_metrics(ds, { month, groupBy, regions, practiceIds });
   const rows = scopeRows(m);
   const widgets: Widget[] = [kpiWidget('qm-kpi', `Group metrics - ${monthLabel(month)}`, m)];
-  if (groupBy !== 'group') {
-    widgets.push(...chartWidgets(rows, ['revenue', 'conversion'], 'qm'));
-    widgets.push(metricTable('Metrics by group', rows, ['revenue', 'conversion', 'contactLens']));
+  if (rows.length >= 2) {
+    widgets.push(...chartWidgets(rows, ['revenue', 'conversion'], 'qm', label));
+    widgets.push(metricTable(`Metrics by ${label}`, rows, ['revenue', 'conversion', 'contactLens']));
   }
 
   const summary = [
@@ -157,6 +175,7 @@ function runQueryMetrics(ds: Dataset, input: Record<string, unknown>): ToolOutpu
     `conversion ${m.conversion.rateDisplay} vs ${m.conversion.targetDisplay} target across ${formatNumber(m.conversion.exams)} examinations,`,
     `contact lens ${m.contactLens.actualDisplay} (${m.contactLens.attainmentDisplay} of target),`,
     `${m.practiceCount} practices.`,
+    rows.length >= 2 ? `Breakdown by ${label}: ${rows.map((row) => `${row.label} ${metricDisplay(row.metrics, 'revenue')}`).join(', ')}.` : '',
   ].join(' ');
 
   return withNumbers({ summary, widgets, context: context({ metric: 'revenue+conversion', groupBy, regions, practiceIds, month }) });
@@ -401,18 +420,28 @@ function runBuildDashboard(ds: Dataset, input: Record<string, unknown>): ToolOut
   const metrics = ((input.metrics as string[]) ?? ['revenue', 'conversion']).filter((k): k is MetricKey =>
     (METRIC_KEYS as string[]).includes(k),
   );
-  const groupBy = (input.group_by as 'group' | 'region' | 'practice') ?? 'group';
+  const requested = (input.group_by as 'group' | 'region' | 'practice') ?? 'group';
   const filters = (input.filters as { regions?: string[]; practiceIds?: string[] }) ?? {};
   const period = (input.period as { month?: string }) ?? {};
   const month = period.month ?? latest;
+  const { groupBy, label } = resolveBreakdown(requested, filters.regions, filters.practiceIds);
 
   const m = query_metrics(ds, { month, groupBy, regions: filters.regions, practiceIds: filters.practiceIds });
   const rows = scopeRows(m);
   const widgets: Widget[] = [kpiWidget('dash-kpi', `Dashboard - ${monthLabel(month)}`, m)];
-  widgets.push(...chartWidgets(rows, metrics, 'dash'));
-  widgets.push(metricTable('Dashboard table', rows, metrics.length ? metrics : ['revenue', 'conversion']));
+  if (rows.length >= 2) {
+    widgets.push(...chartWidgets(rows, metrics, 'dash', label));
+    widgets.push(metricTable(`Dashboard table by ${label}`, rows, metrics));
+  }
 
-  const summary = `Dashboard for ${monthLabel(month)}: revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target), conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.actualDisplay} (${m.contactLens.attainmentDisplay} of target), across ${m.practiceCount} practices. Charts: ${metrics.map((k) => METRIC_LABEL[k]).join(', ')} by ${groupBy}.`;
+  const summary = [
+    `Dashboard for ${monthLabel(month)}: revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target),`,
+    `conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.actualDisplay} (${m.contactLens.attainmentDisplay} of target),`,
+    `across ${m.practiceCount} practices.`,
+    rows.length >= 2
+      ? `Charts show ${metrics.map((k) => METRIC_LABEL[k]).join(', ')} by ${label}: ${rows.map((row) => `${row.label} ${metricDisplay(row.metrics, metrics[0] ?? 'revenue')}`).join(', ')}.`
+      : '',
+  ].join(' ');
 
   return withNumbers({
     summary,
