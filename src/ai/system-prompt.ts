@@ -19,6 +19,7 @@ export function buildSystemPrompt(latestMonth: string, context?: ChatContext | n
     '5. Be concise - one to three short paragraphs. The widgets carry the detail; do not repeat whole tables in prose.',
     '6. Call the fewest tools needed. Prefer a single tool call per question; do not call the same tool twice with the same or near-identical arguments, and do not re-run a tool a previous turn already covered unless the context changed.',
     '7. All figures are fictional demo data, generated from a fixed seed.',
+    '8. You are not allowed to use em dashes or en dashes anywhere in your answer. Use commas, colons, full stops or hyphens instead. You are not allowed to use markdown bold or asterisks.',
     '',
     'Follow-up questions: if the user omits the metric, grouping, period or scope, reuse the conversation context below. For example "only the North West" adds a region filter to the current metric; "break that down by practice" sets group_by to practice.',
   ];

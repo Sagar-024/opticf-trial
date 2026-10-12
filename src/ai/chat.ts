@@ -102,6 +102,11 @@ function gateTools(message: string, context: ChatContext | null): LlmToolDefinit
   return filtered.length > 0 ? filtered : all;
 }
 
+/** Strip em/en dashes from model prose (house style: no em dashes). */
+function sanitize(text: string): string {
+  return text.split('\u2014').join('-').split('\u2013').join('-');
+}
+
 export async function runChat(input: RunChatInput): Promise<RunChatResult> {
   const started = Date.now();
   const dataset = getDataset();
@@ -228,7 +233,7 @@ export async function runChat(input: RunChatInput): Promise<RunChatResult> {
   }
 
   return {
-    text,
+    text: sanitize(text),
     widgets: dedupeWidgets(outputs.flatMap((output) => output.widgets)),
     mapHighlight: explicitHighlight ?? largestHighlight,
     context,

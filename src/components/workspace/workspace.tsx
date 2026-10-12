@@ -20,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { ChatView } from '@/components/chat/chat-view';
 
 const NAV = [
   { key: 'workspace', label: 'Workspace', icon: LayoutGrid },
@@ -112,6 +113,13 @@ export function Workspace({
 }) {
   const [dest, setDest] = useState<'workspace' | 'automations' | 'people' | 'brain'>('workspace');
   const [tab, setTab] = useState('today');
+  const [highlighted, setHighlighted] = useState<string[]>([]);
+
+  function showOnMap(practiceIds: string[]): void {
+    setHighlighted(practiceIds);
+    setDest('workspace');
+    setTab('map');
+  }
 
   // Keep the rail in sync with the top-bar tabs: Map/Chat/Today all belong to
   // Workspace, and only the Brain tab highlights Brain in the rail.
@@ -218,20 +226,25 @@ export function Workspace({
             <TabsContent value="map" className="m-0 h-full">
               <div className="h-full p-6">
                 <Placeholder title="The Optific Map" note="Force-graph canvas ported from the reference is next - fed from the CSV data layer with Region / Sales / Contact lens / Training / Mentors lenses." />
-                <div className="mt-4">
-                  <Placeholder title="Chat" note="Ask a question; answers and widgets come from /api/chat." tone="plain" />
-                </div>
+                {highlighted.length > 0 ? (
+                  <div className="mt-4">
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="label-caps mb-2">Highlighted from chat</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {highlighted.map((id) => (
+                            <Badge key={id} variant="secondary">{id}</Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : null}
               </div>
             </TabsContent>
 
             <TabsContent value="chat" className="m-0 h-full">
-              <div className="mx-auto flex h-full max-w-3xl flex-col justify-center px-8">
-                <p className="label-caps">Ask Optific</p>
-                <h1 className="mt-1 text-3xl font-semibold tracking-tight">What needs your attention?</h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Ask about your practices. The chat UI is wired to the /api/chat route in the next step.
-                </p>
-              </div>
+              <ChatView onShowMap={showOnMap} />
             </TabsContent>
 
             <TabsContent value="brain" className="m-0 h-full">
