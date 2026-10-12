@@ -37,6 +37,8 @@ export interface MapCanvasProps {
   onSelect: (practiceId: string | null) => void;
   onDrillRegion: (region: string) => void;
   onReset: () => void;
+  /** Practice ids to label without hovering (the current focus list). */
+  emphasised?: string[];
   /** Immersive mode toggle, shown in the zoom cluster. */
   focus?: boolean;
   onToggleFocus?: () => void;
@@ -51,7 +53,9 @@ interface Transform {
   height: number;
 }
 
-const VIEWPORT_PADDING = { top: 78, right: 28, bottom: 104, left: 28 };
+// The toolbar, legend and focus strip are separate rows, not overlays, so the
+// fit only needs room for the floating zoom cluster at the bottom.
+const VIEWPORT_PADDING = { top: 24, right: 24, bottom: 68, left: 24 };
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 5;
 
@@ -66,6 +70,7 @@ export function MapCanvas({
   onSelect,
   onDrillRegion,
   onReset,
+  emphasised,
   focus = false,
   onToggleFocus,
   className,
@@ -86,15 +91,22 @@ export function MapCanvas({
 
   const byId = useMemo(() => new Map(model.practices.map((p) => [p.practiceId, p])), [model.practices]);
 
-  const items = useMemo(
-    () =>
-      model.practices.map((practice) => ({
+  const items = useMemo(() => {
+    const revenues = model.practices.map((practice) => practice.revenue);
+    const min = Math.min(...revenues);
+    const max = Math.max(...revenues);
+    const span = max - min;
+    return model.practices.map((practice) => {
+      // Normalise revenue across the group so size actually communicates it:
+      // roughly 6 to 15 graph units, so the largest is about 2.5x the smallest.
+      const t = span > 0 ? (practice.revenue - min) / span : 0.5;
+      return {
         id: practice.practiceId,
         region: practice.region,
-        radius: 2.5 + Math.sqrt(Math.max(0, practice.revenue) / 1000) * 0.42,
-      })),
-    [model.practices],
-  );
+        radius: 6 + Math.pow(t, 0.75) * 9,
+      };
+    });
+  }, [model.practices]);
 
   const layout = useMemo(() => computeLayout(level, regionName, items), [level, regionName, items]);
   const highlightSet = useMemo(() => new Set(highlighted), [highlighted]);
@@ -179,7 +191,7 @@ export function MapCanvas({
       const touched = highlightActive && (highlightSet.has(edge.a) || highlightSet.has(edge.b));
       const practice = byId.get(edge.b);
       const dimmedByFilter = practice ? !matches(practice) : false;
-      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.07 : edge.kind === 'backbone' ? 0.55 : 0.2;
+      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.5 : 0.13;
       context.strokeStyle = palette.border;
       context.setLineDash(edge.kind === 'practice' ? [3, 4] : []);
       context.beginPath();
@@ -211,7 +223,8 @@ export function MapCanvas({
       let alpha = visual.opacity;
       if (!inFilter) alpha = Math.min(alpha, palette.dimOpacity);
       if (!inHighlight) alpha = Math.min(alpha, palette.dimOpacity);
-      const radius = Math.max(0.8, point.r * visual.sizeFactor);
+      // Never let a node become an unreadable speck.
+      const radius = Math.max(3.5, point.r * visual.sizeFactor);
 
       context.globalAlpha = alpha;
       context.beginPath();
@@ -275,12 +288,18 @@ export function MapCanvas({
       context.fillText(hub.sub, point.x, labelY + 13);
     }
 
-    // ── Practice labels, only when they help ──
+    // ── Practice labels: the important ones are always on ──
+    const emphasisedSet = new Set(emphasised ?? []);
     const labelCandidates = layout.nodes.filter((node) => {
       const point = nodePoints.get(node.id);
       if (!point) return false;
-      const isPriority = selectedId === node.id || hovered === node.id || (highlightActive && highlightSet.has(node.id));
-      return (isPriority || zoom > 1.6) && point.r >= 1;
+      const isPriority =
+        selectedId === node.id ||
+        hovered === node.id ||
+        emphasisedSet.has(node.id) ||
+        (highlightActive && highlightSet.has(node.id));
+      // Every practice once you zoom in a little, otherwise the key ones.
+      return isPriority || zoom >= 1.15;
     });
 
     for (const node of labelCandidates) {
@@ -316,7 +335,7 @@ export function MapCanvas({
     }
 
     context.globalAlpha = 1;
-  }, [byId, highlightSet, hovered, layout, lens, matches, pan, selectedId, zoom]);
+  }, [byId, emphasised, highlightSet, hovered, layout, lens, matches, pan, selectedId, zoom]);
 
   const invalidate = useCallback(() => {
     // requestAnimationFrame is suspended while the page is hidden, so paint

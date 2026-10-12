@@ -304,28 +304,26 @@ export function MapView({
                   aria-label="Find a practice"
                 />
               </div>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
 
-      {/* Legend */}
-      <AnimatePresence initial={false}>
-        {!focus ? (
-          <motion.div key="legend" {...SLIDE} className="shrink-0 overflow-hidden">
-            <div className="flex flex-wrap items-center gap-3 px-4 py-2">
-              {lens.legend.map((entry) => (
-                <span key={entry.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ background: `oklch(var(--${entry.colorKey === 'coral' ? 'coral' : entry.colorKey}))` }}
-                  />
-                  {entry.label}
+              {/* Legend lives on the same band as the controls to give the graph more height. */}
+              <div className="flex w-full flex-wrap items-center gap-3 pt-1">
+                {lens.legend.map((entry) => (
+                  <span key={entry.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span
+                      className="size-2 rounded-full"
+                      style={{ background: `oklch(var(--${entry.colorKey === 'coral' ? 'coral' : entry.colorKey}))` }}
+                    />
+                    {entry.label}
+                  </span>
+                ))}
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-muted-foreground" />
+                  node size = monthly revenue
                 </span>
-              ))}
-              <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Sparkles className="size-3 text-coral" /> {lens.question}
-              </span>
+                <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Sparkles className="size-3 text-coral" /> {lens.question}
+                </span>
+              </div>
             </div>
           </motion.div>
         ) : null}
@@ -389,6 +387,7 @@ export function MapView({
               matches={matches}
               selectedId={selectedId}
               onSelect={selectPractice}
+              emphasised={focus_top.map((practice) => practice.practiceId)}
               onDrillRegion={(next) => {
                 setRegion(next);
                 onHighlightChange([]);

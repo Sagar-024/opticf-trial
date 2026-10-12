@@ -62,15 +62,15 @@ export interface Layout {
 
 /** Fixed cluster centres at group level, loosely matching the reference. */
 const REGION_CENTRES: Array<[number, number]> = [
-  [-520, -135],
-  [-195, 245],
-  [380, -25],
-  [650, 280],
-  [710, -205],
-  [-90, -210],
-  [110, -435],
-  [-640, 250],
-  [-720, -395],
+  [-370, -96],
+  [-139, 175],
+  [271, -18],
+  [464, 200],
+  [507, -146],
+  [-64, -150],
+  [79, -311],
+  [-457, 179],
+  [-514, -282],
 ];
 
 const STRETCH = [1.35, 0.85, 1.45, 0.9, 1.05, 1.25, 0.75, 1.1, 1.3];
@@ -92,7 +92,7 @@ function cloud(
   seed: number,
 ): LayoutNode[] {
   const random = mulberry32((seed ^ hashSeed(`${regionIndex}:${items.length}`)) >>> 0);
-  const spread = (54 + Math.sqrt(Math.max(1, items.length)) * 13) * multiplier;
+  const spread = (38 + Math.sqrt(Math.max(1, items.length)) * 9) * multiplier;
   const stretch = STRETCH[regionIndex % STRETCH.length];
   const rotation = ROTATION[regionIndex % ROTATION.length];
 
@@ -284,7 +284,7 @@ export function computeLayout(
   regionNames.forEach((name, index) => {
     const [cx, cy] = REGION_CENTRES[index % REGION_CENTRES.length];
     const regionItems = items.filter((item) => item.region === name);
-    const hubRadius = 5 + Math.sqrt(Math.max(1, regionItems.length)) * 0.7;
+    const hubRadius = 9 + Math.sqrt(Math.max(1, regionItems.length)) * 1.1;
     hubs.push({
       id: `region-${name}`,
       label: name,
