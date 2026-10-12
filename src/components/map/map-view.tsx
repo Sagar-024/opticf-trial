@@ -21,11 +21,24 @@ import { PracticeSheet } from './practice-sheet';
  * from the same pure functions the chat tools use.
  */
 
+export interface MapIntent {
+  /** Focus this region (null returns to the group view). */
+  region?: string | null;
+  lens?: LensId;
+  filterId?: string;
+  selectedId?: string | null;
+  /** Bump to re-apply the same intent. */
+  nonce: number;
+}
+
 export interface MapViewProps {
   model: MapModel;
   highlighted: string[];
   onHighlightChange: (ids: string[]) => void;
   onAsk: (question: string) => void;
+  intent?: MapIntent | null;
+  /** Called once the intent has been applied, so it is never replayed. */
+  onIntentHandled?: () => void;
 }
 
 function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId {
@@ -42,7 +55,7 @@ function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId
   return best[1] >= Math.ceil(set.length / 2) ? best[0] : 'sales';
 }
 
-export function MapView({ model, highlighted, onHighlightChange, onAsk }: MapViewProps) {
+export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, onIntentHandled }: MapViewProps) {
   const [lensId, setLensId] = useState<LensId>('region');
   const [region, setRegion] = useState<string | null>(null);
   const [filterId, setFilterId] = useState('all');
@@ -61,17 +74,15 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk }: MapVie
   const level: MapLevel = region ? 'region' : 'group';
   const highlightSet = useMemo(() => new Set(highlighted), [highlighted]);
 
-  const matching = useMemo(
-    () => model.practices.filter((practice) => filter.match(practice)),
-    [model.practices, filter],
-  );
-
   const visible = useMemo(() => {
     const inLevel = region ? model.practices.filter((p) => p.region === region) : model.practices;
     const q = query.trim().toLowerCase();
     if (!q) return inLevel;
     return inLevel.filter((p) => p.name.toLowerCase().includes(q) || p.region.toLowerCase().includes(q) || p.practiceId.toLowerCase() === q);
   }, [model.practices, region, query]);
+
+  /** Matches within the current view, so the counter and the strip agree. */
+  const matching = useMemo(() => visible.filter((practice) => filter.match(practice)), [visible, filter]);
 
   const focus = useMemo(
     () => [...matching].sort((a, b) => b.attentionScore - a.attentionScore).slice(0, 5),
@@ -83,21 +94,9 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk }: MapVie
     [model.practices, selectedId],
   );
 
-  // ── URL state: shareable, survives refresh ───────────────────────────────
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const lensParam = params.get('lens') as LensId | null;
-    const regionParam = params.get('region');
-    const filterParam = params.get('filter');
-    const practiceParam = params.get('practice');
-    if (lensParam && ['region', 'sales', 'contactLens', 'training', 'mentors'].includes(lensParam)) setLensId(lensParam);
-    if (regionParam && model.regions.some((r) => r.name === regionParam)) setRegion(regionParam);
-    if (filterParam) setFilterId(filterParam);
-    if (practiceParam) setSelectedId(practiceParam);
-    // Only on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // The URL only mirrors the current view. Deep links are parsed once by the
+  // shell (see the `intent` prop), so a stale query can never be replayed when
+  // the map remounts after a tab switch.
   useEffect(() => {
     const params = new URLSearchParams();
     if (lensId !== 'region') params.set('lens', lensId);
@@ -117,6 +116,19 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk }: MapVie
     setRegion(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlighted.join(',')]);
+
+  // An explicit intent (a deep link or a Today card) is applied once, then
+  // cleared by the shell so it cannot be replayed on remount.
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.lens) setLensId(intent.lens);
+    if (intent.filterId) setFilterId(intent.filterId);
+    setRegion(intent.region ?? null);
+    setSelectedId(intent.selectedId ?? null);
+    setSheetOpen(Boolean(intent.selectedId));
+    onIntentHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent?.nonce]);
 
   function selectLens(next: LensId): void {
     setLensId(next);
@@ -157,7 +169,7 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk }: MapVie
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[11px] tabular-nums text-muted-foreground">
-            {matching.length} of {model.practices.length} matching
+            {matching.length} of {visible.length} matching
           </span>
           {highlighted.length > 0 ? (
             <Badge className="gap-1 bg-coral text-white">

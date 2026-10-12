@@ -23,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/components/chat/chat-view';
-import { MapView } from '@/components/map/map-view';
+import { MapView, type MapIntent } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const NAV = [
@@ -39,7 +39,22 @@ function bandVariant(band: string): 'destructive' | 'secondary' | 'outline' {
   return 'outline';
 }
 
-function PriorityCard({ item, onShowMap }: { item: TodayPriority; onShowMap: () => void }) {
+function PriorityCard({
+  item,
+  onOpenPractice,
+  onOpenRegion,
+  onOpenDashboard,
+}: {
+  item: TodayPriority;
+  onOpenPractice: (practiceId: string) => void;
+  onOpenRegion: (region: string) => void;
+  onOpenDashboard: (item: TodayPriority) => void;
+}) {
+  const openRelated = () => {
+    if (item.practiceId) onOpenPractice(item.practiceId);
+    else if (item.region) onOpenRegion(item.region);
+  };
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-5">
@@ -72,17 +87,13 @@ function PriorityCard({ item, onShowMap }: { item: TodayPriority; onShowMap: () 
         </ul>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {item.practiceId ? (
-            <Button size="sm" variant="outline" onClick={onShowMap}>
-              Open practice <ArrowRight />
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={onShowMap}>
-              Open region <ArrowRight />
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" onClick={onShowMap}>Show on map</Button>
-          <Button size="sm" variant="ghost">
+          <Button size="sm" variant="outline" onClick={openRelated}>
+            {item.practiceId ? 'Open practice' : 'Open region'} <ArrowRight />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={openRelated}>
+            Show on map
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onOpenDashboard(item)}>
             Open dashboard
           </Button>
         </div>
@@ -122,6 +133,33 @@ export function Workspace({
   const [highlighted, setHighlighted] = useState<string[]>([]);
   const [railOpen, setRailOpen] = useState(true);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [mapIntent, setMapIntent] = useState<MapIntent | null>(null);
+
+  function openPracticeOnMap(practiceId: string): void {
+    setHighlighted([practiceId]);
+    setDest('workspace');
+    setTab('map');
+  }
+
+  function openRegionOnMap(region: string): void {
+    setHighlighted([]);
+    setMapIntent({ region, nonce: Date.now() });
+    setDest('workspace');
+    setTab('map');
+  }
+
+  /** A Today priority can be explored as a dashboard, using the chat. */
+  function openDashboardFor(item: TodayPriority): void {
+    const name = item.practiceId
+      ? mapModel.practices.find((practice) => practice.practiceId === item.practiceId)?.name
+      : undefined;
+    const question = item.kind === 'region' || !name
+      ? `Compare ${item.region} with the other regions this month.`
+      : `Show me ${name} performance this month and what changed compared with last month.`;
+    setPendingQuestion(question);
+    setDest('workspace');
+    setTab('chat');
+  }
 
   function askFromMap(question: string): void {
     setPendingQuestion(question);
@@ -129,13 +167,24 @@ export function Workspace({
     setTab('chat');
   }
 
-  // A shared map link (lens, region, filter or practice in the URL) opens the map.
+  // A shared map link (lens, region, filter or practice in the URL) opens the map
+  // once, parsed here so the map itself never reads stale query parameters.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (['lens', 'region', 'filter', 'practice'].some((key) => params.has(key))) {
-      setDest('workspace');
-      setTab('map');
-    }
+    const keys = ['lens', 'region', 'filter', 'practice'];
+    if (!keys.some((key) => params.has(key))) return;
+
+    const lens = params.get('lens');
+    const lensIds = ['region', 'sales', 'contactLens', 'training', 'mentors'];
+    setMapIntent({
+      lens: lens && lensIds.includes(lens) ? (lens as MapIntent['lens']) : undefined,
+      region: params.get('region'),
+      filterId: params.get('filter') ?? undefined,
+      selectedId: params.get('practice'),
+      nonce: Date.now(),
+    });
+    setDest('workspace');
+    setTab('map');
   }, []);
 
   function showOnMap(practiceIds: string[]): void {
@@ -263,7 +312,13 @@ export function Workspace({
                   </p>
                   <div className="mt-6 grid grid-cols-1 gap-4">
                     {today.items.map((item) => (
-                      <PriorityCard key={item.id} item={item} onShowMap={() => setTab('map')} />
+                      <PriorityCard
+                    key={item.id}
+                    item={item}
+                    onOpenPractice={openPracticeOnMap}
+                    onOpenRegion={openRegionOnMap}
+                    onOpenDashboard={openDashboardFor}
+                  />
                     ))}
                   </div>
                 </div>
@@ -276,6 +331,8 @@ export function Workspace({
                 highlighted={highlighted}
                 onHighlightChange={setHighlighted}
                 onAsk={askFromMap}
+                intent={mapIntent}
+                onIntentHandled={() => setMapIntent(null)}
               />
             </TabsContent>
 
