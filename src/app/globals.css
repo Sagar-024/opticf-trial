@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Optific+ design tokens - extracted from the reference HTML
+ * (`Hakim Group.html`) and mapped onto shadcn's CSS variables.
+ *
+ * Warm cream canvas · navy ink · coral accent · soft hairline borders.
+ * These are the values the whole product inherits; change them here only.
+ */
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    /* Surfaces */
+    --background: 40 82% 96%;        /* #fdf7eb warm cream canvas */
+    --foreground: 220 37% 16%;       /* #1a2438 navy ink */
+    --card: 40 100% 99%;             /* #fffdf9 */
+    --card-foreground: 220 37% 16%;
+    --popover: 40 100% 99%;
+    --popover-foreground: 220 37% 16%;
+
+    /* Brand */
+    --primary: 220 37% 16%;          /* ink - primary buttons */
+    --primary-foreground: 40 82% 96%;
+    --secondary: 39 35% 92%;         /* #f2ede4 muted warm fill */
+    --secondary-foreground: 220 37% 16%;
+    --muted: 39 35% 92%;
+    --muted-foreground: 231 5% 48%;  /* #747681 */
+    --accent: 35 41% 89%;            /* #eee4d6 rail-active / hover */
+    --accent-foreground: 220 37% 16%;
+
+    /* Coral accent (focus rings, active dots, highlights) */
+    --coral: 12 63% 63%;             /* #dc7c63 */
+    --coral-deep: 13 41% 47%;        /* #a95c46 */
+    --ink: 220 37% 16%;
+
+    /* Lines & states */
+    --border: 37 27% 87%;            /* #e6dfd4 hairline */
+    --input: 37 27% 87%;
+    --ring: 12 63% 63%;              /* coral focus */
+    --destructive: 13 41% 47%;       /* #a95c46 */
+    --destructive-foreground: 40 82% 96%;
+
+    /* Rail */
+    --rail: 41 57% 95%;              /* #f9f4e9 */
+    --rail-active: 35 41% 89%;       /* #eee4d6 */
+
+    /* Dark map canvas ("reference-led black canvas" direction) */
+    --map-bg: 213 40% 14%;           /* #162333 */
+    --map-fg: 213 29% 86%;           /* #d2dbe6 */
+    --map-muted: 213 19% 65%;        /* #93a3b6 */
+
+    /* Charts */
+    --chart-1: 12 63% 63%;           /* coral */
+    --chart-2: 215 17% 61%;          /* blue */
+    --chart-3: 159 12% 46%;          /* green */
+    --chart-4: 36 35% 55%;           /* amber */
+    --chart-5: 220 37% 16%;          /* ink */
+
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  /* Small uppercase section label used through the reference. */
+  .label-caps {
+    @apply text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground;
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# Generated sample data is reproducible from the seed script.
+data/*.csv
+!data/.gitkeep
+
+.env*
+!.env.example
+*.log
+.DS_Store
