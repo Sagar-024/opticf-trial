@@ -16,11 +16,11 @@ import type { ChatContext, ChatMessage, ChatResponse, ToolCallRecord, ToolOutput
 /**
  * The chat orchestration loop (provider-agnostic).
  *
- * - Capped at MAX_TOOL_ITERATIONS tool-call rounds.
+ * - Capped at MAX_TOOL_ITERATIONS tool-call rounds, and MAX_TOOL_CALLS in total.
  * - A single round may request several tools in parallel.
- * - Total tool calls per question are capped to bound cost and latency.
  * - Follow-up refinements reuse the previous context and are gated to a small
- *   tool set so they do not re-run discovery tools.
+ *   tool set so they do not re-run discovery.
+ * - The final prose is streamed as it arrives.
  * - The final text is guarded: every number must come from tool output.
  */
 
@@ -29,6 +29,15 @@ export interface RunChatInput {
   context?: ChatContext | null;
   client?: LlmClient;
   model?: string;
+}
+
+export interface RunChatHandlers {
+  /** Prose chunks, streamed as the model writes them. */
+  onDelta?: (text: string) => void;
+  /** Fired after each tool has run. */
+  onTool?: (record: ToolCallRecord) => void;
+  /** Fired with the full widget list whenever it grows. */
+  onWidgets?: (widgets: Widget[]) => void;
 }
 
 export interface RunChatResult extends ChatResponse {
@@ -68,7 +77,11 @@ function dedupeWidgets(widgets: Widget[]): Widget[] {
   return out;
 }
 
-/** Parse tool arguments defensively; malformed JSON is reported, not thrown. */
+/** Strip em/en dashes from model prose (house style). */
+function sanitize(text: string): string {
+  return text.split('\u2014').join('-').split('\u2013').join('-');
+}
+
 function parseArgs(raw: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
   try {
     const value = raw && raw.trim() ? JSON.parse(raw) : {};
@@ -85,10 +98,7 @@ function isRefinement(message: string): boolean {
   return /\b(only|just|filter|narrow|those|them|that|break\b.*\bdown|by practice|by region|drill|on the map|map)\b/i.test(message);
 }
 
-/**
- * For a follow-up refinement we only offer the few tools that refining needs,
- * so the model cannot re-run discovery (query/compare/rank) it already did.
- */
+/** Restrict the tool list for refuements so discovery tools cannot re-run. */
 function gateTools(message: string, context: ChatContext | null): LlmToolDefinition[] {
   const all = llmToolDefinitions();
   if (!context || !isRefinement(message)) return all;
@@ -102,12 +112,7 @@ function gateTools(message: string, context: ChatContext | null): LlmToolDefinit
   return filtered.length > 0 ? filtered : all;
 }
 
-/** Strip em/en dashes from model prose (house style: no em dashes). */
-function sanitize(text: string): string {
-  return text.split('\u2014').join('-').split('\u2013').join('-');
-}
-
-export async function runChat(input: RunChatInput): Promise<RunChatResult> {
+export async function runChatStream(input: RunChatInput, handlers: RunChatHandlers = {}): Promise<RunChatResult> {
   const started = Date.now();
   const dataset = getDataset();
   const months = monthsOf(dataset);
@@ -132,14 +137,19 @@ export async function runChat(input: RunChatInput): Promise<RunChatResult> {
   let text = '';
   let executed = 0;
   let iterations = 0;
-  let tools = gateTools(lastUser?.content ?? '', input.context ?? null);
+  const tools = gateTools(lastUser?.content ?? '', input.context ?? null);
+
+  const emitWidgets = () => handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((output) => output.widgets)));
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     iterations = step + 1;
-    const response = await client.chat({ model, messages, tools });
+    const response = await client.stream({ model, messages, tools }, (delta) => {
+      text += delta;
+      handlers.onDelta?.(delta);
+    });
 
     if (response.toolCalls.length === 0) {
-      text = response.text;
+      if (!text) text = response.text;
       break;
     }
 
@@ -190,6 +200,8 @@ export async function runChat(input: RunChatInput): Promise<RunChatResult> {
       }
       if (output.context) context = mergeContext(context, output.context);
       toolCalls.push(record);
+      handlers.onTool?.(record);
+      emitWidgets();
 
       messages.push({
         role: 'tool',
@@ -204,13 +216,12 @@ export async function runChat(input: RunChatInput): Promise<RunChatResult> {
 
     if (executed >= MAX_TOOL_CALLS) {
       const final = await client.chat({ model, messages, tools: [] });
-      text = final.text || text;
+      text = text || final.text;
       break;
     }
   }
 
   if (!text) {
-    // Ran out of iterations with no prose; ask once for a plain summary.
     const final = await client.chat({ model, messages, tools: [] });
     text = final.text;
   }
@@ -226,20 +237,29 @@ export async function runChat(input: RunChatInput): Promise<RunChatResult> {
       role: 'user',
       content: `Your answer contained numbers that were not returned by any tool: ${unsupported.join(', ')}. Rewrite the answer using ONLY figures returned by the tools. Do not calculate anything.`,
     });
+    // Retry is not streamed, so the client simply replaces the text it has.
     const retry = await client.chat({ model, messages, tools: [] });
     if (retry.text) text = retry.text;
     unsupported = findUnsupportedNumbers(text, allowed);
     flagged = unsupported.length > 0;
   }
 
+  const sources = [...new Set(outputs.flatMap((output) => output.sources ?? []))];
+
   return {
     text: sanitize(text),
     widgets: dedupeWidgets(outputs.flatMap((output) => output.widgets)),
     mapHighlight: explicitHighlight ?? largestHighlight,
     context,
+    sources,
     flagged,
     toolCalls,
     durationMs: Date.now() - started,
     iterations,
   };
+}
+
+/** Non-streaming convenience wrapper (used by tests and scripts). */
+export async function runChat(input: RunChatInput): Promise<RunChatResult> {
+  return runChatStream(input, {});
 }

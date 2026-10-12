@@ -115,13 +115,31 @@ src/
 
 ### Chat API
 
-`POST /api/chat` returns `{ text, widgets[], mapHighlight: string[], context, flagged }`.
+`POST /api/chat` returns a **newline-delimited JSON stream**:
+
+```
+{ "type": "delta",   "text": "..." }        prose, streamed as it is written
+{ "type": "tool",    "name": "compare" }    a tool ran
+{ "type": "widgets", "widgets": [...] }     the widget list grew
+{ "type": "done",    "text", "widgets", "mapHighlight", "context", "sources", "flagged" }
+{ "type": "error",   "message", "status" }
+```
 
 Tools return widgets directly (`kpi | chart | table`). The server collects them and the model only
 writes prose. Follow-ups work by the client echoing the previous `context` back, which the server
 injects into the system prompt and uses to restrict the offered tools so refinements do not re-run
-discovery. If the model uses a number that no tool returned, the server retries once and then sets
-`flagged: true`.
+discovery.
+
+Hardening:
+
+- `messages` and `context` are validated before anything reaches the model. Context fields are
+  whitelisted against the dataset: unknown regions and practice ids are dropped, `metric` must be a
+  single token, `group_by` must be one of three values, and `period.month` must be `YYYY-MM`.
+- Every LLM call has a hard timeout (`LLM_TIMEOUT_MS`, default 45000 ms). The client can abort with
+  the Stop button.
+- If the model uses a number that no tool returned, the server retries once, sets `flagged: true`,
+  and the UI shows a warning on that answer.
+- Each answer carries `sources`, rendered as chips under the reply.
 
 ## Sample data
 

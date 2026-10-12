@@ -1,22 +1,28 @@
-import { runChat } from '@/ai/chat';
+import { runChatStream } from '@/ai/chat';
+import { getDataset } from '@/ai/dataset';
 import { LlmError } from '@/ai/llm';
-import type { ChatContext, ChatMessage } from '@/ai/types';
+import { sanitizeContext, validateMessages } from '@/ai/validate';
 
 /**
  * POST /api/chat
  *
  * Body:  { messages: {role,content}[], context?: ChatContext }
- * Reply: { text, widgets[], mapHighlight: string[], context, flagged }
+ * Reply: newline-delimited JSON events, in order:
+ *   { type: 'delta',   text }        prose chunks, streamed
+ *   { type: 'tool',    name }        a tool ran
+ *   { type: 'widgets', widgets }     widget list grew
+ *   { type: 'done',    text, widgets, mapHighlight, context, sources, flagged }
+ *   { type: 'error',   message, status? }
  *
- * Provider config is server-only, from .env.local:
- *   LLM_BASE_URL, LLM_API_KEY, MODEL_NAME
+ * Both messages and context are validated before anything reaches the model.
+ * Provider config is server-only: LLM_BASE_URL, LLM_API_KEY, MODEL_NAME.
  */
 
 export const runtime = 'nodejs';
 
 interface ChatRequestBody {
-  messages?: ChatMessage[];
-  context?: ChatContext | null;
+  messages?: unknown;
+  context?: unknown;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -34,25 +40,55 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return Response.json({ error: 'messages[] is required.' }, { status: 400 });
+  const validated = validateMessages(body.messages);
+  if (!validated.ok) {
+    return Response.json({ error: validated.error }, { status: validated.status });
   }
 
-  try {
-    const result = await runChat({ messages: body.messages, context: body.context ?? null });
-    return Response.json({
-      text: result.text,
-      widgets: result.widgets,
-      mapHighlight: result.mapHighlight,
-      context: result.context,
-      flagged: result.flagged ?? false,
-    });
-  } catch (error) {
-    if (error instanceof LlmError) {
-      // Clear, key-free message; the client decides whether to surface it.
-      return Response.json({ error: error.message }, { status: error.status ?? 502 });
-    }
-    const message = error instanceof Error ? error.message : 'Chat request failed.';
-    return Response.json({ error: message }, { status: 500 });
-  }
+  const context = sanitizeContext(body.context, getDataset());
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+
+      try {
+        const result = await runChatStream(
+          { messages: validated.messages, context },
+          {
+            onDelta: (text) => send({ type: 'delta', text }),
+            onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),
+            onWidgets: (widgets) => send({ type: 'widgets', widgets }),
+          },
+        );
+
+        send({
+          type: 'done',
+          text: result.text,
+          widgets: result.widgets,
+          mapHighlight: result.mapHighlight,
+          context: result.context,
+          sources: result.sources,
+          flagged: result.flagged ?? false,
+          durationMs: result.durationMs,
+        });
+      } catch (error) {
+        const message = error instanceof LlmError ? error.message : 'Chat request failed.';
+        const status = error instanceof LlmError ? error.status : undefined;
+        send({ type: 'error', message, status });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }

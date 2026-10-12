@@ -11,7 +11,7 @@ const data = [
   { region: 'Scotland', revenue: 571670 },
 ];
 
-const config = { revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' } } satisfies ChartConfig;
+const config = { revenue: { label: 'Revenue', color: 'oklch(var(--chart-1))' } } satisfies ChartConfig;
 
 /** Recharts must live in a client component (RSC cannot render it server-side). */
 export function RevenueBar() {

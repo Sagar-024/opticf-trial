@@ -68,6 +68,8 @@ export interface ChatResponse {
   widgets: Widget[];
   mapHighlight: string[];
   context: ChatContext;
+  /** Human-readable data sources behind the answer. */
+  sources: string[];
   /** True when the answer still contained numbers not seen in tool results. */
   flagged?: boolean;
 }
@@ -81,6 +83,8 @@ export interface ToolOutput {
   context?: Partial<ChatContext>;
   /** Every literal number string this tool produced, for the guard. */
   numbers: string[];
+  /** Human-readable data sources behind this tool's output. */
+  sources?: string[];
 }
 
 export interface ChatMessage {

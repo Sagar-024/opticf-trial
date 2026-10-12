@@ -2,18 +2,18 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 
 /**
- * LLM transport, kept behind a small interface so the orchestration loop never
- * depends on a specific SDK and the test harness can inject a mock.
+ * LLM transport behind a small interface, so the orchestration loop never
+ * depends on a specific SDK and tests can inject a mock.
  *
- * Provider: any OpenAI-compatible chat-completions endpoint (OpenCode Go).
- * Config comes only from the environment: LLM_BASE_URL, LLM_API_KEY, MODEL_NAME.
+ * Provider: any OpenAI-compatible chat-completions endpoint.
+ * Config from env only: LLM_BASE_URL, LLM_API_KEY, MODEL_NAME, and optionally
+ * LLM_SESSION (routing header) and LLM_TIMEOUT_MS (per-call timeout).
  * The key is never logged.
  */
 
 export interface LlmToolCall {
   id: string;
   name: string;
-  /** Raw JSON string of the arguments (may be malformed - callers must parse defensively). */
   arguments: string;
 }
 
@@ -52,10 +52,12 @@ export interface LlmResponse {
 }
 
 export interface LlmClient {
+  /** Non-streaming completion. */
   chat(params: LlmChatParams): Promise<LlmResponse>;
+  /** Streaming completion; `onDelta` receives prose chunks as they arrive. */
+  stream(params: LlmChatParams, onDelta: (text: string) => void): Promise<LlmResponse>;
 }
 
-/** Error with a clear, key-free message and the HTTP status where known. */
 export class LlmError extends Error {
   status?: number;
   constructor(message: string, status?: number) {
@@ -67,11 +69,15 @@ export class LlmError extends Error {
 
 export function classifyLlmError(error: unknown): LlmError {
   if (error instanceof LlmError) return error;
+  const name = (error as { name?: string } | undefined)?.name;
+  if (name === 'AbortError' || name === 'TimeoutError') {
+    return new LlmError('The model took too long to respond and was stopped.');
+  }
   const status = (error as { status?: number } | undefined)?.status;
   if (status === 401) return new LlmError('Authentication failed (401). Check LLM_API_KEY and LLM_BASE_URL.', status);
   if (status === 403) return new LlmError('Access forbidden (403). The key may not have access to this model.', status);
   if (status === 404) return new LlmError('Not found (404). Check LLM_BASE_URL and MODEL_NAME.', status);
-  if (status === 429) return new LlmError('Rate limited (429). Try again later - no retries were attempted.', status);
+  if (status === 429) return new LlmError('Rate limited (429). Try again later. No retries were attempted.', status);
   const message = error instanceof Error ? error.message : 'Unknown LLM error';
   return new LlmError(message, status);
 }
@@ -82,7 +88,6 @@ export interface LlmEnv {
   model: string;
 }
 
-/** Read the three environment variables; throws a clear error if any is missing. */
 export function readLlmEnv(): LlmEnv {
   const baseURL = process.env.LLM_BASE_URL;
   const apiKey = process.env.LLM_API_KEY;
@@ -93,13 +98,20 @@ export function readLlmEnv(): LlmEnv {
   return { baseURL, apiKey, model };
 }
 
-/** Optional routing header, used by OpenCode Go. Not a secret. */
+/** Optional routing header (OpenCode Go). Not a secret, omitted when unset. */
 export const LLM_SESSION_HEADER = 'x-opencode-session';
-
-/** Returns the session header only when LLM_SESSION is set, so other providers need no code change. */
 export function llmSessionHeaders(): Record<string, string> {
   const session = process.env.LLM_SESSION;
   return session ? { [LLM_SESSION_HEADER]: session } : {};
+}
+
+function timeoutMs(): number {
+  const raw = Number(process.env.LLM_TIMEOUT_MS ?? 45000);
+  return Number.isFinite(raw) && raw > 1000 ? raw : 45000;
+}
+
+function accumulate(response: { text: string; toolCalls: LlmToolCall[]; finishReason: string | null }): LlmResponse {
+  return response;
 }
 
 /** Build the real OpenAI-compatible client from the environment. */
@@ -112,30 +124,77 @@ export function createLlmClient(): LlmClient {
     ...(Object.keys(headers).length > 0 ? { defaultHeaders: headers } : {}),
   });
 
+  // A hard per-call timeout, so a hung provider cannot hang the request.
+  const signal = (): AbortSignal => AbortSignal.timeout(timeoutMs());
+
   return {
     async chat({ model, messages, tools }: LlmChatParams): Promise<LlmResponse> {
       try {
-        const response = await client.chat.completions.create({
-          model,
-          messages: messages as unknown as ChatCompletionMessageParam[],
-          tools: tools as unknown as ChatCompletionTool[],
-          tool_choice: 'auto',
-          max_tokens: 1400,
-        });
+        const response = await client.chat.completions.create(
+          {
+            model,
+            messages: messages as unknown as ChatCompletionMessageParam[],
+            tools: tools as unknown as ChatCompletionTool[],
+            tool_choice: 'auto',
+            max_tokens: 1400,
+          },
+          { signal: signal() },
+        );
         const choice = response.choices[0];
         const message = choice?.message;
         const toolCalls: LlmToolCall[] = (message?.tool_calls ?? [])
           .filter((call) => call.type === 'function')
-          .map((call) => ({
-            id: call.id,
-            name: call.function.name,
-            arguments: call.function.arguments,
-          }));
-        return {
-          text: message?.content ?? '',
-          toolCalls,
-          finishReason: choice?.finish_reason ?? null,
-        };
+          .map((call) => ({ id: call.id, name: call.function.name, arguments: call.function.arguments }));
+        return accumulate({ text: message?.content ?? '', toolCalls, finishReason: choice?.finish_reason ?? null });
+      } catch (error) {
+        throw classifyLlmError(error);
+      }
+    },
+
+    async stream({ model, messages, tools }: LlmChatParams, onDelta): Promise<LlmResponse> {
+      try {
+        const stream = await client.chat.completions.create(
+          {
+            model,
+            messages: messages as unknown as ChatCompletionMessageParam[],
+            tools: tools as unknown as ChatCompletionTool[],
+            tool_choice: 'auto',
+            max_tokens: 1400,
+            stream: true,
+          },
+          { signal: signal() },
+        );
+
+        let text = '';
+        let finishReason: string | null = null;
+        const partial = new Map<number, { id: string; name: string; arguments: string }>();
+
+        for await (const chunk of stream) {
+          const choice = chunk.choices[0];
+          if (!choice) continue;
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+
+          const delta = choice.delta;
+          if (delta?.content) {
+            text += delta.content;
+            onDelta(delta.content);
+          }
+
+          for (const call of delta?.tool_calls ?? []) {
+            const index = call.index ?? 0;
+            const current = partial.get(index) ?? { id: '', name: '', arguments: '' };
+            if (call.id) current.id = call.id;
+            if (call.function?.name) current.name += call.function.name;
+            if (call.function?.arguments) current.arguments += call.function.arguments;
+            partial.set(index, current);
+          }
+        }
+
+        const toolCalls: LlmToolCall[] = [...partial.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([, value]) => ({ id: value.id, name: value.name, arguments: value.arguments }));
+
+        return accumulate({ text, toolCalls, finishReason });
       } catch (error) {
         throw classifyLlmError(error);
       }

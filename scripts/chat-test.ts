@@ -47,24 +47,32 @@ function makeMockClient(): LlmClient {
     return { tool: 'today_priorities', input: {} };
   };
 
+  const respond = async (params: { model: string; messages: LlmMessage[]; tools: unknown[] }): Promise<LlmResponse> => {
+    const { messages } = params;
+    const last = messages[messages.length - 1];
+    if (last.role === 'tool') {
+      const summaries = messages
+        .filter((m) => m.role === 'tool')
+        .map((m) => {
+          try {
+            return JSON.parse(String(m.content)).summary as string;
+          } catch {
+            return '';
+          }
+        });
+      return { text: `Based on the data: ${summaries.join(' ')}`, toolCalls: [], finishReason: 'stop' };
+    }
+    const userText = typeof last.content === 'string' ? last.content : '';
+    const { tool, input } = pick(userText);
+    return { text: '', toolCalls: [{ id: 'call_mock_1', name: tool, arguments: JSON.stringify(input) }], finishReason: 'tool_calls' };
+  };
+
   return {
-    async chat({ messages }: { model: string; messages: LlmMessage[]; tools: unknown[] }): Promise<LlmResponse> {
-      const last = messages[messages.length - 1];
-      if (last.role === 'tool') {
-        const summaries = messages
-          .filter((m) => m.role === 'tool')
-          .map((m) => {
-            try {
-              return JSON.parse(String(m.content)).summary as string;
-            } catch {
-              return '';
-            }
-          });
-        return { text: `Based on the data - ${summaries.join(' ')}`, toolCalls: [], finishReason: 'stop' };
-      }
-      const userText = typeof last.content === 'string' ? last.content : '';
-      const { tool, input } = pick(userText);
-      return { text: '', toolCalls: [{ id: 'call_mock_1', name: tool, arguments: JSON.stringify(input) }], finishReason: 'tool_calls' };
+    chat: (params) => respond(params),
+    stream: async (params, onDelta) => {
+      const response = await respond(params);
+      if (response.text) onDelta(response.text);
+      return response;
     },
   };
 }

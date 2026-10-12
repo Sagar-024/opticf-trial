@@ -178,7 +178,12 @@ function runQueryMetrics(ds: Dataset, input: Record<string, unknown>): ToolOutpu
     rows.length >= 2 ? `Breakdown by ${label}: ${rows.map((row) => `${row.label} ${metricDisplay(row.metrics, 'revenue')}`).join(', ')}.` : '',
   ].join(' ');
 
-  return withNumbers({ summary, widgets, context: context({ metric: 'revenue+conversion', groupBy, regions, practiceIds, month }) });
+  return withNumbers({
+    summary,
+    widgets,
+    sources: [`Monthly performance, ${monthLabel(month)}`],
+    context: context({ metric: 'revenue+conversion', groupBy, regions, practiceIds, month }),
+  });
 }
 
 function runCompare(ds: Dataset, input: Record<string, unknown>): ToolOutput {
@@ -221,6 +226,7 @@ function runCompare(ds: Dataset, input: Record<string, unknown>): ToolOutput {
   return withNumbers({
     summary,
     widgets: [chart, table],
+    sources: [`Monthly performance, ${result.periodALabel} vs ${result.periodBLabel}`],
     context: context({ metric, groupBy, regions, month: periodA.to }),
   });
 }
@@ -255,11 +261,13 @@ function runTrainingStatus(ds: Dataset, input: Record<string, unknown>): ToolOut
     summary,
     widgets: [table],
     mapHighlight,
+    sources: ['Training records'],
     context: context({ metric: 'training', groupBy: 'practice', regions, practiceIds }),
   });
 }
 
 function runRankAttention(ds: Dataset, input: Record<string, unknown>): ToolOutput {
+  const latest = monthsOf(ds).at(-1)!;
   const regions = input.regions as string[] | undefined;
   const limit = (input.limit as number) ?? 8;
   const rows = rank_attention(ds, { regions, limit });
@@ -287,6 +295,7 @@ function runRankAttention(ds: Dataset, input: Record<string, unknown>): ToolOutp
     summary,
     widgets: [table],
     mapHighlight,
+    sources: [`Monthly performance, ${monthLabel(latest)}`, 'Training records'],
     context: context({ metric: 'attention', groupBy: 'practice', regions, practiceIds: mapHighlight }),
   });
 }
@@ -317,6 +326,7 @@ function runTodayPriorities(ds: Dataset, input: Record<string, unknown>): ToolOu
     summary,
     widgets: [table],
     mapHighlight,
+    sources: [`Monthly performance, ${today.monthLabel}`, 'Training records'],
     context: context({ metric: 'attention', groupBy: 'practice', practiceIds: mapHighlight, month: today.month }),
   });
 }
@@ -325,7 +335,7 @@ function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput
   const id = String(input.practice_id ?? '');
   const practice = ds.practices.find((p) => p.practiceId === id || p.name.toLowerCase() === id.toLowerCase());
   if (!practice) {
-    return withNumbers({ summary: `No practice found for "${id}".`, widgets: [], mapHighlight: [] });
+    return withNumbers({ summary: `No practice found for "${id}".`, widgets: [], mapHighlight: [], sources: ['Practice directory'] });
   }
   const latest = monthsOf(ds).at(-1)!;
   const m = query_metrics(ds, { practiceIds: [practice.practiceId], month: latest });
@@ -355,6 +365,7 @@ function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput
     summary,
     widgets: [kpiWidget('practice-kpi', `${practice.name} - ${monthLabel(latest)}`, m), table],
     mapHighlight: [practice.practiceId],
+    sources: ['Practice directory', `Monthly performance, ${monthLabel(latest)}`, 'Training records'],
     context: context({ metric: 'revenue+conversion', groupBy: 'practice', practiceIds: [practice.practiceId], month: latest }),
   });
 }
@@ -393,6 +404,7 @@ function runBelowClTarget(ds: Dataset, input: Record<string, unknown>): ToolOutp
     summary,
     widgets: [table],
     mapHighlight,
+    sources: [`Monthly performance, ${monthLabel(month)}`, 'Practice directory'],
     context: context({ metric: 'contactLens', groupBy: 'practice', regions, practiceIds: mapHighlight, month }),
   });
 }
@@ -411,6 +423,7 @@ function runHighlightOnMap(ds: Dataset, input: Record<string, unknown>): ToolOut
     summary: `Highlighted ${practices.length} practices on the map: ${practices.map((p) => p.name).join(', ')}.`,
     widgets: [table],
     mapHighlight: practices.map((p) => p.practiceId),
+    sources: ['Practice directory'],
     context: context({ groupBy: 'practice', practiceIds: practices.map((p) => p.practiceId) }),
   });
 }
@@ -446,6 +459,7 @@ function runBuildDashboard(ds: Dataset, input: Record<string, unknown>): ToolOut
   return withNumbers({
     summary,
     widgets,
+    sources: [`Monthly performance, ${monthLabel(month)}`],
     context: context({ metric: metrics.join('+'), groupBy, regions: filters.regions, practiceIds: filters.practiceIds, month }),
   });
 }
