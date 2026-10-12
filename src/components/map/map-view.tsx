@@ -220,20 +220,18 @@ export function MapView({
           </Badge>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={focus ? 'secondary' : 'ghost'}
-                size="icon"
-                aria-label={focus ? 'Exit focus mode' : 'Focus mode'}
-                onClick={() => onToggleFocus?.()}
-              >
-                {focus ? <Minimize2 /> : <Maximize2 />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{focus ? 'Exit focus mode (Esc)' : 'Focus mode: full screen graph'}</TooltipContent>
-          </Tooltip>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            variant={focus ? 'default' : 'outline'}
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            aria-label={focus ? 'Exit focus mode' : 'Enter focus mode'}
+            title={focus ? 'Exit focus mode (Esc)' : 'Full screen graph (Esc to exit)'}
+            onClick={() => onToggleFocus?.()}
+          >
+            {focus ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            {focus ? 'Exit focus' : 'Focus'}
+          </Button>
           {!focus ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -462,6 +460,14 @@ export function MapView({
                   {item.label}
                 </button>
               ))}
+              <span className="mx-1 h-4 w-px bg-border" />
+              <button
+                onClick={() => onToggleFocus?.()}
+                className="rounded-full px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent"
+                title="Exit focus mode (Esc)"
+              >
+                Exit focus (Esc)
+              </button>
             </motion.div>
           ) : null}
         </AnimatePresence>
