@@ -1,0 +1,570 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, Minus, Plus } from 'lucide-react';
+import type { MapPractice, MapModel } from '@/data/map-model';
+import {
+  boundsOfSubset,
+  computeFit,
+  computeLayout,
+  nearestNode,
+  type Bounds,
+  type LayoutNode,
+  type MapLevel,
+} from '@/map/layout';
+import type { Lens } from '@/map/lenses';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { readPalette, type Palette } from './palette';
+
+/**
+ * The map canvas. Ported from the reference visual, fed from our data layer.
+ *
+ * The draw loop measures the DOM directly and keeps the transform in a ref, so
+ * painting never depends on React state settling first. Positions come from the
+ * pure seeded layout, and the palette is read once per theme change.
+ */
+
+export interface MapCanvasProps {
+  model: MapModel;
+  lens: Lens;
+  level: MapLevel;
+  regionName: string | null;
+  highlighted: string[];
+  matches: (practice: MapPractice) => boolean;
+  selectedId: string | null;
+  onSelect: (practiceId: string | null) => void;
+  onDrillRegion: (region: string) => void;
+  onReset: () => void;
+  className?: string;
+}
+
+interface Transform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+}
+
+const VIEWPORT_PADDING = { top: 78, right: 28, bottom: 104, left: 28 };
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 5;
+
+export function MapCanvas({
+  model,
+  lens,
+  level,
+  regionName,
+  highlighted,
+  matches,
+  selectedId,
+  onSelect,
+  onDrillRegion,
+  onReset,
+  className,
+}: MapCanvasProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const transformRef = useRef<Transform>({ scale: 1, offsetX: 0, offsetY: 0, width: 0, height: 0 });
+  const frameRef = useRef<number | null>(null);
+  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
+
+  const paletteRef = useRef<Palette | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; title: string; lines: string[] } | null>(null);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+
+  const byId = useMemo(() => new Map(model.practices.map((p) => [p.practiceId, p])), [model.practices]);
+
+  const items = useMemo(
+    () =>
+      model.practices.map((practice) => ({
+        id: practice.practiceId,
+        region: practice.region,
+        radius: 2.5 + Math.sqrt(Math.max(0, practice.revenue) / 1000) * 0.42,
+      })),
+    [model.practices],
+  );
+
+  const layout = useMemo(() => computeLayout(level, regionName, items), [level, regionName, items]);
+  const highlightSet = useMemo(() => new Set(highlighted), [highlighted]);
+
+  /** Screen position of a layout node. Reads the live transform. */
+  const project = useCallback(
+    (node: LayoutNode) => {
+      const { scale, offsetX, offsetY } = transformRef.current;
+      return {
+        x: offsetX + node.x * scale * zoom + pan.x,
+        y: offsetY + node.y * scale * zoom + pan.y,
+        r: node.r * scale * zoom,
+      };
+    },
+    [zoom, pan],
+  );
+
+  // ── Palette follows the theme ─────────────────────────────────────────────
+  useEffect(() => {
+    paletteRef.current = readPalette();
+    const observer = new MutationObserver(() => {
+      paletteRef.current = readPalette();
+      invalidateRef.current?.();
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setHovered(null);
+    setTooltip(null);
+  }, [level, regionName]);
+
+  // ── Draw ──────────────────────────────────────────────────────────────────
+  const draw = useCallback(() => {
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!wrap || !canvas || !context) return;
+    // Read the theme palette on demand, so the first paint never waits on state.
+    const palette = paletteRef.current ?? (paletteRef.current = readPalette());
+
+    const rect = wrap.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    if (width === 0 || height === 0) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    // Fit is computed here, from the real DOM size, so React state cannot lag it.
+    const fit = computeFit(layout.bounds, { width, height, ...VIEWPORT_PADDING });
+    transformRef.current = { scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, width, height };
+
+    const screen = (node: LayoutNode) => ({
+      x: fit.offsetX + node.x * fit.scale * zoom + pan.x,
+      y: fit.offsetY + node.y * fit.scale * zoom + pan.y,
+      r: node.r * fit.scale * zoom,
+    });
+
+    const highlightActive = highlightSet.size > 0;
+    const hubIds = new Set(layout.hubs.map((hub) => hub.id));
+    const hubPoints = new Map(
+      layout.hubs.map((hub) => [hub.id, screen(hub as unknown as LayoutNode)]),
+    );
+    const nodePoints = new Map(layout.nodes.map((node) => [node.id, screen(node)]));
+
+    // ── Edges ──
+    context.lineWidth = 0.7;
+    for (const edge of layout.edges) {
+      const a = hubPoints.get(edge.a) ?? nodePoints.get(edge.a);
+      const b = hubPoints.get(edge.b) ?? nodePoints.get(edge.b);
+      if (!a || !b) continue;
+
+      const touched = highlightActive && (highlightSet.has(edge.a) || highlightSet.has(edge.b));
+      const practice = byId.get(edge.b);
+      const dimmedByFilter = practice ? !matches(practice) : false;
+      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.07 : edge.kind === 'backbone' ? 0.55 : 0.2;
+      context.strokeStyle = palette.border;
+      context.setLineDash(edge.kind === 'practice' ? [3, 4] : []);
+      context.beginPath();
+      context.moveTo(a.x, a.y);
+      if (edge.kind === 'backbone') {
+        const cx = (a.x + b.x) / 2 + (b.y - a.y) * 0.09;
+        const cy = (a.y + b.y) / 2 - (b.x - a.x) * 0.09;
+        context.quadraticCurveTo(cx, cy, b.x, b.y);
+      } else {
+        context.lineTo(b.x, b.y);
+      }
+      context.stroke();
+    }
+    context.setLineDash([]);
+
+    // ── Practices ──
+    for (const node of layout.nodes) {
+      const practice = byId.get(node.id);
+      const point = nodePoints.get(node.id);
+      if (!practice || !point) continue;
+      if (point.x < -60 || point.x > width + 60 || point.y < -60 || point.y > height + 60) continue;
+
+      const visual = lens.visual(practice);
+      const inHighlight = !highlightActive || highlightSet.has(node.id);
+      const inFilter = matches(practice);
+      const isSelected = selectedId === node.id;
+      const isHovered = hovered === node.id;
+
+      let alpha = visual.opacity;
+      if (!inFilter) alpha = Math.min(alpha, palette.dimOpacity);
+      if (!inHighlight) alpha = Math.min(alpha, palette.dimOpacity);
+      const radius = Math.max(0.8, point.r * visual.sizeFactor);
+
+      context.globalAlpha = alpha;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fillStyle = palette.colors[visual.colorKey];
+      context.fill();
+
+      if (inFilter && (isSelected || isHovered || (highlightActive && inHighlight))) {
+        context.strokeStyle = isSelected ? palette.colors.coral : palette.hubRing;
+        context.lineWidth = isSelected ? 2 : 1;
+        context.beginPath();
+        context.arc(point.x, point.y, radius + (isSelected ? 4 : 3), 0, Math.PI * 2);
+        context.stroke();
+      }
+    }
+
+    // ── Hubs and their labels ──
+    const labelBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
+    for (const hub of layout.hubs) {
+      const point = hubPoints.get(hub.id);
+      if (!point) continue;
+      const radius = Math.max(4, point.r);
+      const isGroup = hub.kind === 'group';
+
+      context.globalAlpha = 0.5;
+      context.beginPath();
+      context.arc(point.x, point.y, radius + 4, 0, Math.PI * 2);
+      context.strokeStyle = palette.hubRing;
+      context.lineWidth = 0.8;
+      context.stroke();
+
+      context.globalAlpha = 1;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fillStyle = isGroup ? palette.hubSurface : palette.colors.chart2;
+      context.fill();
+      context.lineWidth = 1.2;
+      context.strokeStyle = isGroup ? palette.hubRing : palette.background;
+      context.stroke();
+
+      if (isGroup) {
+        context.beginPath();
+        context.arc(point.x, point.y, radius * 0.18, 0, Math.PI * 2);
+        context.fillStyle = palette.colors.coral;
+        context.fill();
+      }
+
+      context.textAlign = 'center';
+      const labelY = point.y + radius + (isGroup ? 20 : 16);
+      context.font = `600 ${isGroup ? 13 : 11}px ${'Inter, sans-serif'}`;
+      const labelWidth = context.measureText(hub.label).width;
+      labelBoxes.push({ x: point.x - labelWidth / 2 - 5, y: labelY - 12, w: labelWidth + 10, h: 30 });
+      context.lineWidth = 4;
+      context.strokeStyle = palette.background;
+      context.strokeText(hub.label, point.x, labelY);
+      context.fillStyle = palette.labelStrong;
+      context.fillText(hub.label, point.x, labelY);
+      context.font = `400 9px ${'Inter, sans-serif'}`;
+      context.strokeText(hub.sub, point.x, labelY + 13);
+      context.fillStyle = palette.label;
+      context.fillText(hub.sub, point.x, labelY + 13);
+    }
+
+    // ── Practice labels, only when they help ──
+    const labelCandidates = layout.nodes.filter((node) => {
+      const point = nodePoints.get(node.id);
+      if (!point) return false;
+      const isPriority = selectedId === node.id || hovered === node.id || (highlightActive && highlightSet.has(node.id));
+      return (isPriority || zoom > 1.6) && point.r >= 1;
+    });
+
+    for (const node of labelCandidates) {
+      const practice = byId.get(node.id);
+      const point = nodePoints.get(node.id);
+      if (!practice || !point) continue;
+      const priority = selectedId === node.id || hovered === node.id;
+
+      context.font = `450 9px ${'Inter, sans-serif'}`;
+      context.textAlign = 'center';
+      const text = practice.name;
+      const textWidth = context.measureText(text).width;
+      const y = point.y + point.r + 12;
+      const box = { x: point.x - textWidth / 2 - 5, y: y - 10, w: textWidth + 10, h: 25 };
+      const collides = labelBoxes.some(
+        (other) => box.x < other.x + other.w && box.x + box.w > other.x && box.y < other.y + other.h && box.y + box.h > other.y,
+      );
+      if (collides && !priority) continue;
+      labelBoxes.push(box);
+
+      context.globalAlpha = 1;
+      context.lineWidth = 4;
+      context.strokeStyle = palette.background;
+      context.strokeText(text, point.x, y);
+      context.fillStyle = palette.labelStrong;
+      context.fillText(text, point.x, y);
+
+      context.font = `400 8px ${'Inter, sans-serif'}`;
+      const sub = lens.valueLabel(practice);
+      context.strokeText(sub, point.x, y + 11);
+      context.fillStyle = palette.label;
+      context.fillText(sub, point.x, y + 11);
+    }
+
+    context.globalAlpha = 1;
+  }, [byId, highlightSet, hovered, layout, lens, matches, pan, selectedId, zoom]);
+
+  const invalidate = useCallback(() => {
+    // requestAnimationFrame is suspended while the page is hidden, so paint
+    // synchronously in that case rather than leaving the canvas blank.
+    if (typeof document !== 'undefined' && document.hidden) {
+      draw();
+      return;
+    }
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      draw();
+    });
+  }, [draw]);
+
+  // Repaint when the tab becomes visible again.
+  useEffect(() => {
+    const onVisibility = () => invalidate();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [invalidate]);
+
+  // A small hook so the renderer can be verified from a test or the console.
+  useEffect(() => {
+    const target = window as unknown as { __opticfMapRedraw?: () => void };
+    target.__opticfMapRedraw = () => draw();
+    return () => {
+      delete target.__opticfMapRedraw;
+    };
+  }, [draw]);
+
+  // Keep a live pointer so the theme observer can trigger a repaint.
+  const invalidateRef = useRef<(() => void) | null>(null);
+  invalidateRef.current = invalidate;
+
+  useEffect(() => {
+    invalidate();
+  }, [invalidate]);
+
+  // Redraw whenever the element is resized (container size, sidebar toggle, tab switch).
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const observer = new ResizeObserver(() => invalidate());
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [invalidate]);
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+    },
+    [],
+  );
+
+  // ── Interaction ───────────────────────────────────────────────────────────
+  const pointFromEvent = (event: React.PointerEvent | React.WheelEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const findNode = useCallback(
+    (x: number, y: number) => nearestNode(layout.nodes, x, y, project),
+    [layout.nodes, project],
+  );
+
+  function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>): void {
+    const point = pointFromEvent(event);
+    dragRef.current = { x: point.x, y: point.y, panX: pan.x, panY: pan.y, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>): void {
+    const point = pointFromEvent(event);
+    const current = dragRef.current;
+
+    if (current) {
+      const dx = point.x - current.x;
+      const dy = point.y - current.y;
+      if (Math.hypot(dx, dy) > 4) current.moved = true;
+      if (current.moved) {
+        setPan({ x: current.panX + dx, y: current.panY + dy });
+        setTooltip(null);
+      }
+      return;
+    }
+
+    const node = findNode(point.x, point.y);
+    setHovered(node?.id ?? null);
+    const practice = node ? byId.get(node.id) : null;
+    if (practice) {
+      const { width, height } = transformRef.current;
+      setTooltip({
+        x: Math.min(Math.max(8, width - 240), Math.max(8, point.x + 16)),
+        y: Math.min(Math.max(8, height - 96), Math.max(8, point.y + 16)),
+        title: practice.name,
+        lines: [practice.region, `${practice.revenueDisplay} (${practice.revenueMoMDisplay})`, lens.valueLabel(practice)],
+      });
+    } else {
+      setTooltip(null);
+    }
+  }
+
+  function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>): void {
+    const current = dragRef.current;
+    dragRef.current = null;
+    if (!current || current.moved) return;
+
+    const point = pointFromEvent(event);
+    for (const hub of layout.hubs) {
+      const hubPoint = project(hub as unknown as LayoutNode);
+      if (Math.hypot(point.x - hubPoint.x, point.y - hubPoint.y) <= Math.max(26, hubPoint.r + 8)) {
+        if (hub.kind === 'group') onReset();
+        else onDrillRegion(hub.label);
+        return;
+      }
+    }
+
+    const node = findNode(point.x, point.y);
+    onSelect(node ? node.id : null);
+  }
+
+  function handleWheel(event: React.WheelEvent<HTMLCanvasElement>): void {
+    event.preventDefault();
+    const point = pointFromEvent(event);
+    const { width, height } = transformRef.current;
+    const factor = Math.exp(-event.deltaY * 0.0015);
+    const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+    if (next === zoom) return;
+    const ratio = next / zoom;
+    setPan({
+      x: point.x - width / 2 - (point.x - width / 2 - pan.x) * ratio,
+      y: point.y - height / 2 - (point.y - height / 2 - pan.y) * ratio,
+    });
+    setZoom(next);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLCanvasElement>): void {
+    const step = 260;
+    if (event.key === 'Escape') {
+      if (level === 'region') onReset();
+      else onSelect(null);
+      return;
+    }
+    if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      setPan((current) => ({
+        x: current.x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0),
+        y: current.y + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0),
+      }));
+      setKeyboardFocus(true);
+      return;
+    }
+    if (event.key === 'Enter' && selectedId) {
+      const practice = byId.get(selectedId);
+      if (practice && level === 'group') onDrillRegion(practice.region);
+    }
+    if (event.key === '+' || event.key === '=') setZoom((value) => Math.min(MAX_ZOOM, value * 1.25));
+    if (event.key === '-') setZoom((value) => Math.max(MIN_ZOOM, value / 1.25));
+  }
+
+  // ── Fly to a chat highlight ───────────────────────────────────────────────
+  useEffect(() => {
+    if (highlightSet.size === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const { scale, width, height } = transformRef.current;
+    if (width === 0 || height === 0) return;
+    const bounds: Bounds | null = boundsOfSubset(layout.nodes, [...highlightSet]);
+    if (!bounds) return;
+
+    const subsetFit = computeFit(bounds, { width, height, ...VIEWPORT_PADDING }, 120);
+    const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, subsetFit.scale / Math.max(0.0001, scale)));
+    setZoom(targetZoom);
+
+    const centreX = (bounds.minX + bounds.maxX) / 2;
+    const centreY = (bounds.minY + bounds.maxY) / 2;
+    const focusX = width / 2 + (VIEWPORT_PADDING.left - VIEWPORT_PADDING.right) / 2;
+    const focusY = height / 2 + (VIEWPORT_PADDING.top - VIEWPORT_PADDING.bottom) / 2;
+    setPan({
+      x: focusX - (subsetFit.offsetX + centreX * subsetFit.scale),
+      y: focusY - (subsetFit.offsetY + centreY * subsetFit.scale),
+    });
+    // Only when the highlight set itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [[...highlightSet].join(',')]);
+
+  const label =
+    level === 'region' && regionName
+      ? `${regionName}: ${layout.nodes.length} practices`
+      : `Northstar Group: ${model.practices.length} practices across ${model.regions.length} regions`;
+
+  return (
+    <div ref={wrapRef} className={cn('relative h-full w-full overflow-hidden', className)}>
+      <canvas
+        ref={canvasRef}
+        style={{ width: '100%', height: '100%' }}
+        role="img"
+        aria-label={`Interactive organisation map. ${label}.`}
+        tabIndex={0}
+        className={cn('block h-full w-full cursor-grab touch-none outline-none', keyboardFocus && 'ring-1 ring-ring')}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => {
+          dragRef.current = null;
+        }}
+        onPointerLeave={() => {
+          dragRef.current = null;
+          setHovered(null);
+          setTooltip(null);
+        }}
+        onWheel={handleWheel}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setKeyboardFocus(false)}
+      />
+
+      {tooltip ? (
+        <div
+          className="pointer-events-none absolute z-10 w-56 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-soft"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          <p className="font-semibold">{tooltip.title}</p>
+          {tooltip.lines.map((line) => (
+            <p key={line} className="text-muted-foreground">{line}</p>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-soft backdrop-blur">
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value / 1.3))}>
+          <Minus className="size-3.5" />
+        </Button>
+        <span className="w-11 text-center text-[11px] tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value * 1.3))}>
+          <Plus className="size-3.5" />
+        </Button>
+        <span className="mx-1 h-4 w-px bg-border" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          aria-label="Fit to view"
+          onClick={() => {
+            setZoom(1);
+            setPan({ x: 0, y: 0 });
+          }}
+        >
+          <Maximize2 className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}

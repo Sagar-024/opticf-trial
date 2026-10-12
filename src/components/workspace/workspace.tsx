@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CalendarDays,
@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { TodayPriorities, TodayPriority } from '@/data';
+import type { MapModel } from '@/data/map-model';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/components/chat/chat-view';
+import { MapView } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const NAV = [
@@ -104,11 +106,13 @@ function Placeholder({ title, note, tone = 'map' }: { title: string; note: strin
 
 export function Workspace({
   today,
+  mapModel,
   practiceCount,
   regionCount,
   latestMonth,
 }: {
   today: TodayPriorities;
+  mapModel: MapModel;
   practiceCount: number;
   regionCount: number;
   latestMonth: string;
@@ -117,6 +121,22 @@ export function Workspace({
   const [tab, setTab] = useState('today');
   const [highlighted, setHighlighted] = useState<string[]>([]);
   const [railOpen, setRailOpen] = useState(true);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+
+  function askFromMap(question: string): void {
+    setPendingQuestion(question);
+    setDest('workspace');
+    setTab('chat');
+  }
+
+  // A shared map link (lens, region, filter or practice in the URL) opens the map.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (['lens', 'region', 'filter', 'practice'].some((key) => params.has(key))) {
+      setDest('workspace');
+      setTab('map');
+    }
+  }, []);
 
   function showOnMap(practiceIds: string[]): void {
     setHighlighted(practiceIds);
@@ -251,27 +271,20 @@ export function Workspace({
             </TabsContent>
 
             <TabsContent value="map" className="m-0 h-full">
-              <div className="h-full p-6">
-                <Placeholder title="The Optific Map" note="Force-graph canvas ported from the reference is next - fed from the CSV data layer with Region / Sales / Contact lens / Training / Mentors lenses." />
-                {highlighted.length > 0 ? (
-                  <div className="mt-4">
-                    <Card>
-                      <CardContent className="p-4">
-                        <p className="label-caps mb-2">Highlighted from chat</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {highlighted.map((id) => (
-                            <Badge key={id} variant="secondary">{id}</Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                ) : null}
-              </div>
+              <MapView
+                model={mapModel}
+                highlighted={highlighted}
+                onHighlightChange={setHighlighted}
+                onAsk={askFromMap}
+              />
             </TabsContent>
 
             <TabsContent value="chat" className="m-0 h-full">
-              <ChatView onShowMap={showOnMap} />
+              <ChatView
+                onShowMap={showOnMap}
+                pendingQuestion={pendingQuestion}
+                onPendingHandled={() => setPendingQuestion(null)}
+              />
             </TabsContent>
 
             <TabsContent value="brain" className="m-0 h-full">

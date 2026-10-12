@@ -62,7 +62,15 @@ type StreamEvent =
     }
   | { type: 'error'; message: string; status?: number };
 
-export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => void }) {
+export function ChatView({
+  onShowMap,
+  pendingQuestion,
+  onPendingHandled,
+}: {
+  onShowMap: (practiceIds: string[]) => void;
+  pendingQuestion?: string | null;
+  onPendingHandled?: () => void;
+}) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -236,6 +244,14 @@ export function ChatView({ onShowMap }: { onShowMap: (practiceIds: string[]) => 
 
   const empty = turns.length === 0;
   const lastIsAssistant = turns.length > 0 && turns[turns.length - 1].role === 'assistant';
+
+  // A question handed over from the map is sent once the thread has restored.
+  useEffect(() => {
+    if (!hydrated || !pendingQuestion || loading) return;
+    send(pendingQuestion);
+    onPendingHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuestion, hydrated]);
 
   return (
     <div className="flex h-full flex-col">
