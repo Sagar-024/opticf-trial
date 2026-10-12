@@ -9,6 +9,7 @@ import {
 import type { Dataset, SeriesMetrics, MetricsBreakdownRow } from '../data/index';
 import { formatMoney, formatNumber, formatPercent } from '../lib/format';
 import { monthLabel } from '../lib/months';
+import { BRAIN_DOCUMENTS, type BrainDocument } from '../content/brain';
 import { extractNumbers } from './guard';
 import type { LlmToolDefinition } from './llm';
 import type { ChatContext, TableWidget, ToolOutput, Widget } from './types';
@@ -464,8 +465,92 @@ function runBuildDashboard(ds: Dataset, input: Record<string, unknown>): ToolOut
   });
 }
 
-// ── Definitions handed to the model ──────────────────────────────────────────
+/**
+ * Search the group's written guidance (the Brain). Returns the matching
+ * documents so the answer can cite guidance alongside the numbers.
+ */
+function searchBrain(documents: BrainDocument[], query: string, limit: number): Array<{ document: BrainDocument; score: number }> {
+  const terms = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((term) => term.length > 2);
 
+  return documents
+    .map((document) => {
+      const title = document.title.toLowerCase();
+      const section = document.section.toLowerCase();
+      const scope = document.scope.toLowerCase();
+      const content = document.content.toLowerCase();
+      // Title matches matter most; body matches still count.
+      const score = terms.reduce((total, term) => {
+        let points = 0;
+        if (title.includes(term)) points += 3;
+        if (section.includes(term) || scope.includes(term)) points += 1;
+        if (content.includes(term)) points += 1;
+        return total + points;
+      }, 0);
+      return { document, score };
+    })
+    .filter((result) => result.score > 0)
+    .sort((a, b) => b.score - a.score || a.document.title.localeCompare(b.document.title))
+    .slice(0, limit);
+}
+
+function runSearchBrain(_ds: Dataset, input: Record<string, unknown>): ToolOutput {
+  const query = String(input.query ?? '').trim();
+  const limit = Math.min(6, Math.max(1, Number(input.limit) || 3));
+
+  if (query.length === 0) {
+    return withNumbers({
+      summary: 'No search terms were provided, so no guidance was looked up.',
+      widgets: [],
+      sources: [],
+    });
+  }
+
+  const matches = searchBrain(BRAIN_DOCUMENTS, query, limit);
+
+  if (matches.length === 0) {
+    return withNumbers({
+      summary: `The Brain has no guidance matching "${query}". Say that the guidance is missing rather than inventing a procedure.`,
+      widgets: [],
+      sources: [],
+    });
+  }
+
+  const table: TableWidget = {
+    type: 'table',
+    id: 'brain-table',
+    title: 'Guidance found in the Brain',
+    columns: ['Section', 'Guidance', 'Owner', 'Reviewed', 'Scope'],
+    rows: matches.map(({ document }) => [
+      document.section,
+      document.title,
+      document.owner,
+      document.reviewed,
+      document.scope,
+    ]),
+  };
+
+  const summary = [
+    `Found ${matches.length} guidance document${matches.length === 1 ? '' : 's'} for "${query}".`,
+    ...matches.map(({ document }) =>
+      `[${document.title} | ${document.scope} | owner ${document.owner} | reviewed ${document.reviewed}] ${document.content}`,
+    ),
+    matches.some(({ document }) => document.conflict)
+      ? 'One of these documents is marked as conflicting with other guidance and needs clarification before it is relied on.'
+      : '',
+  ].join(' ');
+
+  return withNumbers({
+    summary,
+    widgets: [table],
+    sources: matches.map(({ document }) => `Brain: ${document.title}`),
+    context: context({ metric: 'knowledge' }),
+  });
+}
+
+// ── Definitions handed to the model ──────────────────────────────────────────
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -480,6 +565,22 @@ export interface Tool {
 const MONTH_DESC = 'Month key YYYY-MM. Omit to use the latest month in the data ("this month").';
 
 export const TOOLS: Tool[] = [
+  {
+    definition: {
+      name: 'search_brain',
+      description:
+        'Search the group written guidance (the Brain): procedures, policies and practice context. Use this for any question about how something should be done, what the policy is, or what guidance applies. Returns the matching documents so the answer can cite them.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to look up, e.g. "frame warranty" or "contact lens training".' },
+          limit: { type: 'number', description: 'Maximum documents to return (default 3, max 6).' },
+        },
+        required: ['query'],
+      },
+    },
+    run: runSearchBrain,
+  },
   {
     definition: {
       name: 'query_metrics',

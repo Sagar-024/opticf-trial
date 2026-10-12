@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/components/chat/chat-view';
+import { BrainView } from '@/components/brain/brain-view';
 import { MapView, type MapIntent } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -102,16 +103,34 @@ function PriorityCard({
   );
 }
 
-function Placeholder({ title, note, tone = 'map' }: { title: string; note: string; tone?: 'map' | 'plain' }) {
+function PlaceholderPage({
+  title,
+  description,
+  items,
+}: {
+  title: string;
+  description: string;
+  items: Array<{ title: string; note: string }>;
+}) {
   return (
-    <Card className="overflow-hidden">
-      <CardContent className={cn('p-8', tone === 'map' && 'bg-map-bg text-map-fg')}>
-        <p className={cn('text-[10px] uppercase tracking-[1.3px]', tone === 'map' ? 'text-map-muted' : 'text-muted-foreground')}>
-          {title}
-        </p>
-        <p className="mt-2 text-sm">{note}</p>
-      </CardContent>
-    </Card>
+    <div className="mx-auto max-w-5xl px-8 py-10">
+      <p className="label-caps">Visual placeholder</p>
+      <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
+      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>
+      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {items.map((item) => (
+          <Card key={item.title} className="shadow-panel">
+            <CardContent className="p-4">
+              <p className="text-sm font-semibold">{item.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <p className="mt-6 text-xs text-muted-foreground">
+        Agreed as a placeholder for this stage. The workflows behind it are not wired yet.
+      </p>
+    </div>
   );
 }
 
@@ -300,7 +319,28 @@ export function Workspace({
         </header>
 
         <div className="min-h-0 flex-1">
-          <Tabs value={tab} onValueChange={gotoTopTab} className="h-full">
+          {dest === 'automations' ? (
+            <PlaceholderPage
+              title="Automations"
+              description="Recurring checks that prepare work for a human to review. Weekly practice reviews and a daily claims follow up are the two workflows the group asked for."
+              items={[
+                { title: 'Weekly practice reviews', note: 'Mondays at 8am. Practices with revenue down more than 6 percent get a review draft for their mentor.' },
+                { title: 'Daily claims follow up', note: 'Every morning. Claims older than 30 days get a follow up draft for Finance Support.' },
+                { title: 'Nothing is sent automatically', note: 'Outputs land in a review inbox. A person approves them.' },
+              ]}
+            />
+          ) : dest === 'people' ? (
+            <PlaceholderPage
+              title="People and logs"
+              description="Adoption and answer quality. Which teams are using the workspace, which questions they are asking, and which answers need a second look."
+              items={[
+                { title: 'Adoption this week', note: '164 of 182 invited sample users active, 90 percent.' },
+                { title: 'Questions asked', note: 'Every question is logged with the sources used to answer it.' },
+                { title: 'Answers flagged for review', note: 'Flags mark answers that need a human check. They are not proof of an error.' },
+              ]}
+            />
+          ) : (
+            <Tabs value={tab} onValueChange={gotoTopTab} className="h-full">
             <TabsContent value="today" className="m-0 h-full">
               <ScrollArea className="h-full">
                 <div className="mx-auto max-w-4xl px-8 py-8">
@@ -345,11 +385,10 @@ export function Workspace({
             </TabsContent>
 
             <TabsContent value="brain" className="m-0 h-full">
-              <div className="h-full p-6">
-                <Placeholder title="Northstar Brain" note="Knowledge sections and edit-guidance / source dialogs (shadcn Dialog)." tone="plain" />
-              </div>
+              <BrainView />
             </TabsContent>
-          </Tabs>
+            </Tabs>
+          )}
         </div>
 
         {/* status bar */}
