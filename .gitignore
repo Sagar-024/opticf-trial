@@ -12,3 +12,6 @@ data/*.csv
 !.env.example
 *.log
 .DS_Store
+
+# chat test output
+chat-test-output.txt
