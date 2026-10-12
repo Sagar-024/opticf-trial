@@ -86,8 +86,8 @@ export function PracticeSheet({
               <div className="mt-5">
                 <p className="label-caps mb-2">What the data shows</p>
                 <ul className="space-y-1.5">
-                  {practice.attentionSignals.map((signal) => (
-                    <li key={signal} className="flex gap-2 text-xs text-muted-foreground">
+                  {practice.attentionSignals.map((signal, index) => (
+                    <li key={`${index}-${signal.slice(0, 24)}`} className="flex gap-2 text-xs text-muted-foreground">
                       <TrendingDown className="mt-0.5 size-3.5 shrink-0 text-coral" />
                       <span>{signal}</span>
                     </li>

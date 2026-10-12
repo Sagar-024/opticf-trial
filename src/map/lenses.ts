@@ -175,3 +175,18 @@ export function lensById(lenses: Lens[], id: LensId): Lens {
 export function filterById(lens: Lens, id: string): LensFilter {
   return lens.filters.find((filter) => filter.id === id) ?? ALL_FILTER;
 }
+
+/**
+ * Tooltip lines for a practice under a lens.
+ *
+ * De-duplicated on purpose: on the Region lens the lens value is the region,
+ * which is already the first line. Duplicate strings previously broke the React
+ * keys in the tooltip, so this is covered by a test.
+ */
+export function tooltipLines(practice: MapPractice, lens: Lens): string[] {
+  return [
+    practice.region,
+    `${practice.revenueDisplay} (${practice.revenueMoMDisplay})`,
+    lens.valueLabel(practice),
+  ].filter((line, index, all) => line.length > 0 && all.indexOf(line) === index);
+}

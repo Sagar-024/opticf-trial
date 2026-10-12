@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boundsOfSubset, computeFit, computeLayout, nearestNode, type LayoutItem } from '../src/map/layout';
-import { buildLenses, filterById, lensById } from '../src/map/lenses';
+import { buildLenses, filterById, lensById, tooltipLines } from '../src/map/lenses';
 import { buildMapModel } from '../src/data/map-model';
 import { getTool } from '../src/ai/tools';
 import { generateDataset } from '../src/seed/generate';
@@ -144,8 +144,18 @@ describe('lenses', () => {
     expect(lens.visual(incomplete).colorKey).toBe('amber');
   });
 
-  it('gives every mentor a distinct colour', () => {
-    const lens = lensById(lenses, 'mentors');
+  it('produces unique tooltip lines for every lens and practice', () => {
+    for (const lens of lenses) {
+      for (const practice of model.practices) {
+        const lines = tooltipLines(practice, lens);
+        expect(lines.length, `${lens.id} / ${practice.name}`).toBeGreaterThan(0);
+        expect(new Set(lines).size, `${lens.id} / ${practice.name} has a duplicate line`).toBe(lines.length);
+        expect(lines.every((line) => line.length > 0)).toBe(true);
+      }
+    }
+  });
+
+  it('gives every mentor a distinct colour', () => {    const lens = lensById(lenses, 'mentors');
     const keys = model.mentors.map((mentor) => {
       const practice = model.practices.find((p) => p.mentorId === mentor.mentorId)!;
       return lens.visual(practice).colorKey;

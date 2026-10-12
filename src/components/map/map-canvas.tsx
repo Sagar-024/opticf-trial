@@ -13,6 +13,7 @@ import {
   type MapLevel,
 } from '@/map/layout';
 import type { Lens } from '@/map/lenses';
+import { tooltipLines } from '@/map/lenses';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { readPalette, type Palette } from './palette';
@@ -404,11 +405,12 @@ export function MapCanvas({
     const practice = node ? byId.get(node.id) : null;
     if (practice) {
       const { width, height } = transformRef.current;
+      const lines = tooltipLines(practice, lens);
       setTooltip({
         x: Math.min(Math.max(8, width - 240), Math.max(8, point.x + 16)),
         y: Math.min(Math.max(8, height - 96), Math.max(8, point.y + 16)),
         title: practice.name,
-        lines: [practice.region, `${practice.revenueDisplay} (${practice.revenueMoMDisplay})`, lens.valueLabel(practice)],
+        lines,
       });
     } else {
       setTooltip(null);
@@ -537,8 +539,8 @@ export function MapCanvas({
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           <p className="font-semibold">{tooltip.title}</p>
-          {tooltip.lines.map((line) => (
-            <p key={line} className="text-muted-foreground">{line}</p>
+          {tooltip.lines.map((line, index) => (
+            <p key={`${index}-${line}`} className="text-muted-foreground">{line}</p>
           ))}
         </div>
       ) : null}
