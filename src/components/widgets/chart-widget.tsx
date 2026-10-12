@@ -1,126 +1,89 @@
 'use client';
 
-import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
-import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
+import { useMemo } from 'react';
 import type { ChartWidget as ChartWidgetType } from '@/ai/types';
+import { Bar } from '@/components/dither-kit/bar';
+import { BarChart } from '@/components/dither-kit/bar-chart';
+import { Legend } from '@/components/dither-kit/legend';
+import type { DitherColor } from '@/components/dither-kit/palette';
+import { Tooltip } from '@/components/dither-kit/tooltip';
+import { XAxis } from '@/components/dither-kit/x-axis';
+import { YAxis } from '@/components/dither-kit/y-axis';
 
 /**
- * Renders a chart widget produced by a tool. The server supplies values and
- * pre-formatted display strings; this component only draws them, it never
- * computes a figure. The tooltip quotes the server's display string exactly.
+ * Renders a chart widget with Dither Kit.
+ *
+ * The server supplies values and pre-formatted display strings. The axis and
+ * the tooltip both quote those strings, so a chart can never show a figure the
+ * rest of the product disagrees with.
  */
 
-const COLORS = [
-  'oklch(var(--chart-1))',
-  'oklch(var(--chart-2))',
-  'oklch(var(--chart-3))',
-  'oklch(var(--chart-4))',
-  'oklch(var(--chart-5))',
-];
-
-interface TooltipEntry {
-  dataKey?: string | number;
-  value?: number | string;
-  color?: string;
-}
-
-interface TooltipProps {
-  active?: boolean;
-  payload?: TooltipEntry[];
-  label?: string | number;
-}
-
-function compactAxis(value: number, valueType: ChartWidgetType['valueType']): string {
-  if (valueType === 'percent') return `${Math.round(value)}%`;
-  if (valueType === 'number') return value >= 1000 ? `${Math.round(value / 1000)}k` : String(Math.round(value));
-  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}m`;
-  if (value >= 1_000) return `£${Math.round(value / 1000)}k`;
-  return `£${Math.round(value)}`;
-}
+const SERIES_COLORS: DitherColor[] = ['orange', 'blue', 'purple', 'green', 'pink'];
 
 export function ChartWidget({ widget }: { widget: ChartWidgetType }) {
+  const keys = useMemo(() => widget.series.map((_, index) => `s${index}`), [widget.series]);
   const labels = widget.series[0]?.points.map((point) => point.label) ?? [];
 
-  // A chart needs at least two points to say anything. The server avoids
-  // emitting these, but hide it defensively rather than draw one giant bar.
+  const prepared = useMemo(() => {
+    const data = labels.map((label, pointIndex) => {
+      const row: Record<string, string | number> = { label };
+      widget.series.forEach((series, seriesIndex) => {
+        row[keys[seriesIndex]] = series.points[pointIndex]?.value ?? 0;
+      });
+      return row;
+    });
+
+    const config: Record<string, { label: string; color: DitherColor }> = {};
+    const displayByKey = new Map<string, Map<number, string>>();
+
+    widget.series.forEach((series, seriesIndex) => {
+      const key = keys[seriesIndex];
+      config[key] = { label: series.name, color: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] };
+      const byValue = new Map<number, string>();
+      for (const point of series.points) byValue.set(point.value, point.display);
+      displayByKey.set(key, byValue);
+    });
+
+    return { data, config, displayByKey };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widget, keys]);
+
+  // A chart needs at least two points to say anything.
   if (labels.length < 2) return null;
 
-  const keys = widget.series.map((_, index) => `s${index}`);
+  const compactAxis = (value: number): string => {
+    if (widget.valueType === 'percent') return `${Math.round(value)}%`;
+    if (widget.valueType === 'number') {
+      return Math.abs(value) >= 1000 ? `${Math.round(value / 1000)}k` : String(Math.round(value));
+    }
+    if (Math.abs(value) >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}m`;
+    if (Math.abs(value) >= 1000) return `£${Math.round(value / 1000)}k`;
+    return `£${Math.round(value)}`;
+  };
 
-  const data = labels.map((label, pointIndex) => {
-    const row: Record<string, string | number> = { label };
-    widget.series.forEach((series, seriesIndex) => {
-      row[keys[seriesIndex]] = series.points[pointIndex]?.value ?? 0;
-    });
-    return row;
-  });
-
-  // Server-formatted display strings, looked up per series and category.
-  const display = new Map<string, string>();
-  widget.series.forEach((series, seriesIndex) => {
-    series.points.forEach((point) => display.set(`${seriesIndex}|${point.label}`, point.display));
-  });
-
-  const config: ChartConfig = {};
-  widget.series.forEach((series, index) => {
-    config[keys[index]] = { label: series.name, color: COLORS[index % COLORS.length] };
-  });
-
-  function TooltipCard({ active, payload, label }: TooltipProps) {
-    if (!active || !payload || payload.length === 0) return null;
-    return (
-      <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-soft">
-        <p className="mb-1 font-medium">{label}</p>
-        {payload.map((entry) => {
-          const seriesIndex = keys.indexOf(String(entry.dataKey));
-          const value = display.get(`${seriesIndex}|${String(label)}`) ?? String(entry.value ?? '');
-          return (
-            <div key={String(entry.dataKey)} className="flex items-center gap-2">
-              <span className="size-2 shrink-0 rounded-full" style={{ background: entry.color }} />
-              <span className="text-muted-foreground">{widget.series[seriesIndex]?.name}</span>
-              <span className="ml-auto font-medium">{value}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
+  const formatValue = (value: number, name: string): string => {
+    for (const key of keys) {
+      if (prepared.config[key]?.label === name) {
+        return prepared.displayByKey.get(key)?.get(value) ?? String(value);
+      }
+    }
+    return String(value);
+  };
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-panel">
       <p className="label-caps mb-3">{widget.title}</p>
-      <ChartContainer config={config} className="h-60 w-full">
-        <BarChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
-          <XAxis
-            dataKey="label"
-            tickLine={false}
-            axisLine={false}
-            tick={{ fontSize: 10 }}
-            interval={0}
-            angle={-18}
-            textAnchor="end"
-            height={54}
-          />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            width={48}
-            tick={{ fontSize: 10 }}
-            tickFormatter={(value: number) => compactAxis(value, widget.valueType)}
-          />
-          <Tooltip cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }} content={<TooltipCard />} />
+      <div className="h-60 w-full">
+        <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover>
+          <XAxis dataKey="label" maxTicks={6} />
+          <YAxis tickFormatter={compactAxis} />
           {widget.series.map((series, index) => (
-            <Bar
-              key={keys[index]}
-              dataKey={keys[index]}
-              fill={`var(--color-${keys[index]})`}
-              radius={[4, 4, 0, 0]}
-              isAnimationActive={false}
-            />
+            <Bar key={keys[index]} dataKey={keys[index]} variant="gradient" />
           ))}
+          <Legend isClickable />
+          <Tooltip labelKey="label" valueFormatter={formatValue} />
         </BarChart>
-      </ChartContainer>
+      </div>
     </div>
   );
 }

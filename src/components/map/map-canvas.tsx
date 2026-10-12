@@ -402,7 +402,7 @@ export function MapCanvas({
   );
 
   // ── Interaction ───────────────────────────────────────────────────────────
-  const pointFromEvent = (event: React.PointerEvent | React.WheelEvent) => {
+  const pointFromEvent = (event: { clientX: number; clientY: number }) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -470,7 +470,7 @@ export function MapCanvas({
     onSelect(node ? node.id : null);
   }
 
-  function handleWheel(event: React.WheelEvent<HTMLCanvasElement>): void {
+  function handleWheel(event: WheelEvent): void {
     event.preventDefault();
     const point = pointFromEvent(event);
     const { width, height } = transformRef.current;
@@ -484,6 +484,8 @@ export function MapCanvas({
     });
     setZoom(next);
   }
+  const wheelRef = useRef(handleWheel);
+  wheelRef.current = handleWheel;
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLCanvasElement>): void {
     const step = 260;
@@ -508,6 +510,16 @@ export function MapCanvas({
     if (event.key === '+' || event.key === '=') setZoom((value) => Math.min(MAX_ZOOM, value * 1.25));
     if (event.key === '-') setZoom((value) => Math.max(MIN_ZOOM, value / 1.25));
   }
+
+  // Wheel zoom needs a non-passive listener, otherwise preventDefault is
+  // ignored and React logs a passive listener error on every scroll.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => wheelRef.current(event);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   // ── Fly to a chat highlight ───────────────────────────────────────────────
   useEffect(() => {
@@ -562,7 +574,6 @@ export function MapCanvas({
           setHovered(null);
           setTooltip(null);
         }}
-        onWheel={handleWheel}
         onKeyDown={handleKeyDown}
         onBlur={() => setKeyboardFocus(false)}
       />

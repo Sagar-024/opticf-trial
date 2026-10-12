@@ -89,6 +89,21 @@ Every colour is stored as a bare oklch triple and referenced as
 modifiers like `bg-card/80` keep working. Charts read `--chart-1` to `--chart-5`,
 so they follow the theme automatically.
 
+## Charts
+
+Chat and BI charts render with **Dither Kit** (`src/components/dither-kit/`, installed from the
+`tripwire.sh` registry via the shadcn CLI; it brings `d3-scale`, `d3-shape` and `motion`).
+
+- Series colours are the Dither Kit palette: `orange` (brand-adjacent), then blue, purple, green, pink.
+- `variant="gradient"` with `bloom="aura"` gives the dithered fill and glow.
+- The axis and the tooltip quote the **server's pre-formatted strings** through `tickFormatter` and
+  `valueFormatter`, so a chart can never show a number the rest of the product disagrees with.
+- To use the brand coral instead of Dither Kit orange, add a `coral` entry to
+  `src/components/dither-kit/palette.ts` (`fill: [220, 124, 99]`) and set it in the widget's colour list.
+
+Note: Dither Kit paints its bars on animation frames, so charts only appear in a visible tab. The map
+has a hidden-tab fallback; Dither Kit does not.
+
 ## Architecture
 
 ```
