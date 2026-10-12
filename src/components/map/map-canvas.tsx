@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import type { MapPractice, MapModel } from '@/data/map-model';
 import {
@@ -327,12 +327,19 @@ export function MapCanvas({
     });
   }, [draw]);
 
-  // Repaint when the tab becomes visible again.
+  // Repaint when the tab becomes visible again, and clear any frame that was
+  // scheduled while the page was hidden (those callbacks can be dropped).
   useEffect(() => {
-    const onVisibility = () => invalidate();
+    const onVisibility = () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      draw();
+    };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [invalidate]);
+  }, [draw]);
 
   // A small hook so the renderer can be verified from a test or the console.
   useEffect(() => {
@@ -347,9 +354,12 @@ export function MapCanvas({
   const invalidateRef = useRef<(() => void) | null>(null);
   invalidateRef.current = invalidate;
 
-  useEffect(() => {
-    invalidate();
-  }, [invalidate]);
+  // Paint synchronously after every state change. Waiting for a frame made
+  // zooming feel laggy, and requestAnimationFrame is suspended while the tab is
+  // hidden, which could freeze the canvas entirely.
+  useLayoutEffect(() => {
+    draw();
+  }, [draw]);
 
   // Redraw whenever the element is resized (container size, sidebar toggle, tab switch).
   useEffect(() => {
@@ -546,18 +556,18 @@ export function MapCanvas({
       ) : null}
 
       <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-soft backdrop-blur">
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value / 1.3))}>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 transition-transform active:scale-90" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value / 1.3))}>
           <Minus className="size-3.5" />
         </Button>
         <span className="w-11 text-center text-[11px] tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value * 1.3))}>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 transition-transform active:scale-90" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value * 1.3))}>
           <Plus className="size-3.5" />
         </Button>
         <span className="mx-1 h-4 w-px bg-border" />
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0"
+          className="h-7 w-7 p-0 transition-transform active:scale-90"
           aria-label="Fit to view"
           onClick={() => {
             setZoom(1);
