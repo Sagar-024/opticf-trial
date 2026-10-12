@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, LayoutGrid, List, Search, Sparkles, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronRight, LayoutGrid, List, Maximize2, Minimize2, Search, Sparkles, X } from 'lucide-react';
 import type { MapModel, MapPractice } from '@/data/map-model';
 import { buildLenses, filterById, lensById, type LensId } from '@/map/lenses';
 import type { MapLevel } from '@/map/layout';
@@ -16,10 +17,19 @@ import { MapCanvas } from './map-canvas';
 import { PracticeSheet } from './practice-sheet';
 
 /**
- * The map surface: toolbar, lenses, legend, canvas, focus strip, list view and
- * inspector. Every number shown here comes from the map model, which is built
- * from the same pure functions the chat tools use.
+ * The map surface: toolbar, lenses, legend, canvas, focus strip and inspector.
+ *
+ * In focus mode the chrome animates away with framer-motion and the graph fills
+ * the screen, leaving only the controls needed to steer and to come back.
  */
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+const SLIDE = {
+  initial: { height: 0, opacity: 0 },
+  animate: { height: 'auto', opacity: 1 },
+  exit: { height: 0, opacity: 0 },
+  transition: { duration: 0.3, ease: EASE },
+};
 
 export interface MapIntent {
   /** Focus this region (null returns to the group view). */
@@ -37,8 +47,9 @@ export interface MapViewProps {
   onHighlightChange: (ids: string[]) => void;
   onAsk: (question: string) => void;
   intent?: MapIntent | null;
-  /** Called once the intent has been applied, so it is never replayed. */
   onIntentHandled?: () => void;
+  focus?: boolean;
+  onToggleFocus?: () => void;
 }
 
 function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId {
@@ -55,7 +66,16 @@ function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId
   return best[1] >= Math.ceil(set.length / 2) ? best[0] : 'sales';
 }
 
-export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, onIntentHandled }: MapViewProps) {
+export function MapView({
+  model,
+  highlighted,
+  onHighlightChange,
+  onAsk,
+  intent,
+  onIntentHandled,
+  focus = false,
+  onToggleFocus,
+}: MapViewProps) {
   const [lensId, setLensId] = useState<LensId>('region');
   const [region, setRegion] = useState<string | null>(null);
   const [filterId, setFilterId] = useState('all');
@@ -84,7 +104,7 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, 
   /** Matches within the current view, so the counter and the strip agree. */
   const matching = useMemo(() => visible.filter((practice) => filter.match(practice)), [visible, filter]);
 
-  const focus = useMemo(
+  const focus_top = useMemo(
     () => [...matching].sort((a, b) => b.attentionScore - a.attentionScore).slice(0, 5),
     [matching],
   );
@@ -130,6 +150,16 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intent?.nonce]);
 
+  // Escape leaves focus mode.
+  useEffect(() => {
+    if (!focus) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onToggleFocus?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focus, onToggleFocus]);
+
   function selectLens(next: LensId): void {
     setLensId(next);
     setFilterId('all');
@@ -144,131 +174,179 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Breadcrumb + counters */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-        <button
-          onClick={() => {
-            setRegion(null);
-            onHighlightChange([]);
-          }}
-          className="text-xs font-semibold text-foreground"
-        >
-          Northstar Group
-        </button>
-        {region ? (
+      {/* Breadcrumb + counters. In focus mode only the essentials remain. */}
+      <motion.div
+        layout
+        transition={{ duration: 0.3, ease: EASE }}
+        className={cn(
+          'flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4',
+          focus ? 'border-transparent bg-transparent py-1.5' : 'py-2.5',
+        )}
+      >
+        {!focus ? (
           <>
-            <ChevronRight className="size-3.5 text-muted-foreground" />
-            <button onClick={() => onHighlightChange([])} className="text-xs text-muted-foreground">
-              {region}
+            <button
+              onClick={() => {
+                setRegion(null);
+                onHighlightChange([]);
+              }}
+              className="text-xs font-semibold text-foreground"
+            >
+              Northstar Group
             </button>
+            {region ? (
+              <>
+                <ChevronRight className="size-3.5 text-muted-foreground" />
+                <button onClick={() => onHighlightChange([])} className="text-xs text-muted-foreground">
+                  {region}
+                </button>
+              </>
+            ) : null}
+            <Badge variant="outline" className="ml-1 text-[10px]">
+              {model.monthLabel}
+            </Badge>
           </>
         ) : null}
-        <Badge variant="outline" className="ml-1 text-[10px]">
-          {model.monthLabel}
-        </Badge>
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {matching.length} of {visible.length} matching
-          </span>
-          {highlighted.length > 0 ? (
-            <Badge className="gap-1 bg-coral text-white">
-              {highlighted.length} highlighted
-              <button onClick={() => onHighlightChange([])} aria-label="Clear highlight">
-                <X className="size-3" />
-              </button>
-            </Badge>
-          ) : null}
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {matching.length} of {visible.length} matching
+        </span>
+        {highlighted.length > 0 ? (
+          <Badge className="gap-1 bg-coral text-white">
+            {highlighted.length} highlighted
+            <button onClick={() => onHighlightChange([])} aria-label="Clear highlight">
+              <X className="size-3" />
+            </button>
+          </Badge>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                variant={showList ? 'secondary' : 'ghost'}
+                variant={focus ? 'secondary' : 'ghost'}
                 size="icon"
-                aria-label={showList ? 'Show map' : 'Show list view'}
-                onClick={() => setShowList((value) => !value)}
+                aria-label={focus ? 'Exit focus mode' : 'Focus mode'}
+                onClick={() => onToggleFocus?.()}
               >
-                {showList ? <LayoutGrid /> : <List />}
+                {focus ? <Minimize2 /> : <Maximize2 />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{showList ? 'Back to the map' : 'List view, keyboard and screen reader friendly'}</TooltipContent>
+            <TooltipContent>{focus ? 'Exit focus mode (Esc)' : 'Focus mode: full screen graph'}</TooltipContent>
           </Tooltip>
+          {!focus ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={showList ? 'secondary' : 'ghost'}
+                  size="icon"
+                  aria-label={showList ? 'Show map' : 'Show list view'}
+                  onClick={() => setShowList((value) => !value)}
+                >
+                  {showList ? <LayoutGrid /> : <List />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showList ? 'Back to the map' : 'List view, keyboard and screen reader friendly'}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
-      </div>
+      </motion.div>
 
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-        <Select value={lensId} onValueChange={(value) => selectLens(value as LensId)}>
-          <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Map lens">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {lenses.map((item) => (
-              <SelectItem key={item.id} value={item.id} className="text-xs">
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <AnimatePresence initial={false}>
+        {!focus ? (
+          <motion.div key="toolbar" {...SLIDE} className="shrink-0 overflow-hidden border-b border-border">
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+              <Select value={lensId} onValueChange={(value) => selectLens(value as LensId)}>
+                <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Map lens">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {lenses.map((item) => (
+                    <SelectItem key={item.id} value={item.id} className="text-xs">
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-        <Select value={region ?? 'all'} onValueChange={(value) => { setRegion(value === 'all' ? null : value); onHighlightChange([]); }}>
-          <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Filter by region">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="text-xs">All regions</SelectItem>
-            {model.regions.map((item) => (
-              <SelectItem key={item.name} value={item.name} className="text-xs">
-                {item.name} ({item.practiceCount})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              <Select
+                value={region ?? 'all'}
+                onValueChange={(value) => {
+                  setRegion(value === 'all' ? null : value);
+                  onHighlightChange([]);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Filter by region">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">All regions</SelectItem>
+                  {model.regions.map((item) => (
+                    <SelectItem key={item.name} value={item.name} className="text-xs">
+                      {item.name} ({item.practiceCount})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-        <div className="flex flex-wrap items-center gap-1">
-          {lens.filters.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setFilterId(item.id)}
-              className={cn(
-                'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-                filterId === item.id
-                  ? 'border-coral bg-coral/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-accent',
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {lens.filters.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setFilterId(item.id)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                      filterId === item.id
+                        ? 'border-coral bg-coral/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-accent',
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
 
-        <div className="relative ml-auto w-[190px]">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Find a practice"
-            className="h-8 pl-7 text-xs"
-            aria-label="Find a practice"
-          />
-        </div>
-      </div>
+              <div className="relative ml-auto w-[190px]">
+                <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Find a practice"
+                  className="h-8 pl-7 text-xs"
+                  aria-label="Find a practice"
+                />
+              </div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* Legend */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 py-2">
-        {lens.legend.map((entry) => (
-          <span key={entry.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="size-2 rounded-full" style={{ background: `oklch(var(--${entry.colorKey === 'coral' ? 'coral' : entry.colorKey}))` }} />
-            {entry.label}
-          </span>
-        ))}
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <Sparkles className="size-3 text-coral" /> {lens.question}
-        </span>
-      </div>
+      <AnimatePresence initial={false}>
+        {!focus ? (
+          <motion.div key="legend" {...SLIDE} className="shrink-0 overflow-hidden">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-2">
+              {lens.legend.map((entry) => (
+                <span key={entry.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ background: `oklch(var(--${entry.colorKey === 'coral' ? 'coral' : entry.colorKey}))` }}
+                  />
+                  {entry.label}
+                </span>
+              ))}
+              <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Sparkles className="size-3 text-coral" /> {lens.question}
+              </span>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* Canvas or list */}
       <div className="relative min-h-0 flex-1">
-        {showList ? (
+        {showList && !focus ? (
           <div className="h-full overflow-y-auto px-4 pb-4">
             <Table>
               <TableHeader>
@@ -309,71 +387,125 @@ export function MapView({ model, highlighted, onHighlightChange, onAsk, intent, 
             </Table>
           </div>
         ) : (
-          <MapCanvas
-            model={{ ...model, practices: visible }}
-            lens={lens}
-            level={level}
-            regionName={region}
-            highlighted={highlighted}
-            matches={matches}
-            selectedId={selectedId}
-            onSelect={selectPractice}
-            onDrillRegion={(next) => {
-              setRegion(next);
-              onHighlightChange([]);
-            }}
-            onReset={() => {
-              setRegion(null);
-              onHighlightChange([]);
-            }}
-          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.995 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.35, ease: EASE }}
+            className="h-full"
+          >
+            <MapCanvas
+              model={{ ...model, practices: visible }}
+              lens={lens}
+              level={level}
+              regionName={region}
+              highlighted={highlighted}
+              matches={matches}
+              selectedId={selectedId}
+              onSelect={selectPractice}
+              onDrillRegion={(next) => {
+                setRegion(next);
+                onHighlightChange([]);
+              }}
+              onReset={() => {
+                setRegion(null);
+                onHighlightChange([]);
+              }}
+            />
+          </motion.div>
         )}
 
         {visible.length === 0 ? (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="pointer-events-none absolute inset-0 grid place-items-center"
+          >
             <div className="pointer-events-auto rounded-lg border border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground shadow-soft">
               Nothing matches this filter.
               <div className="mt-2">
-                <Button size="sm" variant="outline" onClick={() => { setFilterId('all'); setQuery(''); onHighlightChange([]); }}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setFilterId('all');
+                    setQuery('');
+                    onHighlightChange([]);
+                  }}
+                >
                   Reset filters
                 </Button>
               </div>
             </div>
-          </div>
+          </motion.div>
         ) : null}
+
+        {/* In focus mode a compact lens switcher floats on the canvas. */}
+        <AnimatePresence>
+          {focus ? (
+            <motion.div
+              key="focus-controls"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: EASE }}
+              className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-1.5 py-1 shadow-soft backdrop-blur"
+            >
+              {lenses.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => selectLens(item.id)}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 text-[11px] transition-colors',
+                    lensId === item.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
-      {/* Focus strip: what to look at next */}
-      <div className="shrink-0 border-t border-border px-4 py-3">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="label-caps">Where to focus</span>
-          <span className="text-[10px] text-muted-foreground">top {focus.length} by attention score in {lens.label.toLowerCase()} view</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {focus.map((practice) => (
-            <button
-              key={practice.practiceId}
-              onClick={() => {
-                selectPractice(practice.practiceId);
-                onHighlightChange([practice.practiceId]);
-              }}
-              className={cn(
-                'min-w-[190px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
-                highlightSet.has(practice.practiceId) ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
-              )}
-            >
-              <p className="text-xs font-semibold">{practice.name}</p>
-              <p className="text-[10px] text-muted-foreground">{practice.region} · score {practice.attentionScore}/100</p>
-              <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
-                {practice.revenueDisplay} ({practice.revenueMoMDisplay})
-              </p>
-            </button>
-          ))}
-          {focus.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No practices need attention in this view.</p>
-          ) : null}
-        </div>
-      </div>
+      {/* Focus strip */}
+      <AnimatePresence initial={false}>
+        {!focus ? (
+          <motion.div key="strip" {...SLIDE} className="shrink-0 overflow-hidden border-t border-border">
+            <div className="px-4 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="label-caps">Where to focus</span>
+                <span className="text-[10px] text-muted-foreground">
+                  top {focus_top.length} by attention score in {lens.label.toLowerCase()} view
+                </span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {focus_top.map((practice) => (
+                  <button
+                    key={practice.practiceId}
+                    onClick={() => {
+                      selectPractice(practice.practiceId);
+                      onHighlightChange([practice.practiceId]);
+                    }}
+                    className={cn(
+                      'min-w-[190px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
+                      highlightSet.has(practice.practiceId) ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
+                    )}
+                  >
+                    <p className="text-xs font-semibold">{practice.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{practice.region} · score {practice.attentionScore}/100</p>
+                    <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                      {practice.revenueDisplay} ({practice.revenueMoMDisplay})
+                    </p>
+                  </button>
+                ))}
+                {focus_top.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No practices need attention in this view.</p>
+                ) : null}
+              </div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <PracticeSheet
         practice={selected}

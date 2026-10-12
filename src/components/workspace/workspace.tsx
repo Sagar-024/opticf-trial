@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
   CalendarDays,
@@ -153,6 +154,7 @@ export function Workspace({
   const [railOpen, setRailOpen] = useState(true);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [mapIntent, setMapIntent] = useState<MapIntent | null>(null);
+  const [mapFocus, setMapFocus] = useState(false);
 
   function openPracticeOnMap(practiceId: string): void {
     setHighlighted([practiceId]);
@@ -225,18 +227,19 @@ export function Workspace({
   }
 
   return (
-    <div
-      className="grid h-dvh overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
-      style={{ gridTemplateColumns: railOpen ? '220px minmax(0,1fr)' : '0px minmax(0,1fr)' }}
-    >
-      {/* Rail (closable) */}
-      <aside
+    <div className="flex h-dvh overflow-hidden">
+      {/* Rail (closable, and hidden in map focus mode) */}
+      <motion.aside
+        animate={{ width: railOpen && !mapFocus ? 220 : 0, opacity: railOpen && !mapFocus ? 1 : 0 }}
+        transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
         className={cn(
-          'flex flex-col overflow-hidden border-r border-border bg-rail px-4 py-6 transition-opacity duration-200',
-          railOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+          'flex shrink-0 flex-col overflow-hidden bg-rail',
+          railOpen && !mapFocus ? 'border-r border-border' : 'border-r-0',
         )}
-        aria-hidden={!railOpen}
+        aria-hidden={!railOpen || mapFocus}
       >
+        {/* Padding lives on an inner element so the rail can truly collapse to zero. */}
+        <div className="flex h-full flex-col px-4 py-6">
         <div className="mb-7 flex items-center gap-2 px-2 text-[22px] font-bold tracking-tight">
           <Sparkles className="size-5 text-coral" /> Optific<span className="text-coral">+</span>
         </div>
@@ -282,12 +285,18 @@ export function Workspace({
             <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
           </div>
         </div>
-      </aside>
+        </div>
+      </motion.aside>
 
       {/* Main */}
       <main className="flex min-h-0 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4">
-          <div className="flex items-center gap-2">
+        <motion.header
+          animate={{ height: mapFocus ? 0 : 56, opacity: mapFocus ? 0 : 1 }}
+          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          className={cn('shrink-0 overflow-hidden bg-background/80', mapFocus ? 'border-b-0' : 'border-b border-border')}
+          aria-hidden={mapFocus}
+        >
+          <div className="flex h-14 items-center justify-between px-4">
             <Button
               variant="ghost"
               size="icon"
@@ -316,7 +325,7 @@ export function Workspace({
             <ThemeToggle />
             <Badge variant="outline" className="text-[10px]">Prototype</Badge>
           </div>
-        </header>
+        </motion.header>
 
         <div className="min-h-0 flex-1">
           {dest === 'automations' ? (
@@ -373,6 +382,8 @@ export function Workspace({
                 onAsk={askFromMap}
                 intent={mapIntent}
                 onIntentHandled={() => setMapIntent(null)}
+                focus={mapFocus}
+                onToggleFocus={() => setMapFocus((value) => !value)}
               />
             </TabsContent>
 
@@ -392,10 +403,17 @@ export function Workspace({
         </div>
 
         {/* status bar */}
-        <div className="flex h-9 shrink-0 items-center gap-4 border-t border-border px-6 text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5"><TrendingDown className="size-3.5 text-coral" /> {practiceCount} practices connected</span>
-          <span>Live AI · Fictional data · {latestMonth}</span>
-        </div>
+        <motion.div
+          animate={{ height: mapFocus ? 0 : 36, opacity: mapFocus ? 0 : 1 }}
+          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          className={cn('shrink-0 overflow-hidden', mapFocus ? 'border-t-0' : 'border-t border-border')}
+          aria-hidden={mapFocus}
+        >
+          <div className="flex h-9 items-center gap-4 px-6 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5"><TrendingDown className="size-3.5 text-coral" /> {practiceCount} practices connected</span>
+            <span>Live AI · Fictional data · {latestMonth}</span>
+          </div>
+        </motion.div>
       </main>
     </div>
   );
