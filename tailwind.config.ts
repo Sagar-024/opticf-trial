@@ -68,6 +68,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
       },
       boxShadow: {
         soft: '0 8px 32px rgba(26, 36, 56, 0.07)',

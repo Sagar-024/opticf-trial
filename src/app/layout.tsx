@@ -1,23 +1,25 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import './globals.css';
+
+/**
+ * Fonts: Inter and Geist only.
+ * Inter is self-hosted by Next at build time (no runtime request, no flash of
+ * fallback). Geist Sans and Geist Mono come from the local `geist` package,
+ * also self-hosted. No other named families are used anywhere.
+ */
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Optific+ · Your organisation, connected',
-  description: 'A shared workspace for an optician group - Chat, BI, Map, Brain and Today.',
+  description: 'A shared workspace for an optician group: Chat, BI, Map, Brain and Today.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        {/* Inter is loaded at runtime so builds never depend on a font fetch. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`${inter.variable} ${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-sans">{children}</body>
     </html>
   );
