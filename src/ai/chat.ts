@@ -6,6 +6,7 @@ import { getTool, llmToolDefinitions, type ToolContext } from './tools';
 import { sanitizeToolInput } from './validate';
 import { mergeBrainDocuments } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
+import { checkOutput, flagReasonFrom, looksLikeDataQuestion } from './output-guard';
 import { logChat } from './log';
 import {
   createLlmClient,
@@ -258,8 +259,31 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     text = final.text;
   }
 
-  // Guard: every number in the prose must have come from a tool result, from the
-  // brief, or from the question the user asked (they may quote their own numbers).
+  // ── Guarding ───────────────────────────────────────────────────────────────
+  // Order matters: grounding first (it may add tool results), then the numbers
+  // check against everything the tools returned, then the output checks.
+
+  // A data question answered with no tool call at all is not grounded. Give the
+  // model one chance to go and look before telling the user to be careful.
+  const requiresGrounding = looksLikeDataQuestion(lastUser?.content ?? '', dataset);
+  if (requiresGrounding && outputs.length === 0) {
+    messages.push({ role: 'assistant', content: text });
+    messages.push({
+      role: 'user',
+      content:
+        'That answer did not use any of the group data. Use the tools to look the figures up, then answer. If the data does not cover it, say so plainly.',
+    });
+    try {
+      const grounded = await runGroundingRetry(client, model, messages, dataset, toolContext, handlers, input.signal);
+      if (grounded.text) text = grounded.text;
+      outputs.push(...grounded.outputs);
+      toolCalls.push(...grounded.toolCalls);
+    } catch {
+      // Leave the original text; it gets flagged below.
+    }
+  }
+
+  // Every number must come from a tool result, the brief, or the user's question.
   const allowed = allowedSet(outputs, [
     system,
     latest,
@@ -267,7 +291,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     ...input.messages.filter((message) => message.role === 'user').map((message) => message.content),
   ]);
   let unsupported = findUnsupportedNumbers(text, allowed);
-  let flagged = false;
+  let flagged = unsupported.length > 0;
 
   if (unsupported.length > 0) {
     messages.push({ role: 'assistant', content: text });
@@ -285,6 +309,16 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     unsupported = findUnsupportedNumbers(text, allowed);
     flagged = unsupported.length > 0;
   }
+
+  // Output guards: grounding, instruction leaks, secrets, invented entities.
+  const outputCheck = checkOutput(sanitize(text), {
+    toolCallCount: outputs.length,
+    requiresGrounding,
+    dataset,
+  });
+  text = outputCheck.text;
+  const flagReason = flagReasonFrom([...(unsupported.length > 0 ? ['numbers'] : []), ...outputCheck.notes]);
+  if (flagReason) flagged = true;
 
   const sources = [...new Set(outputs.flatMap((output) => output.sources ?? []))];
 
@@ -305,6 +339,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     context,
     sources,
     flagged,
+    flagReason,
     toolCalls,
     durationMs: Date.now() - started,
     iterations,
@@ -315,4 +350,74 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 /** Non-streaming convenience wrapper (used by tests and scripts). */
 export async function runChat(input: RunChatInput): Promise<RunChatResult> {
   return runChatStream(input, {});
+}
+
+/**
+ * One short tool loop used when a data question came back with no tool calls.
+ * Same execution path as the main loop, but bounded to three rounds.
+ */
+async function runGroundingRetry(
+  client: LlmClient,
+  model: string,
+  messages: LlmMessage[],
+  dataset: ReturnType<typeof getDataset>,
+  toolContext: ToolContext,
+  handlers: RunChatHandlers,
+  signal?: AbortSignal,
+): Promise<{ text: string; outputs: ToolOutput[]; toolCalls: ToolCallRecord[] }> {
+  const outputs: ToolOutput[] = [];
+  const toolCalls: ToolCallRecord[] = [];
+  let text = '';
+
+  for (let step = 0; step < 3; step += 1) {
+    const response = await client.stream({ model, messages, tools: llmToolDefinitions(), signal }, (delta) => {
+      text += delta;
+      handlers.onDelta?.(delta);
+    });
+
+    if (response.toolCalls.length === 0) {
+      if (!text) text = response.text;
+      break;
+    }
+
+    messages.push({
+      role: 'assistant',
+      content: response.text || null,
+      tool_calls: response.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments },
+      })),
+    });
+
+    for (const call of response.toolCalls) {
+      const parsed = parseArgs(call.arguments);
+      const tool = getTool(call.name);
+      const output: ToolOutput = parsed.ok && tool
+        ? tool.run(dataset, sanitizeToolInput(parsed.value), toolContext)
+        : { summary: `Tool ${call.name} could not be run.`, widgets: [], numbers: [] };
+
+      outputs.push(output);
+      toolCalls.push({
+        name: call.name,
+        input: parsed.ok ? parsed.value : call.arguments,
+        widgetTypes: output.widgets.map((widget) => widget.type),
+        mapHighlight: output.mapHighlight ?? [],
+      });
+      handlers.onTool?.(toolCalls[toolCalls.length - 1]);
+      handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((entry) => entry.widgets)));
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: call.id,
+        content: JSON.stringify({
+          summary: output.summary,
+          mapHighlight: output.mapHighlight ?? [],
+          widgets: output.widgets.map((widget) => ({ type: widget.type, id: widget.id, title: widget.title })),
+        }),
+      });
+    }
+  }
+
+  return { text, outputs, toolCalls };
 }

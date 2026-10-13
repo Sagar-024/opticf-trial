@@ -70,6 +70,7 @@ interface Turn {
   mapHighlight: string[];
   sources: string[];
   flagged?: boolean;
+  flagReason?: 'leak' | 'ungrounded' | 'numbers' | null;
   stopped?: boolean;
   tools?: string[];
 }
@@ -86,6 +87,7 @@ type StreamEvent =
       context: ChatContext;
       sources: string[];
       flagged: boolean;
+      flagReason?: 'leak' | 'ungrounded' | 'numbers' | null;
     }
   | { type: 'error'; message: string; status?: number };
 
@@ -228,6 +230,7 @@ export function ChatView({
                 mapHighlight: event.mapHighlight,
                 sources: event.sources,
                 flagged: event.flagged,
+                flagReason: event.flagReason ?? null,
                 tools: draft.tools,
               });
             } else if (event.type === 'error') {
@@ -421,7 +424,11 @@ export function ChatView({
                     {turn.flagged ? (
                       <div className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
                         <TriangleAlert className="size-3.5" />
-                        Some numbers could not be traced back to the data. Treat this answer with care.
+                        {turn.flagReason === 'leak'
+                          ? 'Part of this answer mentioned internal instructions or credentials and was removed. Please ask again.'
+                          : turn.flagReason === 'ungrounded'
+                            ? 'This answer was not grounded in the group data. Treat it with care.'
+                            : 'Some numbers could not be traced back to the data. Treat this answer with care.'}
                       </div>
                     ) : null}
 

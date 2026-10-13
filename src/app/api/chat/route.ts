@@ -107,6 +107,7 @@ export async function POST(request: Request): Promise<Response> {
           context: result.context,
           sources: result.sources,
           flagged: result.flagged ?? false,
+          flagReason: result.flagReason ?? null,
           durationMs: result.durationMs,
         });
       } catch (error) {

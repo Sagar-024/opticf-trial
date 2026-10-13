@@ -70,8 +70,10 @@ export interface ChatResponse {
   context: ChatContext;
   /** Human-readable data sources behind the answer. */
   sources: string[];
-  /** True when the answer still contained numbers not seen in tool results. */
+  /** True when the answer failed one of the guards. */
   flagged?: boolean;
+  /** Which guard fired, so the interface can say something specific. */
+  flagReason?: 'leak' | 'ungrounded' | 'numbers';
 }
 
 /** Internal: what a tool returns to the server (never sent raw to the model). */
