@@ -91,6 +91,9 @@ export function MapCanvas({
   const [hovered, setHovered] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; title: string; lines: string[] } | null>(null);
   const [keyboardFocus, setKeyboardFocus] = useState(false);
+  /** Bumped when the canvas genuinely changes size, so a fly-to can re-apply. */
+  const [frame, setFrame] = useState(0);
+  const lastSizeRef = useRef({ w: 0, h: 0 });
 
   const byId = useMemo(() => new Map(model.practices.map((p) => [p.practiceId, p])), [model.practices]);
 
@@ -470,10 +473,22 @@ export function MapCanvas({
   }, [draw]);
 
   // Redraw whenever the element is resized (container size, sidebar toggle, tab switch).
+  // The first draw can happen before the shell has settled, so a size change
+  // also asks the fly-to to re-apply: otherwise a highlight opened from Today
+  // can be centred against a transform that no longer matches the canvas.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const observer = new ResizeObserver(() => invalidate());
+    const observer = new ResizeObserver(() => {
+      const rect = wrap.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (w !== lastSizeRef.current.w || h !== lastSizeRef.current.h) {
+        lastSizeRef.current = { w, h };
+        setFrame((value) => value + 1);
+      }
+      invalidate();
+    });
     observer.observe(wrap);
     return () => observer.disconnect();
   }, [invalidate]);
@@ -628,9 +643,9 @@ export function MapCanvas({
     );
     setZoom(flyTo.zoom);
     setPan({ x: flyTo.panX, y: flyTo.panY });
-    // Only when the highlight set itself changes.
+    // When the highlight set changes, or the canvas has settled into a new size.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [[...highlightSet].join(',')]);
+  }, [[...highlightSet].join(','), frame]);
 
   const label =
     level === 'region' && regionName
