@@ -168,7 +168,14 @@ export function MapCanvas({
     context.clearRect(0, 0, width, height);
 
     // Fit is computed here, from the real DOM size, so React state cannot lag it.
-    const fit = computeFit(layout.bounds, { width, height, ...VIEWPORT_PADDING }, FIT_PADDING);
+    // A drilled region is capped, otherwise ten practices balloon into discs on a
+    // large screen. The full group has enough spread that no cap is needed.
+    const fit = computeFit(
+      layout.bounds,
+      { width, height, ...VIEWPORT_PADDING },
+      FIT_PADDING,
+      level === 'region' ? 1.15 : undefined,
+    );
     transformRef.current = { scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, width, height };
 
     const screen = (node: LayoutNode) => ({
@@ -186,26 +193,29 @@ export function MapCanvas({
 
     // ── Region territories ──
     // A soft neutral disc under each cluster. This is what turns a cloud of
-    // dots into readable places, and it costs one arc per region.
-    const grouped = new Map<number, Array<{ x: number; y: number; r: number }>>();
-    for (const node of layout.nodes) {
-      const point = nodePoints.get(node.id);
-      if (!point) continue;
-      const list = grouped.get(node.regionIndex);
-      if (list) list.push(point);
-      else grouped.set(node.regionIndex, [point]);
+    // dots into readable places. In a drilled region there is only one cluster,
+    // so the disc would just be a wash over the whole canvas: skipped there.
+    if (level !== 'region') {
+      const grouped = new Map<number, Array<{ x: number; y: number; r: number }>>();
+      for (const node of layout.nodes) {
+        const point = nodePoints.get(node.id);
+        if (!point) continue;
+        const list = grouped.get(node.regionIndex);
+        if (list) list.push(point);
+        else grouped.set(node.regionIndex, [point]);
+      }
+      for (const points of grouped.values()) {
+        const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+        const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+        const spread = Math.max(...points.map((point) => Math.hypot(point.x - cx, point.y - cy) + point.r)) + 16;
+        context.globalAlpha = highlightActive ? 0.20 : 0.42;
+        context.beginPath();
+        context.arc(cx, cy, spread, 0, Math.PI * 2);
+        context.fillStyle = palette.border;
+        context.fill();
+      }
+      context.globalAlpha = 1;
     }
-    for (const points of grouped.values()) {
-      const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
-      const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
-      const spread = Math.max(...points.map((point) => Math.hypot(point.x - cx, point.y - cy) + point.r)) + 16;
-      context.globalAlpha = highlightActive ? 0.20 : 0.42;
-      context.beginPath();
-      context.arc(cx, cy, spread, 0, Math.PI * 2);
-      context.fillStyle = palette.border;
-      context.fill();
-    }
-    context.globalAlpha = 1;
 
     // ── Edges ──
     context.lineWidth = 0.7;
@@ -252,11 +262,9 @@ export function MapCanvas({
       let alpha = visual.opacity;
       if (!inFilter) alpha = Math.min(alpha, palette.dimOpacity);
       if (!inHighlight) alpha = Math.min(alpha, palette.dimOpacity);
-      // Never let a node become an unreadable speck. In a drilled region there
-      // are only a handful of nodes and the fit scale is large, so the radius is
-      // scaled down to keep the cluster airy instead of ballooning into blobs.
-      const levelFactor = level === 'region' ? 0.6 : 1;
-      const radius = Math.max(3.5, point.r * visual.sizeFactor * levelFactor);
+      // Never let a node become an unreadable speck. The fit cap keeps a
+      // drilled region from blowing the radius up on a large screen.
+      const radius = Math.max(3.5, point.r * visual.sizeFactor);
       nodeBoxes.push({ x: point.x - radius, y: point.y - radius, w: radius * 2, h: radius * 2 });
 
       context.globalAlpha = alpha;

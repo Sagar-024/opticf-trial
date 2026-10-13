@@ -380,15 +380,19 @@ export interface Fit {
  * Fit the graph into the visible area, leaving room for the toolbar and panel.
  * Uses the bounding box centre as the anchor, so the result is symmetric and
  * survives a single-node graph (where the box has zero size).
+ *
+ * `maxScale` caps how far the graph may be enlarged. A drilled region holds only
+ * a handful of practices, so without a cap the fit turns them into huge discs.
  */
-export function computeFit(bounds: Bounds, viewport: Viewport, padding = 40): Fit {
+export function computeFit(bounds: Bounds, viewport: Viewport, padding = 40, maxScale?: number): Fit {
   const width = Math.max(1, bounds.maxX - bounds.minX);
   const height = Math.max(1, bounds.maxY - bounds.minY);
 
   const availableWidth = Math.max(40, viewport.width - viewport.left - viewport.right - padding * 2);
   const availableHeight = Math.max(40, viewport.height - viewport.top - viewport.bottom - padding * 2);
 
-  const scale = Math.max(0.05, Math.min(availableWidth / width, availableHeight / height));
+  const fitted = Math.max(0.05, Math.min(availableWidth / width, availableHeight / height));
+  const scale = maxScale !== undefined ? Math.min(fitted, maxScale) : fitted;
 
   const focusX = viewport.left + padding + availableWidth / 2;
   const focusY = viewport.top + padding + availableHeight / 2;

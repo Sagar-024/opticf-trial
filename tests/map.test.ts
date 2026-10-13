@@ -103,6 +103,22 @@ describe('fit to view', () => {
     expect(Number.isFinite(fit.offsetX)).toBe(true);
     expect(fit.scale).toBeGreaterThan(0);
   });
+
+  it('caps the scale when a maximum is given, keeping the graph centred', () => {
+    const bounds = { minX: -50, maxX: 50, minY: -50, maxY: 50 };
+    const viewport = { width: 2000, height: 1200, top: 0, right: 0, bottom: 0, left: 0 };
+    const fitted = computeFit(bounds, viewport);
+    const capped = computeFit(bounds, viewport, 40, 1.15);
+    expect(fitted.scale).toBeGreaterThan(1.15);
+    expect(capped.scale).toBe(1.15);
+
+    const centreX = 0;
+    const centreY = 0;
+    const screenX = capped.offsetX + centreX * capped.scale;
+    const screenY = capped.offsetY + centreY * capped.scale;
+    expect(Math.abs(screenX - viewport.width / 2)).toBeLessThan(1);
+    expect(Math.abs(screenY - viewport.height / 2)).toBeLessThan(1);
+  });
 });
 
 describe('fly to a highlighted set', () => {
