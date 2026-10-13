@@ -379,6 +379,7 @@ export function Workspace({
                   {today.items.map((item, index) => (
                     <motion.div
                       key={item.id}
+                      data-anim
                       initial={{ opacity: 0, y: 18 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: 0.06 * index, ease: EASE }}
