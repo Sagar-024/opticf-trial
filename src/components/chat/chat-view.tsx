@@ -44,7 +44,7 @@ const SUGGESTIONS = [
  * blends to a wash. Painting the same colour underneath keeps the button a
  * true, solid orange while the dither texture and bloom sit on top.
  */
-const sendFill = rgb(PALETTE.burnt.fill);
+const sendFill = rgb(PALETTE.brand.fill);
 
 
 interface Turn {
@@ -460,16 +460,17 @@ export function ChatView({
               />
               <DitherButton
                 type={loading ? 'button' : 'submit'}
-                color="burnt"
+                color="brand"
                 variant="solid"
                 bloom="aura"
                 onClick={loading ? stop : undefined}
                 disabled={!loading && !input.trim()}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
-                /* Solid base in the same colour, white icon, and flex centring
-                   so the arrow sits dead centre of the circle. */
+                /* Solid base in the same colour as the dither, white arrow dead
+                   centre. The icon is dark ink because on a fully saturated
+                   orange that is the only pairing with real contrast. */
                 style={{ backgroundColor: sendFill }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-white"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-[#1a2438]"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
               </DitherButton>

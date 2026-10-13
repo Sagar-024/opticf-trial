@@ -7,6 +7,7 @@ export type DitherColor =
   | "pink"
   | "orange"
   | "burnt"
+  | "brand"
   | "red"
   | "grey"
 
@@ -35,6 +36,14 @@ export const PALETTE: Record<DitherColor, Seed> = {
     fill: [202, 76, 26],
     line: [222, 124, 84],
     star: [238, 172, 142],
+  },
+  // Optific: pure orange (the CSS `orange`, #FFA500), fully saturated with no
+  // blue at all. Kept alongside `burnt` so the send button colour is one word
+  // to switch. Local addition: keep it when updating the kit.
+  brand: {
+    fill: [255, 165, 0],
+    line: [255, 196, 92],
+    star: [255, 220, 160],
   },
   red: { fill: [240, 70, 70], line: [255, 150, 140], star: [255, 195, 185] },
   // No-data: a muted grey so empty metrics read as "nothing here".
