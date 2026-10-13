@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion, type Variants } from 'framer-motion';
+import { Fragment, useEffect, useState } from 'react';
+import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import { forceVisibleIfStuck } from '@/lib/anim';
 import {
   ArrowRight,
@@ -46,6 +46,41 @@ const SECONDARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 /**
+ * Word wave: the Today headline and its support line arrive as one wave of ink,
+ * each word rising out of a soft blur a beat after the one before it. Total
+ * delays stay under the 800ms safety sweep. Reduced motion renders the text
+ * plainly, and `data-anim` lets the freeze safety net rescue words if frames
+ * stop mid arrival.
+ */
+function WaveText({
+  text,
+  className,
+  delay = 0,
+  step = 28,
+}: {
+  text: string;
+  className?: string;
+  delay?: number;
+  step?: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  const words = text.split(' ');
+  if (reduceMotion) return <span className={className}>{text}</span>;
+  return (
+    <span className={className}>
+      {words.map((word, index) => (
+        <Fragment key={`${index}-${word}`}>
+          {index > 0 ? ' ' : null}
+          <span data-anim className="wave-word" style={{ animationDelay: `${delay + index * step}ms` }}>
+            {word}
+          </span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/**
  * Rail entrance: the logo leads, then the org block, then each nav item and the
  * profile follow a beat later. Replays whenever the rail reopens.
  */
@@ -76,7 +111,7 @@ function PriorityCard({
   };
 
   return (
-    <Card className="shadow-panel">
+    <Card className="surface-card shadow-none">
       <CardContent className="p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -88,10 +123,10 @@ function PriorityCard({
           <Badge variant="outline" className="capitalize">{item.issue.replace(/-/g, ' ')}</Badge>
         </div>
 
-        <h3 className="mt-3 text-base font-semibold">{item.title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{item.summary}</p>
+        <h3 className="mt-3 text-base font-semibold text-pretty">{item.title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground text-pretty">{item.summary}</p>
 
-        <div className="mt-4 flex items-baseline gap-2 rounded-lg bg-secondary/60 px-3 py-2">
+        <div className="surface-well mt-4 flex items-baseline gap-2 rounded-lg bg-secondary/60 px-3 py-2">
           <span className="label-caps">{item.metric.label}</span>
           <span className="text-lg font-semibold tabular-nums">{item.metric.value}</span>
           <span className="text-xs text-muted-foreground">{item.metric.comparison}</span>
@@ -370,19 +405,24 @@ export function Workspace({
             <ScrollArea className="h-full">
               <div className="mx-auto max-w-4xl px-8 py-8">
                 <p className="label-caps">Today</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight">What should I focus on today?</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {today.items.length} priorities for {today.monthLabel}, across {practiceCount} practices and {regionCount} regions.
-                  Every figure comes from the data layer.
+                <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight">
+                  <WaveText text="What should I focus on today?" />
+                </h1>
+                <p className="mt-1 max-w-[62ch] text-pretty text-sm text-muted-foreground">
+                  <WaveText
+                    text={`${today.items.length} priorities for ${today.monthLabel}, across ${practiceCount} practices and ${regionCount} regions. Every figure comes from the data layer.`}
+                    delay={160}
+                    step={11}
+                  />
                 </p>
                 <div className="mt-6 grid grid-cols-1 gap-4">
                   {today.items.map((item, index) => (
                     <motion.div
                       key={item.id}
                       data-anim
-                      initial={{ opacity: 0, y: 18 }}
+                      initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: 0.06 * index, ease: EASE }}
+                      transition={{ duration: 0.46, delay: 0.05 * index, ease: EASE }}
                     >
                       <PriorityCard
                         item={item}

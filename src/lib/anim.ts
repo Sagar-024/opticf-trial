@@ -7,7 +7,8 @@
  * be left invisible if the page loaded or rendered while hidden.
  *
  * This forces anything still hidden to its final state, so content is never
- * lost to a paused animation. Mark animated wrappers with `data-anim`.
+ * lost to a paused animation. Mark animated wrappers with `data-anim`. A
+ * running CSS animation outranks inline styles, so it is cleared as well.
  */
 export function forceVisibleIfStuck(root: ParentNode | null): number {
   if (!root) return 0;
@@ -18,6 +19,8 @@ export function forceVisibleIfStuck(root: ParentNode | null): number {
     if (Number(styles.opacity) < 0.9) {
       element.style.opacity = '1';
       element.style.transform = 'none';
+      element.style.animation = 'none';
+      element.style.filter = 'none';
       fixed += 1;
     }
   });

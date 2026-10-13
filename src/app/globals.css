@@ -65,6 +65,13 @@
     --chart-4: 0.682 0.076 76.28;
     --chart-5: 0.261 0.040 263.50;
 
+    /* Depth: border led, a lit top edge, and two short shadows. No wide halo,
+       so a card never reads as a floating ghost. */
+    --edge-highlight: inset 0 1px 0 oklch(1 0 0 / 0.75);
+    --lift-1: 0 1px 1px oklch(0.261 0.040 263.50 / 0.05), 0 3px 6px -3px oklch(0.261 0.040 263.50 / 0.09);
+    --lift-2: 0 1px 1px oklch(0.261 0.040 263.50 / 0.07), 0 7px 14px -7px oklch(0.261 0.040 263.50 / 0.16);
+    --well: inset 0 1px 2px oklch(0.261 0.040 263.50 / 0.07);
+
     --radius: 0.75rem;
     color-scheme: light;
   }
@@ -116,6 +123,12 @@
     --chart-4: 0.758 0.095 75.03;
     --chart-5: 0.860 0.019 255.54;
 
+    /* Depth in dark: separation comes from the edge, shadows stay deep. */
+    --edge-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
+    --lift-1: 0 1px 1px oklch(0 0 0 / 0.40), 0 3px 8px -3px oklch(0 0 0 / 0.50);
+    --lift-2: 0 1px 1px oklch(0 0 0 / 0.45), 0 8px 16px -8px oklch(0 0 0 / 0.60);
+    --well: inset 0 1px 2px oklch(0 0 0 / 0.45);
+
     color-scheme: dark;
   }
 
@@ -127,6 +140,11 @@
     @apply bg-background text-foreground;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Browser surfaces carry the palette too. */
+  ::selection {
+    background: oklch(var(--coral) / 0.28);
   }
 }
 
@@ -148,5 +166,54 @@
 
   .anim-ink {
     animation: ink-settle 240ms ease-out both;
+  }
+
+  /*
+   * Depth for raised surfaces: border led, a lit top edge, two short shadows.
+   * Hover raises it one step. Total entrance budget under 800ms, because the
+   * freeze safety net sweeps at 800ms and must never catch a healthy animation
+   * mid flight.
+   */
+
+  .surface-card {
+    box-shadow: var(--edge-highlight), var(--lift-1);
+    transition:
+      box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .surface-card:hover {
+    border-color: oklch(var(--ink) / 0.16);
+    box-shadow: var(--edge-highlight), var(--lift-2);
+    transform: translateY(-1px);
+  }
+
+  /* A recessed area, for facts that sit inside a raised card. */
+  .surface-well {
+    box-shadow: var(--well);
+  }
+
+  /*
+   * The Today page reads as ink: each word rises out of a soft blur a beat
+   * after the one before it, so the text arrives as one wave. Fill mode holds
+   * the start frame until the word's turn, `data-anim` lets the freeze safety
+   * net rescue words if frames stop, and reduced motion renders them plain.
+   */
+  @keyframes wave-word {
+    0% { opacity: 0; transform: translateY(0.55em) scale(0.985); filter: blur(7px); }
+    60% { filter: blur(0); }
+    100% { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+
+  .wave-word {
+    display: inline-block;
+    animation: wave-word 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wave-word { animation: none; }
+    .surface-card { transition: none; }
+    .surface-card:hover { transform: none; }
   }
 }
