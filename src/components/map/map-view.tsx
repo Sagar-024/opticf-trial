@@ -133,12 +133,14 @@ export function MapView({
     window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
   }, [lensId, region, filterId, selectedId]);
 
-  // A chat highlight picks the lens that explains it best.
+  // A chat highlight picks the lens that explains it best and brings the chain
+  // of context into view. A practice that is part of the new highlight keeps its
+  // selection, so clicking a Where to focus card does not close its own sheet.
   useEffect(() => {
     if (highlighted.length === 0) return;
     setLensId(inferLensFromHighlight(model.practices, highlighted));
     setFilterId('all');
-    setSelectedId(null);
+    setSelectedId((current) => (current && highlighted.includes(current) ? current : null));
     setRegion(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlighted.join(',')]);

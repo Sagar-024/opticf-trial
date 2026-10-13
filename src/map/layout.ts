@@ -403,6 +403,44 @@ export function computeFit(bounds: Bounds, viewport: Viewport, padding = 40): Fi
   };
 }
 
+export interface FlyTo {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
+/**
+ * Where to move the view so a highlighted set lands centred.
+ *
+ * The resting transform (`computeFit`) maps graph coordinates to the canvas:
+ * `screen = offset + graph * scale * zoom + pan`. The pan must therefore be
+ * solved against the resting transform, never against the subset's own fit.
+ */
+export function computeFlyTo(
+  bounds: Bounds,
+  current: { scale: number; offsetX: number; offsetY: number; width: number; height: number },
+  viewport: Omit<Viewport, 'width' | 'height'>,
+  options: { padding?: number; minZoom?: number; maxZoom?: number } = {},
+): FlyTo {
+  const padding = options.padding ?? 120;
+  const minZoom = options.minZoom ?? 0.5;
+  const maxZoom = options.maxZoom ?? 5;
+
+  const subsetFit = computeFit(bounds, { width: current.width, height: current.height, ...viewport }, padding);
+  const zoom = Math.max(minZoom, Math.min(maxZoom, subsetFit.scale / Math.max(0.0001, current.scale)));
+
+  const centreX = (bounds.minX + bounds.maxX) / 2;
+  const centreY = (bounds.minY + bounds.maxY) / 2;
+  const focusX = current.width / 2 + (viewport.left - viewport.right) / 2;
+  const focusY = current.height / 2 + (viewport.top - viewport.bottom) / 2;
+
+  return {
+    zoom,
+    panX: focusX - current.offsetX - centreX * current.scale * zoom,
+    panY: focusY - current.offsetY - centreY * current.scale * zoom,
+  };
+}
+
 /** Nearest node to a screen point, or null when nothing is close enough. */
 export function nearestNode(
   nodes: LayoutNode[],

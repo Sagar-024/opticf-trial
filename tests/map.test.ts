@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boundsOfSubset, computeFit, computeLayout, nearestNode, type LayoutItem } from '../src/map/layout';
+import { boundsOfSubset, computeFit, computeFlyTo, computeLayout, nearestNode, type LayoutItem } from '../src/map/layout';
 import { buildLenses, filterById, lensById, tooltipLines } from '../src/map/lenses';
 import { buildMapModel, mentor_portfolios } from '../src/data/map-model';
 import { query_metrics } from '../src/data/metrics';
@@ -105,8 +105,41 @@ describe('fit to view', () => {
   });
 });
 
-describe('hit testing', () => {
-  it('finds the nearest node and returns null when far away', () => {
+describe('fly to a highlighted set', () => {
+  const viewport = { top: 14, right: 20, bottom: 56, left: 20 };
+
+  it('centres the highlighted practice under the resting transform', () => {
+    const bounds = { minX: 100, maxX: 120, minY: -50, maxY: -30 };
+    const current = { scale: 0.5, offsetX: 300, offsetY: 150, width: 800, height: 500 };
+    const flyTo = computeFlyTo(bounds, current, viewport);
+
+    const centreX = (bounds.minX + bounds.maxX) / 2;
+    const centreY = (bounds.minY + bounds.maxY) / 2;
+    const screenX = current.offsetX + centreX * current.scale * flyTo.zoom + flyTo.panX;
+    const screenY = current.offsetY + centreY * current.scale * flyTo.zoom + flyTo.panY;
+    const focusX = current.width / 2 + (viewport.left - viewport.right) / 2;
+    const focusY = current.height / 2 + (viewport.top - viewport.bottom) / 2;
+
+    expect(Math.abs(screenX - focusX)).toBeLessThan(0.001);
+    expect(Math.abs(screenY - focusY)).toBeLessThan(0.001);
+  });
+
+  it('zooms in harder for a tighter set, inside the limits', () => {
+    const current = { scale: 0.5, offsetX: 0, offsetY: 0, width: 800, height: 500 };
+    const wide = computeFlyTo({ minX: -100, maxX: 100, minY: -100, maxY: 100 }, current, viewport);
+    const tight = computeFlyTo({ minX: -10, maxX: 10, minY: -10, maxY: 10 }, current, viewport);
+    expect(tight.zoom).toBeGreaterThan(wide.zoom);
+    expect(tight.zoom).toBeLessThanOrEqual(5);
+  });
+
+  it('caps a single practice so its region stays in view', () => {
+    const current = { scale: 0.4, offsetX: 0, offsetY: 0, width: 800, height: 500 };
+    const flyTo = computeFlyTo({ minX: 0, maxX: 2, minY: 0, maxY: 2 }, current, viewport, { maxZoom: 2.5 });
+    expect(flyTo.zoom).toBe(2.5);
+  });
+});
+
+describe('hit testing', () => {  it('finds the nearest node and returns null when far away', () => {
     const layout = computeLayout('group', null, items);
     const target = layout.nodes[0];
     const project = (node: typeof target) => ({ x: node.x * 2 + 100, y: node.y * 2 + 100, r: node.r });

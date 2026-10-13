@@ -6,6 +6,7 @@ import type { MapPractice, MapModel } from '@/data/map-model';
 import {
   boundsOfSubset,
   computeFit,
+  computeFlyTo,
   computeLayout,
   nearestNode,
   type Bounds,
@@ -581,30 +582,29 @@ export function MapCanvas({
     return () => canvas.removeEventListener('wheel', onWheel);
   }, []);
 
-  // ── Fly to a chat highlight ───────────────────────────────────────────────
+  // ── Fly to a highlighted set (a chat answer, or a Where to focus card) ────
   useEffect(() => {
     if (highlightSet.size === 0) {
       setZoom(1);
       setPan({ x: 0, y: 0 });
       return;
     }
-    const { scale, width, height } = transformRef.current;
+    const { scale, offsetX, offsetY, width, height } = transformRef.current;
     if (width === 0 || height === 0) return;
     const bounds: Bounds | null = boundsOfSubset(layout.nodes, [...highlightSet]);
     if (!bounds) return;
 
-    const subsetFit = computeFit(bounds, { width, height, ...VIEWPORT_PADDING }, 120);
-    const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, subsetFit.scale / Math.max(0.0001, scale)));
-    setZoom(targetZoom);
-
-    const centreX = (bounds.minX + bounds.maxX) / 2;
-    const centreY = (bounds.minY + bounds.maxY) / 2;
-    const focusX = width / 2 + (VIEWPORT_PADDING.left - VIEWPORT_PADDING.right) / 2;
-    const focusY = height / 2 + (VIEWPORT_PADDING.top - VIEWPORT_PADDING.bottom) / 2;
-    setPan({
-      x: focusX - (subsetFit.offsetX + centreX * subsetFit.scale),
-      y: focusY - (subsetFit.offsetY + centreY * subsetFit.scale),
-    });
+    // One practice is a dot: filling the canvas with it would slam to the zoom
+    // ceiling and lose all context, so a single highlight stops at 2.5x and the
+    // practice lands with its region around it.
+    const flyTo = computeFlyTo(
+      bounds,
+      { scale, offsetX, offsetY, width, height },
+      VIEWPORT_PADDING,
+      { minZoom: MIN_ZOOM, maxZoom: highlightSet.size === 1 ? 2.5 : MAX_ZOOM },
+    );
+    setZoom(flyTo.zoom);
+    setPan({ x: flyTo.panX, y: flyTo.panY });
     // Only when the highlight set itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [[...highlightSet].join(',')]);
