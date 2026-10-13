@@ -15,3 +15,5 @@ data/*.csv
 
 # chat test output
 chat-test-output.txt
+.vercel
+.env*
