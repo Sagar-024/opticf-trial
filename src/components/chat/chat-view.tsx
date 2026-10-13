@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { PALETTE, rgb } from '@/components/dither-kit/palette';
+import { WaveText } from '@/components/wave-text';
 import { Logo } from '@/components/logo';
 import { forceVisibleIfStuck } from '@/lib/anim';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
@@ -342,21 +343,24 @@ export function ChatView({
               <motion.div variants={fadeUp}>
                 <Logo className="size-12" />
               </motion.div>
-              <motion.h1 variants={fadeUp} className="mt-4 text-2xl font-semibold tracking-tight">
-                What needs your attention?
-              </motion.h1>
-              <motion.p variants={fadeUp} className="mt-2 max-w-md text-sm text-muted-foreground">
-                Ask about your practices. Answers, numbers and charts all come from the loaded data.
-              </motion.p>
+              <h1 className="mt-4 text-balance text-2xl font-semibold tracking-tight">
+                <WaveText text="What needs your attention?" delay={80} />
+              </h1>
+              <p className="mt-2 max-w-md text-pretty text-sm text-muted-foreground">
+                <WaveText
+                  text="Ask about your practices. Answers, numbers and charts all come from the loaded data."
+                  delay={160}
+                  step={10}
+                />
+              </p>
               <motion.div variants={fadeUp} className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((suggestion) => (
                   <motion.button
                     key={suggestion}
                     onClick={() => send(suggestion)}
-                    whileHover={{ y: -2 }}
                     whileTap={{ scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-                    className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-panel transition-colors hover:bg-accent hover:text-foreground"
+                    className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     {suggestion}
                   </motion.button>
@@ -498,9 +502,8 @@ export function ChatView({
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.15, ease: EASE }}
-                        whileHover={{ y: -1 }}
                         whileTap={{ scale: 0.98 }}
-                        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-panel transition-colors hover:bg-accent"
+                        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
                       >
                         <MapPin className="size-3.5 text-coral" />
                         Show {turn.mapHighlight.length} practices on the map
@@ -545,9 +548,6 @@ export function ChatView({
       {/* Composer: a single floating pill so the conversation keeps the space. */}
       <div className="shrink-0 px-6 pb-4">
         <div className="mx-auto w-full max-w-3xl">
-          <p className="mb-1.5 text-center text-[10px] text-muted-foreground">
-            Answers are generated from your data. Check the sources on each answer.
-          </p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -577,10 +577,9 @@ export function ChatView({
                 onClick={loading ? stop : undefined}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
                 style={{ backgroundColor: sendFill }}
-                whileHover={{ scale: 1.06 }}
                 whileTap={{ scale: 0.9 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-soft focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-soft transition-[filter] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
               </motion.button>

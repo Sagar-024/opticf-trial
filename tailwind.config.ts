@@ -76,7 +76,6 @@ const config: Config = {
       },
       boxShadow: {
         soft: '0 8px 32px rgba(26, 36, 56, 0.07)',
-        panel: '0 2px 9px rgba(103, 84, 54, 0.05)',
       },
       keyframes: {
         'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },

@@ -5,7 +5,6 @@ import type { MapPractice } from '@/data/map-model';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { cn } from '@/lib/utils';
 
 function Sparkline({ values }: { values: number[] }) {
   if (values.length < 2) return null;
@@ -29,7 +28,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-lg bg-secondary/60 px-3 py-2">
+    <div className="surface-well rounded-lg bg-secondary/60 px-3 py-2">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-semibold tabular-nums">{value}</p>
       {sub ? <p className="text-[11px] text-muted-foreground">{sub}</p> : null}
@@ -128,10 +127,6 @@ export function PracticeSheet({
               <Button variant="outline" onClick={() => onHighlight(practice.practiceId)}>
                 Highlight on the map <ArrowRight />
               </Button>
-              <p className={cn('text-[10px] leading-relaxed text-muted-foreground')}>
-                Figures come from the same data layer as the chat and the dashboards. Where the data does not
-                explain a change, the product says so.
-              </p>
             </div>
           </>
         ) : null}

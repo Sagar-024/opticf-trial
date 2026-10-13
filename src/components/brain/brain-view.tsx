@@ -131,7 +131,7 @@ export function BrainView({
             <FileText className="size-3.5 text-coral" /> Northstar Brain
           </span>
           <span className="text-[11px] text-muted-foreground">
-            {documents.length} documents · the AI searches these alongside the numbers
+            {documents.length} documents
           </span>
           <div className="relative ml-auto w-[220px]">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -184,7 +184,7 @@ export function BrainView({
               animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{ duration: 0.34, delay: Math.min(index * 0.04, 0.24), ease: [0.22, 1, 0.36, 1] }}
             >
-              <Card className="h-full shadow-panel">
+              <Card className="surface-card h-full shadow-none">
                 <CardContent className="flex h-full flex-col p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">{document.scope}</Badge>
@@ -239,7 +239,7 @@ export function BrainView({
                 </div>
                 <DialogTitle className="mt-2">{reading.title}</DialogTitle>
                 <DialogDescription>
-                  {reading.owner} · reviewed {reading.reviewed} · fictional sample guidance
+                  {reading.owner} · reviewed {reading.reviewed}
                 </DialogDescription>
               </DialogHeader>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{reading.content}</p>

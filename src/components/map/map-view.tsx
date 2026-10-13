@@ -236,7 +236,7 @@ export function MapView({
                   {showList ? <LayoutGrid /> : <List />}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{showList ? 'Back to the map' : 'List view, keyboard and screen reader friendly'}</TooltipContent>
+              <TooltipContent>{showList ? 'Back to the map' : 'List view'}</TooltipContent>
             </Tooltip>
           ) : null}
         </div>

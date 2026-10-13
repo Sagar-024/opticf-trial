@@ -71,7 +71,7 @@ export function ChartWidget({ widget }: { widget: ChartWidgetType }) {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-panel">
+    <div className="surface-card rounded-xl border border-border bg-card p-4">
       <p className="label-caps mb-3">{widget.title}</p>
       <div className="h-60 w-full">
         <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover>

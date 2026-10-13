@@ -1,8 +1,9 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
-import { motion, useReducedMotion, type Variants } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion, type Variants } from 'framer-motion';
 import { forceVisibleIfStuck } from '@/lib/anim';
+import { WaveText } from '@/components/wave-text';
 import {
   ArrowRight,
   CalendarDays,
@@ -44,41 +45,6 @@ const SECONDARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
 ];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
-
-/**
- * Word wave: the Today headline and its support line arrive as one wave of ink,
- * each word rising out of a soft blur a beat after the one before it. Total
- * delays stay under the 800ms safety sweep. Reduced motion renders the text
- * plainly, and `data-anim` lets the freeze safety net rescue words if frames
- * stop mid arrival.
- */
-function WaveText({
-  text,
-  className,
-  delay = 0,
-  step = 24,
-}: {
-  text: string;
-  className?: string;
-  delay?: number;
-  step?: number;
-}) {
-  const reduceMotion = useReducedMotion();
-  const words = text.split(' ');
-  if (reduceMotion) return <span className={className}>{text}</span>;
-  return (
-    <span className={className}>
-      {words.map((word, index) => (
-        <Fragment key={`${index}-${word}`}>
-          {index > 0 ? ' ' : null}
-          <span data-anim className="wave-word" style={{ animationDelay: `${delay + index * step}ms` }}>
-            {word}
-          </span>
-        </Fragment>
-      ))}
-    </span>
-  );
-}
 
 /**
  * Rail entrance: the logo leads, then the org block, then each nav item and the
@@ -162,13 +128,14 @@ function PlaceholderPage({
   items: Array<{ title: string; note: string }>;
 }) {
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
-      <p className="label-caps">Visual placeholder</p>
-      <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
-      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>
+    <div className="mx-auto max-w-5xl px-8 pb-10 pt-7">
+      <h1 className="text-balance text-2xl font-semibold tracking-tight">
+        <WaveText text={title} />
+      </h1>
+      <p className="mt-2 max-w-2xl text-pretty text-sm text-muted-foreground">{description}</p>
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         {items.map((item) => (
-          <Card key={item.title} className="shadow-panel">
+          <Card key={item.title} className="surface-card shadow-none">
             <CardContent className="p-4">
               <p className="text-sm font-semibold">{item.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
@@ -177,7 +144,7 @@ function PlaceholderPage({
         ))}
       </div>
       <p className="mt-6 text-xs text-muted-foreground">
-        Agreed as a placeholder for this stage. The workflows behind it are not wired yet.
+        Preview only. The workflows behind it are not wired yet.
       </p>
     </div>
   );
@@ -290,7 +257,6 @@ export function Workspace({
           'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs',
           active ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
-        whileHover={{ x: 2 }}
         whileTap={{ scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 420, damping: 32 }}
       >
@@ -497,7 +463,7 @@ export function Workspace({
         >
           <div className="flex h-9 items-center gap-4 px-6 text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1.5"><TrendingDown className="size-3.5 text-coral" /> {practiceCount} practices connected</span>
-            <span>Live AI · Fictional data · {latestMonth}</span>
+            <span>Fictional sample data · {latestMonth}</span>
           </div>
         </div>
       </main>
