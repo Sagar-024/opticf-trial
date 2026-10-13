@@ -240,4 +240,53 @@ describe('chat orchestration guards', () => {
     expect(result.text).not.toContain('You are Optific+');
     expect(result.text).not.toContain('Rules - follow exactly');
   });
+
+  it('recovers a tool call that leaked as DSML markup and answers properly', async () => {
+    const leaked = [
+      '<|DSML|tool_calls>',
+      '<|DSML|invoke name="query_metrics">',
+      '<|DSML|parameter name="month">2026-10</|DSML|parameter>',
+      '</|DSML|invoke>',
+      '</|DSML|tool_calls>',
+    ].join('\n');
+    const streamed: string[] = [];
+    const client: LlmClient = {
+      chat: async () => empty(),
+      stream: async (params, onDelta) => {
+        const last = params.messages[params.messages.length - 1];
+        if (last.role === 'tool') {
+          const summary = JSON.parse(String(last.content)).summary as string;
+          const text = `Here is the position: ${summary}`;
+          onDelta(text);
+          return { text, toolCalls: [], finishReason: 'stop' };
+        }
+        onDelta(leaked);
+        return { text: leaked, toolCalls: [], finishReason: 'stop' };
+      },
+    };
+    const result = await runChat({ messages: ask('How is revenue this month?'), client, model: 'mock' });
+
+    // The leaked call was recovered and executed.
+    expect(result.toolCalls.map((call) => call.name)).toEqual(['query_metrics']);
+    // The answer is real prose, with no markup anywhere in it.
+    expect(result.text).toContain('Here is the position');
+    expect(result.text).not.toContain('DSML');
+    expect(result.text).not.toContain('query_metrics');
+    expect(result.flagged).toBeFalsy();
+  });
+
+  it('falls back to a plain message when an answer is markup only', async () => {
+    const junk = '<|DSML|tool_calls>\n<|DSML|invoke name="query_metrics">\ngarbage that never closes';
+    const client: LlmClient = {
+      chat: async () => empty(),
+      stream: async (_params, onDelta) => {
+        onDelta(junk);
+        return { text: junk, toolCalls: [], finishReason: 'stop' };
+      },
+    };
+    const result = await runChat({ messages: ask('hello there'), client, model: 'mock' });
+    expect(result.text).not.toContain('DSML');
+    expect(result.text).not.toContain('query_metrics');
+    expect(result.text).toContain('could not put an answer together');
+  });
 });

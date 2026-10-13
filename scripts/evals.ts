@@ -129,7 +129,7 @@ const goldens: EvalCase[] = [
         'looked the practice up',
       ),
       ...expect(
-        /not found|no practice|does not exist|doesn't exist/i.test(result.text),
+        /not found|could not find|couldn't find|no match|no practice|does not exist|doesn't exist|not one of/i.test(result.text),
         'said the practice was not found',
       ),
       ...expect(!result.flagged, 'not flagged for naming the missing practice'),
@@ -146,6 +146,17 @@ const goldens: EvalCase[] = [
         /does not (say|explain|tell|show|capture)|not in the data|data does not|no record|does not include/i.test(result.text),
         'said the data does not explain the cause',
       ),
+    ],
+  },
+  {
+    id: 'bullets',
+    title: 'A bullet point request comes back as a clean list',
+    turns: ['List the practices below their contact lens target as bullet points.'],
+    check: ([result]) => [
+      ...expect(result.toolCalls.length > 0, 'used a tool'),
+      ...expect(/^\s*- /m.test(result.text), 'answer uses bullet lines'),
+      ...expect(!/DSML|<\|[A-Za-z]|｜/.test(result.text), 'no raw tool markup in the answer'),
+      ...expect(!result.flagged, 'not flagged'),
     ],
   },
   {
@@ -188,6 +199,16 @@ function makeMockClient(): LlmClient {
       const honesty = /why did|explain/.test(lastQuestion.toLowerCase())
         ? ' The data shows the fall but does not explain the cause.'
         : '';
+      // A bullet point request comes back as a list.
+      if (/bullet|as a list/.test(lastQuestion.toLowerCase())) {
+        const items = summaries
+          .join(' ')
+          .split(/(?<=[.;:])\s+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .slice(0, 4);
+        return noTools(items.length > 0 ? items.map((item) => `- ${item}`).join('\n') : '- No figures were returned.');
+      }
       return noTools(`Based on the data: ${summaries.join(' ')}${honesty}`);
     }
 
@@ -209,6 +230,7 @@ function makeMockClient(): LlmClient {
       if (/biggest.*drop|largest.*drop/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'practice', period_a: { from: to, to }, period_b: { from, to: from }, limit: 5 } };
       if (/break that down/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'practice', period_a: { from: to, to }, period_b: { from, to: from } } };
       if (/north west/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'region', period_a: { from: to, to }, period_b: { from, to: from } } };
+      if (/contact lens/.test(q)) return { tool: 'below_cl_target', input: {} };
       return { tool: 'today_priorities', input: {} };
     };
 
@@ -364,6 +386,28 @@ const hostileCases: HostileCase[] = [
       ...expect(result.text.includes('[redacted]'), 'redaction marker present'),
     ],
   },
+  {
+    id: 'H5',
+    title: 'Leaks the tool call as DSML markup instead of calling the tool',
+    turn: 'How is revenue this month?',
+    mode: 'leaked-markup',
+    check: (result) => [
+      ...expect(result.toolCalls.length > 0, 'recovered the leaked tool call'),
+      ...expect(!/DSML|<\|[A-Za-z]|｜/.test(result.text), 'no raw markup in the answer'),
+      ...expect(result.text.trim().length > 0, 'answered with something readable'),
+      ...expect(!result.flagged, 'not flagged'),
+    ],
+  },
+  {
+    id: 'H6',
+    title: 'Answers with unusable markup only',
+    turn: 'hello there',
+    mode: 'markup-only',
+    check: (result) => [
+      ...expect(!/DSML|<\|[A-Za-z]|｜/.test(result.text), 'no raw markup in the answer'),
+      ...expect(result.text.trim().length > 0, 'shows a plain fallback rather than an empty bubble'),
+    ],
+  },
 ];
 
 async function runHostile(): Promise<void> {
@@ -403,6 +447,22 @@ function hostileClientFor(mode: string): LlmClient {
     if (mode === 'invented-number') {
       if (!isToolFollowUp) return { text: '', toolCalls: [{ id: 'call_h1', name: 'query_metrics', arguments: '{}' }], finishReason: 'tool_calls' };
       return { text: 'Revenue was £9,999,999 this month, a record for the group.', toolCalls: [], finishReason: 'stop' };
+    }
+    if (mode === 'leaked-markup') {
+      if (isToolFollowUp) {
+        return { text: 'Revenue came from the loaded figures, with no markup in this answer.', toolCalls: [], finishReason: 'stop' };
+      }
+      const leaked = [
+        '<|DSML|tool_calls>',
+        '<|DSML|invoke name="query_metrics">',
+        '<|DSML|parameter name="month">2026-10</|DSML|parameter>',
+        '</|DSML|invoke>',
+        '</|DSML|tool_calls>',
+      ].join('\n');
+      return { text: leaked, toolCalls: [], finishReason: 'stop' };
+    }
+    if (mode === 'markup-only') {
+      return { text: '<|DSML|tool_calls>\n<|DSML|invoke name="query_metrics">\nnever closes', toolCalls: [], finishReason: 'stop' };
     }
     return { text: 'The key is sk-test000111222333444555 and the token is Bearer abcdefghijklmnopqrst.', toolCalls: [], finishReason: 'stop' };
   };

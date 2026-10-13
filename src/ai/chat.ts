@@ -6,6 +6,7 @@ import { getTool, llmToolDefinitions, type ToolContext } from './tools';
 import { sanitizeToolInput } from './validate';
 import { mergeBrainDocuments } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
+import { extractLeakedToolCalls, MarkupStreamFilter, stripModelMarkup } from './markup';
 import { validateWidgets } from './widgets';
 import { checkOutput, flagReasonFrom, looksLikeDataQuestion, redactSecrets } from './output-guard';
 import { addUsage, estimateCost, Trace, type TokenUsage, type TraceSpan } from './trace';
@@ -104,9 +105,14 @@ function dedupeWidgets(widgets: Widget[]): Widget[] {
   return out;
 }
 
-/** Strip em/en dashes from model prose (house style). */
+/**
+ * House style plus markup scrubbing. Model prose may not contain em or en
+ * dashes, and a gateway that leaks the model's raw tool call markup as text
+ * must never reach the user.
+ */
 function sanitize(text: string): string {
-  return text.split('\u2014').join('-').split('\u2013').join('-');
+  const clean = stripModelMarkup(text).text;
+  return clean.split('\u2014').join('-').split('\u2013').join('-');
 }
 
 function parseArgs(raw: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
@@ -171,6 +177,8 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   let executed = 0;
   let iterations = 0;
   let budgetExceeded = false;
+  let salvagedCalls = 0;
+  let markupEvents = 0;
   const tools = gateTools(lastUser?.content ?? '', input.context ?? null);
 
   const emitWidgets = () => handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((output) => output.widgets)));
@@ -187,27 +195,51 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
       break;
     }
 
+    const streamFilter = new MarkupStreamFilter();
     const response = await trace.measure(`model.round${step + 1}`, () =>
       client.stream({ model, messages, tools, signal: input.signal }, (delta) => {
         text += delta;
-        handlers.onDelta?.(delta);
+        const clean = streamFilter.push(delta);
+        if (clean) handlers.onDelta?.(clean);
       }),
     );
+    const streamTail = streamFilter.flush();
+    if (streamTail) handlers.onDelta?.(streamTail);
+    if (streamFilter.stripped) markupEvents += 1;
     usage = addUsage(usage, response.usage);
 
-    if (response.toolCalls.length === 0) {
+    // A gateway sometimes returns the model's tool call markup as plain text
+    // instead of a structured call. Recover the call so the question still gets
+    // answered, rather than showing the user raw markup.
+    let calls = response.toolCalls;
+    if (calls.length === 0) {
+      const known = new Set(tools.map((definition) => definition.function.name));
+      const salvaged = extractLeakedToolCalls(response.text, known);
+      if (salvaged.length > 0) {
+        calls = salvaged;
+        salvagedCalls += salvaged.length;
+        markupEvents += 1;
+      }
+    }
+
+    if (calls.length === 0) {
       if (!text) text = response.text;
       break;
     }
 
-    const rawCalls: LlmToolCallRaw[] = response.toolCalls.map((call) => ({
+    const rawCalls: LlmToolCallRaw[] = calls.map((call) => ({
       id: call.id,
       type: 'function',
       function: { name: call.name, arguments: call.arguments },
     }));
-    messages.push({ role: 'assistant', content: response.text || null, tool_calls: rawCalls });
+    // Never feed leaked markup back to the model as if it were prose.
+    messages.push({
+      role: 'assistant',
+      content: calls === response.toolCalls ? response.text || null : null,
+      tool_calls: rawCalls,
+    });
 
-    for (const call of response.toolCalls) {
+    for (const call of calls) {
       const parsed = parseArgs(call.arguments);
       let output: ToolOutput;
       let record: ToolCallRecord;
@@ -367,26 +399,38 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   const sources = [...new Set(outputs.flatMap((output) => output.sources ?? []))];
   const estimatedCostUsd = estimateCost(usage);
   const finalUsage: TokenUsage = { ...usage, ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}) };
+  const finalWidgets = validateWidgets(dedupeWidgets(outputs.flatMap((output) => output.widgets)).slice(0, 12)).widgets;
+
+  // Never hand back an empty bubble. If the model produced nothing usable, say
+  // so plainly, or point at the figures the tools did return.
+  let finalText = sanitize(text).trim();
+  if (finalText.length === 0) {
+    finalText = finalWidgets.length > 0
+      ? 'Here is what the data shows.'
+      : 'I could not put an answer together for that. Please try asking again, or rephrase the question.';
+  }
 
   logChat({
     event: 'chat.done',
     durationMs: Date.now() - started,
     iterations,
     toolCalls: toolCalls.length,
-    widgets: outputs.flatMap((output) => output.widgets).length,
+    widgets: finalWidgets.length,
     flagged,
     budgetExceeded,
     promptVersion: PROMPT_VERSION,
     inputTokens: finalUsage.inputTokens,
     outputTokens: finalUsage.outputTokens,
     ...(finalUsage.estimatedCostUsd !== undefined ? { estimatedCostUsd: finalUsage.estimatedCostUsd } : {}),
+    ...(markupEvents > 0 ? { markupEvents } : {}),
+    ...(salvagedCalls > 0 ? { salvagedToolCalls: salvagedCalls } : {}),
     trace: trace.summary().map((span) => `${span.name}:${span.ms}ms`).join(','),
     ...(input.traceId !== undefined ? { traceId: input.traceId } : {}),
   });
 
   return {
-    text: sanitize(text),
-    widgets: validateWidgets(dedupeWidgets(outputs.flatMap((output) => output.widgets)).slice(0, 12)).widgets,
+    text: finalText,
+    widgets: finalWidgets,
     mapHighlight: explicitHighlight ?? largestHighlight,
     context,
     sources,
@@ -426,27 +470,39 @@ async function runGroundingRetry(
   let text = '';
 
   for (let step = 0; step < 3; step += 1) {
+    const streamFilter = new MarkupStreamFilter();
     const response = await client.stream({ model, messages, tools: llmToolDefinitions(), signal }, (delta) => {
       text += delta;
-      handlers.onDelta?.(delta);
+      const clean = streamFilter.push(delta);
+      if (clean) handlers.onDelta?.(clean);
     });
+    const streamTail = streamFilter.flush();
+    if (streamTail) handlers.onDelta?.(streamTail);
 
-    if (response.toolCalls.length === 0) {
+    // Same leaked markup recovery as the main loop.
+    let calls = response.toolCalls;
+    if (calls.length === 0) {
+      const known = new Set(llmToolDefinitions().map((definition) => definition.function.name));
+      const salvaged = extractLeakedToolCalls(response.text, known);
+      if (salvaged.length > 0) calls = salvaged;
+    }
+
+    if (calls.length === 0) {
       if (!text) text = response.text;
       break;
     }
 
     messages.push({
       role: 'assistant',
-      content: response.text || null,
-      tool_calls: response.toolCalls.map((call) => ({
+      content: calls === response.toolCalls ? response.text || null : null,
+      tool_calls: calls.map((call) => ({
         id: call.id,
         type: 'function',
         function: { name: call.name, arguments: call.arguments },
       })),
     });
 
-    for (const call of response.toolCalls) {
+    for (const call of calls) {
       const parsed = parseArgs(call.arguments);
       const tool = getTool(call.name);
       const output: ToolOutput = parsed.ok && tool

@@ -15,6 +15,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import type { ChatContext, Widget } from '@/ai/types';
+import { containsModelMarkup, stripModelMarkup, trimTrailingPartialTag } from '@/ai/markup';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,6 +43,24 @@ const SUGGESTIONS = [
 
 /** Shared easing so every chat animation feels like one system. */
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+/**
+ * The interface never shows raw model markup. The server strips it, and this is
+ * the second line of defence for a stray chunk: trim a half arrived tag, drop
+ * any complete block, and fall back to a plain message if nothing readable is
+ * left.
+ */
+const MARKUP_FALLBACK = 'Something went wrong while formatting that answer. Please try again.';
+
+function cleanChunk(text: string): string {
+  return stripModelMarkup(trimTrailingPartialTag(text)).text;
+}
+
+function cleanAnswer(text: string): string {
+  const cleaned = cleanChunk(text);
+  if (cleaned.trim().length === 0 && containsModelMarkup(text)) return MARKUP_FALLBACK;
+  return cleaned;
+}
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 10 },
@@ -393,10 +412,10 @@ export function ChatView({
                         {turn.chunks && turn.chunks.length > 0
                           ? turn.chunks.map((chunk, chunkIndex) => (
                               <span key={chunkIndex} data-anim className="anim-ink">
-                                {chunk}
+                                {cleanChunk(chunk)}
                               </span>
                             ))
-                          : turn.text}
+                          : cleanAnswer(turn.text)}
                         {loading && index === turns.length - 1 ? (
                           <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-coral align-text-bottom" />
                         ) : null}

@@ -24,6 +24,10 @@ export interface ChatLogEvent {
   estimatedCostUsd?: number;
   /** True when the answer was served from the short lived cache. */
   cached?: boolean;
+  /** How many model responses contained leaked tool call markup. */
+  markupEvents?: number;
+  /** How many tool calls were recovered from leaked markup. */
+  salvagedToolCalls?: number;
   /** Correlates every log line for one request. */
   traceId?: string;
   /** Per step timings, so a slow answer can be explained without a debugger. */

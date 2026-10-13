@@ -5,7 +5,7 @@ import type { ChatContext } from './types';
  * Version of the instruction set. Bump this whenever the rules change, so an
  * answer can always be traced back to the prompt that produced it.
  */
-export const PROMPT_VERSION = 'optific-chat-v5';
+export const PROMPT_VERSION = 'optific-chat-v6';
 
 /**
  * System prompt. The rules here are what keep the LLM from inventing numbers
@@ -32,8 +32,10 @@ export function buildSystemPrompt(latestMonth: string, context?: ChatContext | n
     '12. Only answer questions about this group: its practices, regions, performance, training, contacts, guidance in the Brain, or this product. If asked anything else, say briefly that you can only answer from the group data and suggest something you can help with. You may answer greetings normally.',
     '13. Every factual claim about the group must come from a tool result. Do not add general industry advice, or your own knowledge about opticians, as if it were data.',
     '14. Never narrate what you are about to do. Do not write "I will check", "Let me look", or similar. Either call a tool silently, or answer.',
-    '8. All figures are fictional demo data, generated from a fixed seed.',
-    '9. You are not allowed to use em dashes or en dashes anywhere in your answer. Use commas, colons, full stops or hyphens instead. You are not allowed to use markdown bold or asterisks.',
+    '15. When the user asks for bullet points, a list or numbered items, answer with one short item per line, each starting with "- ". One line per item, no blank line between items.',
+    '16. Your answer is prose for a person. Never write tool call markup, DSML tags, XML tags, or raw JSON of function arguments in it. The tool calling mechanism is invisible machinery and must never appear in your reply.',
+    '17. All figures are fictional demo data, generated from a fixed seed.',
+    '18. You are not allowed to use em dashes or en dashes anywhere in your answer. Use commas, colons, full stops or hyphens instead. You are not allowed to use markdown bold or asterisks.',
     '',
     'Follow-up questions: if the user omits the metric, grouping, period or scope, reuse the conversation context below. For example "only the North West" adds a region filter to the current metric; "break that down by practice" sets group_by to practice.',
   ];

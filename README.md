@@ -185,6 +185,20 @@ enforced in code and covered by a test or an eval, not left to the prompt.
   found" is honest, not an invention).
 - The UI states which guard fired, not one generic warning.
 
+**Raw model markup never reaches the screen**
+
+- DeepSeek family models can emit their internal tool call markup as plain text when a gateway fails to
+  lift it into the structured call. It shows up as `DSML` tags, full width control tokens or XML blocks
+  in the middle of an answer.
+- Every streamed token passes through a chunk safe filter: it holds a half arrived tag so it cannot
+  flash, drops whole markup blocks including their JSON payloads, and flushes cleanly at the end.
+- Where the leaked markup contains a real call, it is recovered and executed like a native call, with
+  the arguments still going through the same sanitiser, so the question gets answered instead of
+  failing.
+- If nothing readable is left, the answer becomes a plain message. The interface filters at render time
+  as a second line of defence, and `markupEvents` and `salvagedToolCalls` appear in the structured log
+  so a recurrence is visible.
+
 **Scale and cost**
 
 - Identical questions are served from a ten minute in-memory cache keyed by prompt version,
@@ -202,13 +216,15 @@ enforced in code and covered by a test or an eval, not left to the prompt.
 
 **Change safety**
 
-- `npm run evals` scores nine golden questions against machine checked assertions: tools used,
+- `npm run evals` scores ten golden questions against machine checked assertions: tools used,
   figures traceable, sources cited, no invented practice, an honest "the data does not explain this"
-  answer, out of scope refused, both injection cases blocked, latency inside budget. It runs against a
-  deterministic mock, so it is free and belongs in CI (see `.github/workflows/ci.yml`).
+  answer, out of scope refused, both injection cases blocked, a bullet point request coming back as a
+  clean list, latency inside budget. It runs against a deterministic mock, so it is free and belongs in
+  CI (see `.github/workflows/ci.yml`).
 - `npm run evals -- --hostile` points a deliberately cheating model at the pipeline: it answers with no
-  tool call, leaks the system prompt, invents a figure after a real tool call, and leaks a key and a
-  token. All four must be caught or the run fails.
+  tool call, leaks the system prompt, invents a figure after a real tool call, leaks a key and a token,
+  leaks a tool call as DSML markup, and answers with unusable markup only. All six must be caught or
+  the run fails.
 - `npm run evals -- --real` runs the same golden set against the live model before a demo or a release.
 
 ## Sample data
