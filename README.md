@@ -51,6 +51,9 @@ npm run chat:test -- --mock   # same harness with a deterministic mock transport
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run llm:check` | Verify the LLM endpoint and tool calling |
 | `npm run chat:test` | Run the chat scenarios through the real endpoint |
+| `npm run evals` | Score the chat against the golden question set (mock model, free, runs in CI) |
+| `npm run evals -- --real` | The same golden set against the live model |
+| `npm run evals -- --hostile` | A deliberately cheating model; every guard must fire |
 
 ## Deploying to Vercel
 
@@ -141,7 +144,9 @@ src/
 { "type": "delta",   "text": "..." }        prose, streamed as it is written
 { "type": "tool",    "name": "compare" }    a tool ran
 { "type": "widgets", "widgets": [...] }     the widget list grew
-{ "type": "done",    "text", "widgets", "mapHighlight", "context", "sources", "flagged" }
+{ "type": "done",    "text", "widgets", "mapHighlight", "context", "sources",
+                     "flagged", "flagReason", "withdrawn", "durationMs",
+                     "traceId", "promptVersion", "usage", "cached" }
 { "type": "error",   "message", "status" }
 ```
 
@@ -150,16 +155,61 @@ writes prose. Follow-ups work by the client echoing the previous `context` back,
 injects into the system prompt and uses to restrict the offered tools so refinements do not re-run
 discovery.
 
-Hardening:
+## Production engineering
+
+This is the part that matters when the assistant is talking to a paying customer. Each item below is
+enforced in code and covered by a test or an eval, not left to the prompt.
+
+**Trust boundaries**
 
 - `messages` and `context` are validated before anything reaches the model. Context fields are
   whitelisted against the dataset: unknown regions and practice ids are dropped, `metric` must be a
   single token, `group_by` must be one of three values, and `period.month` must be `YYYY-MM`.
-- Every LLM call has a hard timeout (`LLM_TIMEOUT_MS`, default 45000 ms). The client can abort with
-  the Stop button.
-- If the model uses a number that no tool returned, the server retries once, sets `flagged: true`,
-  and the UI shows a warning on that answer.
-- Each answer carries `sources`, rendered as chips under the reply.
+- Tool arguments are treated as untrusted input: clamped, whitelisted and sanitised before a pure
+  function ever sees them.
+- Quoted guidance is wrapped in delimiters and the model is told that anything inside them is data,
+  never a command. A hostile document cannot issue instructions.
+- No auth on the chat route by design for the trial, so the key is protected by a rate limit
+  (20 questions per minute per caller) and a body size limit (16 KB).
+
+**Nothing is presented that cannot be traced**
+
+- Every figure must appear in a tool result, the brief, or the user's own question. Magnitudes are
+  compared, so a signed fall written unsigned is accepted, but an invented figure is not.
+- If a figure fails the check, the server retries once with the traceable figures listed. If it still
+  fails, the answer is **withdrawn** rather than shown with a number nobody can verify.
+- A data question answered with no tool call at all is not grounded: it is retried once, then flagged.
+- The answer is scanned for system prompt text and for credentials. Leaked instructions cause the
+  answer to be withheld; keys and tokens are redacted and the answer is flagged.
+- Practice ids mentioned in an answer must exist, unless a tool reported on that id (so "P099 was not
+  found" is honest, not an invention).
+- The UI states which guard fired, not one generic warning.
+
+**Scale and cost**
+
+- Identical questions are served from a ten minute in-memory cache keyed by prompt version,
+  conversation, context and guidance edits, so a stale entry can never answer a different question.
+  A repeat went from 12.9 s to 27 ms in testing.
+- Every request has a trace id that appears on every log line, per step timings in the log, and token
+  usage. Set `LLM_PRICE_INPUT_PER_M` and `LLM_PRICE_OUTPUT_PER_M` and the log also carries an
+  estimated cost; nothing is hardcoded.
+- `PROMPT_VERSION` is logged on every answer, so an answer can always be traced to the instructions
+  that produced it.
+- One hard timeout per model call, a total budget per question, a bounded tool loop, and a trigger to
+  stop with the Stop button that propagates to the provider.
+- One retry with jitter on 5xx and network errors only. A 4xx (bad key, rate limit) fails once, so
+  nothing loops.
+
+**Change safety**
+
+- `npm run evals` scores nine golden questions against machine checked assertions: tools used,
+  figures traceable, sources cited, no invented practice, an honest "the data does not explain this"
+  answer, out of scope refused, both injection cases blocked, latency inside budget. It runs against a
+  deterministic mock, so it is free and belongs in CI (see `.github/workflows/ci.yml`).
+- `npm run evals -- --hostile` points a deliberately cheating model at the pipeline: it answers with no
+  tool call, leaks the system prompt, invents a figure after a real tool call, and leaks a key and a
+  token. All four must be caught or the run fails.
+- `npm run evals -- --real` runs the same golden set against the live model before a demo or a release.
 
 ## Sample data
 

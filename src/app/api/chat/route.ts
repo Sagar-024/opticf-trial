@@ -1,8 +1,10 @@
-import { runChatStream } from '@/ai/chat';
+import { runChatStream, type RunChatResult } from '@/ai/chat';
+import { cacheKey, ResponseCache } from '@/ai/cache';
 import { getDataset } from '@/ai/dataset';
 import { LlmError } from '@/ai/llm';
 import { logChat } from '@/ai/log';
 import { callerKey, checkRateLimit } from '@/ai/rate-limit';
+import { PROMPT_VERSION } from '@/ai/system-prompt';
 import {
   isBodyTooLarge,
   isJsonRequest,
@@ -20,14 +22,24 @@ import { MAX_BODY_BYTES } from '@/ai/validate';
  *   { type: 'delta',   text }        prose chunks, streamed
  *   { type: 'tool',    name }        a tool ran
  *   { type: 'widgets', widgets }     widget list grew
- *   { type: 'done',    text, widgets, mapHighlight, context, sources, flagged }
+ *   { type: 'done',    text, widgets, mapHighlight, context, sources, flagged,
+ *                      flagReason, withdrawn, durationMs, traceId, promptVersion,
+ *                      usage, cached }
  *   { type: 'error',   message, status? }
  *
  * Guards, in order: content type, body size, rate limit, message shape, context
  * and guidance whitelisting. Nothing untrusted reaches the model.
+ *
+ * Production notes: identical questions are served from a ten minute cache,
+ * every request carries a trace id that appears on every log line, token usage
+ * is logged for cost tracking, and the same text can never answer a different
+ * question because the cache key includes the prompt version and the context.
  */
 
 export const runtime = 'nodejs';
+
+/** Ten minute cache of identical questions, so repeats cost nothing. */
+const cache = new ResponseCache<RunChatResult>(10 * 60_000);
 
 interface ChatRequestBody {
   messages?: unknown;
@@ -82,6 +94,14 @@ export async function POST(request: Request): Promise<Response> {
   const context = sanitizeContext(body.context, getDataset());
   const brainOverrides = sanitizeBrainOverrides(body.brainOverrides);
   const encoder = new TextEncoder();
+  const traceId = globalThis.crypto?.randomUUID?.() ?? `t-${Date.now().toString(36)}`;
+
+  const key = cacheKey({
+    promptVersion: PROMPT_VERSION,
+    messages: validated.messages,
+    context,
+    brainOverrides,
+  });
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -89,16 +109,7 @@ export async function POST(request: Request): Promise<Response> {
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
 
-      try {
-        const result = await runChatStream(
-          { messages: validated.messages, context, brainOverrides, signal: request.signal },
-          {
-            onDelta: (text) => send({ type: 'delta', text }),
-            onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),
-            onWidgets: (widgets) => send({ type: 'widgets', widgets }),
-          },
-        );
-
+      const finish = (result: RunChatResult, cached: boolean) => {
         send({
           type: 'done',
           text: result.text,
@@ -108,16 +119,55 @@ export async function POST(request: Request): Promise<Response> {
           sources: result.sources,
           flagged: result.flagged ?? false,
           flagReason: result.flagReason ?? null,
+          withdrawn: result.withdrawn ?? false,
           durationMs: result.durationMs,
+          traceId,
+          promptVersion: result.promptVersion,
+          usage: result.usage,
+          cached,
         });
+      };
+
+      // A repeat of the same question is served from memory.
+      const hit = cache.get(key);
+      if (hit) {
+        logChat({
+          event: 'chat.done',
+          durationMs: 0,
+          toolCalls: hit.toolCalls.length,
+          widgets: hit.widgets.length,
+          flagged: hit.flagged,
+          cached: true,
+          promptVersion: PROMPT_VERSION,
+        });
+        send({ type: 'delta', text: hit.text });
+        finish(hit, true);
+        controller.close();
+        return;
+      }
+
+      try {
+        const result = await runChatStream(
+          { messages: validated.messages, context, brainOverrides, signal: request.signal, traceId },
+          {
+            onDelta: (text) => send({ type: 'delta', text }),
+            onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),
+            onWidgets: (widgets) => send({ type: 'widgets', widgets }),
+          },
+        );
+
+        // Only cache clean answers.
+        if (!result.flagged) cache.set(key, result);
+
+        finish(result, false);
       } catch (error) {
         if (error instanceof LlmError) {
-          logChat({ event: 'chat.error', error: error.message, status: error.status });
+          logChat({ event: 'chat.error', error: error.message, status: error.status, traceId });
           send({ type: 'error', message: error.message, status: error.status });
         } else {
           // Never leak internals; log the detail and return something usable.
           const detail = error instanceof Error ? error.message : 'unknown error';
-          logChat({ event: 'chat.error', error: detail.slice(0, 120) });
+          logChat({ event: 'chat.error', error: detail.slice(0, 120), traceId });
           send({ type: 'error', message: 'Something went wrong while answering. Please try again.' });
         }
       } finally {

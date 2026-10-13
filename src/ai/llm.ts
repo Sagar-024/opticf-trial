@@ -51,6 +51,8 @@ export interface LlmResponse {
   text: string;
   toolCalls: LlmToolCall[];
   finishReason: string | null;
+  /** Token usage when the provider reports it, for cost accounting. */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface LlmClient {
@@ -112,8 +114,30 @@ function timeoutMs(): number {
   return Number.isFinite(raw) && raw > 1000 ? raw : 45000;
 }
 
-function accumulate(response: { text: string; toolCalls: LlmToolCall[]; finishReason: string | null }): LlmResponse {
-  return response;
+/**
+ * One bounded retry for transient failures only.
+ *
+ * Production clients retry 5xx and network errors with backoff and jitter, and
+ * never retry 4xx: a bad key or a rate limit will fail again immediately. We do
+ * exactly one retry, with jitter, so a blip does not surface to the user.
+ */
+async function withTransientRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const status = (error as { status?: number } | undefined)?.status;
+    const retryable = status === undefined || status >= 500;
+    if (!retryable) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 250 + Math.random() * 250));
+    return operation();
+  }
+}
+
+function usageOf(usage: unknown): { inputTokens: number; outputTokens: number } | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
+  if (typeof record.prompt_tokens !== 'number' && typeof record.completion_tokens !== 'number') return undefined;
+  return { inputTokens: record.prompt_tokens ?? 0, outputTokens: record.completion_tokens ?? 0 };
 }
 
 /** Build the real OpenAI-compatible client from the environment. */
@@ -137,22 +161,29 @@ export function createLlmClient(): LlmClient {
   return {
     async chat({ model, messages, tools, signal }: LlmChatParams): Promise<LlmResponse> {
       try {
-        const response = await client.chat.completions.create(
-          {
-            model,
-            messages: messages as unknown as ChatCompletionMessageParam[],
-            tools: tools as unknown as ChatCompletionTool[],
-            tool_choice: 'auto',
-            max_tokens: 1400,
-          },
-          { signal: signalFor(signal) },
+        const response = await withTransientRetry(() =>
+          client.chat.completions.create(
+            {
+              model,
+              messages: messages as unknown as ChatCompletionMessageParam[],
+              tools: tools as unknown as ChatCompletionTool[],
+              tool_choice: 'auto',
+              max_tokens: 1400,
+            },
+            { signal: signalFor(signal) },
+          ),
         );
         const choice = response.choices[0];
         const message = choice?.message;
         const toolCalls: LlmToolCall[] = (message?.tool_calls ?? [])
           .filter((call) => call.type === 'function')
           .map((call) => ({ id: call.id, name: call.function.name, arguments: call.function.arguments }));
-        return accumulate({ text: message?.content ?? '', toolCalls, finishReason: choice?.finish_reason ?? null });
+        return {
+          text: message?.content ?? '',
+          toolCalls,
+          finishReason: choice?.finish_reason ?? null,
+          usage: usageOf(response.usage),
+        };
       } catch (error) {
         throw classifyLlmError(error);
       }
@@ -160,23 +191,31 @@ export function createLlmClient(): LlmClient {
 
     async stream({ model, messages, tools, signal }: LlmChatParams, onDelta): Promise<LlmResponse> {
       try {
-        const stream = await client.chat.completions.create(
-          {
-            model,
-            messages: messages as unknown as ChatCompletionMessageParam[],
-            tools: tools as unknown as ChatCompletionTool[],
-            tool_choice: 'auto',
-            max_tokens: 1400,
-            stream: true,
-          },
-          { signal: signalFor(signal) },
+        const stream = await withTransientRetry(() =>
+          client.chat.completions.create(
+            {
+              model,
+              messages: messages as unknown as ChatCompletionMessageParam[],
+              tools: tools as unknown as ChatCompletionTool[],
+              tool_choice: 'auto',
+              max_tokens: 1400,
+              stream: true,
+              // Ask for token usage on the final chunk, for cost accounting.
+              stream_options: { include_usage: true },
+            },
+            { signal: signalFor(signal) },
+          ),
         );
 
         let text = '';
         let finishReason: string | null = null;
+        let usage: { inputTokens: number; outputTokens: number } | undefined;
         const partial = new Map<number, { id: string; name: string; arguments: string }>();
 
         for await (const chunk of stream) {
+          const reported = usageOf((chunk as { usage?: unknown }).usage);
+          if (reported) usage = reported;
+
           const choice = chunk.choices[0];
           if (!choice) continue;
           if (choice.finish_reason) finishReason = choice.finish_reason;
@@ -201,7 +240,7 @@ export function createLlmClient(): LlmClient {
           .sort((a, b) => a[0] - b[0])
           .map(([, value]) => ({ id: value.id, name: value.name, arguments: value.arguments }));
 
-        return accumulate({ text, toolCalls, finishReason });
+        return { text, toolCalls, finishReason, usage };
       } catch (error) {
         throw classifyLlmError(error);
       }

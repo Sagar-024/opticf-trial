@@ -16,6 +16,18 @@ export interface ChatLogEvent {
   widgets?: number;
   flagged?: boolean;
   budgetExceeded?: boolean;
+  /** Version of the instructions that produced the answer. */
+  promptVersion?: string;
+  /** Tokens reported by the provider, for cost tracking. */
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+  /** True when the answer was served from the short lived cache. */
+  cached?: boolean;
+  /** Correlates every log line for one request. */
+  traceId?: string;
+  /** Per step timings, so a slow answer can be explained without a debugger. */
+  trace?: string;
   error?: string;
   status?: number;
 }

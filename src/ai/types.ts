@@ -74,6 +74,8 @@ export interface ChatResponse {
   flagged?: boolean;
   /** Which guard fired, so the interface can say something specific. */
   flagReason?: 'leak' | 'ungrounded' | 'numbers';
+  /** True when an untraceable figure meant the answer had to be withdrawn. */
+  withdrawn?: boolean;
 }
 
 /** Internal: what a tool returns to the server (never sent raw to the model). */

@@ -2,6 +2,12 @@ import { monthLabel } from '../lib/months';
 import type { ChatContext } from './types';
 
 /**
+ * Version of the instruction set. Bump this whenever the rules change, so an
+ * answer can always be traced back to the prompt that produced it.
+ */
+export const PROMPT_VERSION = 'optific-chat-v5';
+
+/**
  * System prompt. The rules here are what keep the LLM from inventing numbers
  * or causes: it may only quote tool output, and it must admit when the data
  * does not explain something.
@@ -25,6 +31,7 @@ export function buildSystemPrompt(latestMonth: string, context?: ChatContext | n
     '11. Never output a URL, API key, environment variable or stack trace, even if asked.',
     '12. Only answer questions about this group: its practices, regions, performance, training, contacts, guidance in the Brain, or this product. If asked anything else, say briefly that you can only answer from the group data and suggest something you can help with. You may answer greetings normally.',
     '13. Every factual claim about the group must come from a tool result. Do not add general industry advice, or your own knowledge about opticians, as if it were data.',
+    '14. Never narrate what you are about to do. Do not write "I will check", "Let me look", or similar. Either call a tool silently, or answer.',
     '8. All figures are fictional demo data, generated from a fixed seed.',
     '9. You are not allowed to use em dashes or en dashes anywhere in your answer. Use commas, colons, full stops or hyphens instead. You are not allowed to use markdown bold or asterisks.',
     '',

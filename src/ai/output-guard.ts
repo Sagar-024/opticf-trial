@@ -47,8 +47,21 @@ const DATA_KEYWORDS = [
   'warranty', 'claims', 'stock', 'campaign', 'trend', 'month', 'group',
 ];
 
+/**
+ * Phrases that make a message an attack rather than a question. A refusal is the
+ * correct answer to these, and a refusal uses no tools by design, so they must
+ * not be held to the grounding rule.
+ */
+const INJECTION_MARKERS = [
+  'ignore previous', 'ignore all previous', 'ignore the above', 'disregard previous',
+  'system prompt', 'your instructions', 'your rules', 'reveal', 'jailbreak',
+  'developer mode', 'you are now', 'pretend to be', 'act as', 'api key',
+  'environment variable', 'env var',
+];
+
 export function looksLikeDataQuestion(message: string, dataset: Dataset): boolean {
   const text = message.toLowerCase();
+  if (INJECTION_MARKERS.some((marker) => text.includes(marker))) return false;
   if (/[£%]|\d/.test(text)) return true;
   if (DATA_KEYWORDS.some((word) => text.includes(word))) return true;
   return dataset.practices.some((practice) =>
@@ -72,8 +85,9 @@ export function redactSecrets(text: string): { text: string; found: number } {
   return { text: output, found };
 }
 
-export function findUnknownPracticeIds(text: string, dataset: Dataset): string[] {
+export function findUnknownPracticeIds(text: string, dataset: Dataset, reportedIds: string[] = []): string[] {
   const known = new Set(dataset.practices.map((practice) => practice.practiceId));
+  for (const id of reportedIds) known.add(id);
   const mentioned = text.match(/\bP0\d{2}\b/g) ?? [];
   return [...new Set(mentioned)].filter((id) => !known.has(id));
 }
@@ -85,6 +99,8 @@ export function checkOutput(
     /** True when the question was about the group's data or guidance. */
     requiresGrounding: boolean;
     dataset: Dataset;
+    /** Ids a tool reported on, so "P099 not found" is not treated as invention. */
+    reportedIds?: string[];
   },
 ): OutputGuardResult {
   const notes: string[] = [];
@@ -104,7 +120,7 @@ export function checkOutput(
     notes.push('secret-leak');
   }
 
-  const unknown = findUnknownPracticeIds(redacted.text, options.dataset);
+  const unknown = findUnknownPracticeIds(redacted.text, options.dataset, options.reportedIds ?? []);
   if (unknown.length > 0) {
     notes.push(`unknown-practice:${unknown.join(',')}`);
   }

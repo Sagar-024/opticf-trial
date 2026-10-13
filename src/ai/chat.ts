@@ -6,7 +6,10 @@ import { getTool, llmToolDefinitions, type ToolContext } from './tools';
 import { sanitizeToolInput } from './validate';
 import { mergeBrainDocuments } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
-import { checkOutput, flagReasonFrom, looksLikeDataQuestion } from './output-guard';
+import { validateWidgets } from './widgets';
+import { checkOutput, flagReasonFrom, looksLikeDataQuestion, redactSecrets } from './output-guard';
+import { addUsage, estimateCost, Trace, type TokenUsage, type TraceSpan } from './trace';
+import { PROMPT_VERSION } from './system-prompt';
 import { logChat } from './log';
 import {
   createLlmClient,
@@ -37,6 +40,8 @@ export interface RunChatInput {
   brainOverrides?: Record<string, { content?: string; owner?: string; conflict?: boolean }>;
   /** Client abort signal, so Stop also cancels the provider request. */
   signal?: AbortSignal;
+  /** Correlates every log line for one request. */
+  traceId?: string;
 }
 
 export interface RunChatHandlers {
@@ -54,6 +59,12 @@ export interface RunChatResult extends ChatResponse {
   iterations: number;
   /** True when the question hit the total time budget. */
   budgetExceeded: boolean;
+  /** Per step timings for observability. */
+  trace: TraceSpan[];
+  /** Tokens used, and cost when prices are configured. */
+  usage: TokenUsage;
+  /** Version of the instructions that produced this answer. */
+  promptVersion: string;
 }
 
 const MAX_TOOL_ITERATIONS = 6;
@@ -138,7 +149,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   if (!model) throw new Error('MODEL_NAME is not set');
 
   const lastUser = [...input.messages].reverse().find((m) => m.role === 'user');
-  logChat({ event: 'chat.start' }, lastUser?.content);
+  logChat({ event: 'chat.start', ...(input.traceId !== undefined ? { traceId: input.traceId } : {}) }, lastUser?.content);
   const system = buildSystemPrompt(latest, input.context ?? null);
   const toolContext: ToolContext = {
     brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
@@ -151,6 +162,8 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   const outputs: ToolOutput[] = [];
   const toolCalls: ToolCallRecord[] = [];
   const memo = new Map<string, ToolOutput>();
+  const trace = new Trace();
+  let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   let context: ChatContext = input.context ?? emptyContext();
   let explicitHighlight: string[] | null = null;
   let largestHighlight: string[] = [];
@@ -174,10 +187,13 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
       break;
     }
 
-    const response = await client.stream({ model, messages, tools, signal: input.signal }, (delta) => {
-      text += delta;
-      handlers.onDelta?.(delta);
-    });
+    const response = await trace.measure(`model.round${step + 1}`, () =>
+      client.stream({ model, messages, tools, signal: input.signal }, (delta) => {
+        text += delta;
+        handlers.onDelta?.(delta);
+      }),
+    );
+    usage = addUsage(usage, response.usage);
 
     if (response.toolCalls.length === 0) {
       if (!text) text = response.text;
@@ -212,9 +228,11 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
           const tool = getTool(call.name);
           // Model supplied arguments are untrusted: clamp and whitelist first.
           const safeInput = sanitizeToolInput(parsed.value);
+          const toolStarted = Date.now();
           output = tool
             ? tool.run(dataset, safeInput, toolContext)
             : { summary: `Unknown tool ${call.name}.`, widgets: [], numbers: [] };
+          trace.span(`tool.${call.name}`, Date.now() - toolStarted);
           memo.set(memoKey, output);
         }
         record = {
@@ -283,6 +301,11 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     }
   }
 
+  // Secrets are removed before anything else looks at the text, so a leaked key
+  // can never be mistaken for an unsupported figure.
+  const preRedact = redactSecrets(sanitize(text));
+  text = preRedact.text;
+
   // Every number must come from a tool result, the brief, or the user's question.
   const allowed = allowedSet(outputs, [
     system,
@@ -291,7 +314,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     ...input.messages.filter((message) => message.role === 'user').map((message) => message.content),
   ]);
   let unsupported = findUnsupportedNumbers(text, allowed);
-  let flagged = unsupported.length > 0;
+  let withdrawn = false;
 
   if (unsupported.length > 0) {
     messages.push({ role: 'assistant', content: text });
@@ -306,21 +329,44 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     // Retry is not streamed, so the client simply replaces the text it has.
     const retry = await client.chat({ model, messages, tools: [], signal: input.signal });
     if (retry.text) text = retry.text;
+    text = redactSecrets(sanitize(text)).text;
     unsupported = findUnsupportedNumbers(text, allowed);
-    flagged = unsupported.length > 0;
+    if (unsupported.length > 0) {
+      // The rewrite did not fix it. Never show a figure we could not trace:
+      // withdraw the answer rather than risk a wrong number.
+      withdrawn = true;
+      text =
+        'I could not trace every figure in that answer back to the group data, so I have withdrawn it rather than show you a number I cannot verify. Please ask again, or narrow the question down.';
+      unsupported = [];
+    }
   }
 
-  // Output guards: grounding, instruction leaks, secrets, invented entities.
+  // Final output guards over the text that actually ships: grounding, instruction
+  // leaks, secrets and invented entities.
+  const reportedIds = [...new Set(outputs.flatMap((output) => output.summary.match(/\bP0\d{2}\b/g) ?? []))];
   const outputCheck = checkOutput(sanitize(text), {
     toolCallCount: outputs.length,
     requiresGrounding,
     dataset,
+    reportedIds,
   });
   text = outputCheck.text;
-  const flagReason = flagReasonFrom([...(unsupported.length > 0 ? ['numbers'] : []), ...outputCheck.notes]);
-  if (flagReason) flagged = true;
+  if (outputCheck.notes.includes('prompt-leak')) {
+    // A model that recites its instructions is misbehaving. Withhold the answer
+    // rather than show whatever else it decided to say.
+    text =
+      'I cannot share my instructions. Ask me about your practices, regions, training or guidance and I will answer from the group data.';
+  }
+  const flagReason = flagReasonFrom([
+    ...(withdrawn || unsupported.length > 0 ? ['numbers'] : []),
+    ...preRedact.found > 0 ? ['secret-leak'] : [],
+    ...outputCheck.notes,
+  ]);
+  const flagged = Boolean(flagReason);
 
   const sources = [...new Set(outputs.flatMap((output) => output.sources ?? []))];
+  const estimatedCostUsd = estimateCost(usage);
+  const finalUsage: TokenUsage = { ...usage, ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}) };
 
   logChat({
     event: 'chat.done',
@@ -330,20 +376,30 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     widgets: outputs.flatMap((output) => output.widgets).length,
     flagged,
     budgetExceeded,
+    promptVersion: PROMPT_VERSION,
+    inputTokens: finalUsage.inputTokens,
+    outputTokens: finalUsage.outputTokens,
+    ...(finalUsage.estimatedCostUsd !== undefined ? { estimatedCostUsd: finalUsage.estimatedCostUsd } : {}),
+    trace: trace.summary().map((span) => `${span.name}:${span.ms}ms`).join(','),
+    ...(input.traceId !== undefined ? { traceId: input.traceId } : {}),
   });
 
   return {
     text: sanitize(text),
-    widgets: dedupeWidgets(outputs.flatMap((output) => output.widgets)).slice(0, 12),
+    widgets: validateWidgets(dedupeWidgets(outputs.flatMap((output) => output.widgets)).slice(0, 12)).widgets,
     mapHighlight: explicitHighlight ?? largestHighlight,
     context,
     sources,
     flagged,
     flagReason,
+    withdrawn,
     toolCalls,
     durationMs: Date.now() - started,
     iterations,
     budgetExceeded,
+    trace: trace.summary(),
+    usage: finalUsage,
+    promptVersion: PROMPT_VERSION,
   };
 }
 

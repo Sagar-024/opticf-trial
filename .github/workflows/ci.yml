@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Evals (mock model)
+        run: npm run evals
+      - name: Evals (hostile model, guards must fire)
+        run: npm run evals -- --hostile
+      - name: Production build
+        run: npm run build
+        env:
+          # The build only needs the variables to exist, never real values.
+          LLM_BASE_URL: https://example.invalid/v1
+          LLM_API_KEY: ci-placeholder
+          MODEL_NAME: ci-placeholder
