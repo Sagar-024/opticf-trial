@@ -514,11 +514,17 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
 
   // Documents linked to the practice in question come first: when the model
   // asks about a specific practice, its recorded context outranks a generic
-  // keyword hit. Keyword matches fill the remaining slots.
+  // keyword hit. Keyword matches fill the remaining slots, but a document that
+  // is scoped to other practices is never used to answer for this one.
   const linked = practiceIds.length > 0
     ? documents.filter((document) => (document.relatedPracticeIds ?? []).some((id) => practiceIds.includes(id)))
     : [];
-  const matches = searchBrain(documents, query, limit);
+  const matches = searchBrain(documents, query, limit).filter(({ document }) => {
+    const links = document.relatedPracticeIds ?? [];
+    if (links.length === 0) return true;
+    if (practiceIds.length === 0) return true;
+    return links.some((id) => practiceIds.includes(id));
+  });
 
   const chosen: BrainDocument[] = [];
   for (const document of [...linked, ...matches.map((match) => match.document)]) {

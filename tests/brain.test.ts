@@ -185,6 +185,15 @@ describe('chat can use practice context', () => {
     expect(output.summary).toContain('needs clarification');
   });
 
+  it('never answers for one practice with another practice\'s context', () => {
+    // "contact lens coaching" matches the Warwick document by keyword only.
+    // Warwick is scoped to P030, so it must not surface for P001.
+    const forChorlton = getTool('search_brain')!.run(dataset, { query: 'contact lens coaching', practiceIds: ['P001'] });
+    expect(forChorlton.sources ?? []).not.toContain('Brain: Warwick: contact lens coaching reference site');
+    const forWarwick = getTool('search_brain')!.run(dataset, { query: 'contact lens coaching', practiceIds: ['P030'] });
+    expect(forWarwick.sources ?? []).toContain('Brain: Warwick: contact lens coaching reference site');
+  });
+
   it('still reports when there is nothing to find', () => {
     const output = getTool('search_brain')!.run(dataset, { query: 'zzzz-nothing' });
     expect(output.sources).toHaveLength(0);
