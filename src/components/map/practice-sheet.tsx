@@ -5,6 +5,7 @@ import type { MapPractice } from '@/data/map-model';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 
 function Sparkline({ values }: { values: number[] }) {
   if (values.length < 2) return null;
@@ -26,9 +27,9 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Metric({ label, value, sub, span }: { label: string; value: string; sub?: string; span?: boolean }) {
   return (
-    <div className="surface-well rounded-lg bg-secondary/60 px-3 py-2">
+    <div className={cn('surface-well rounded-lg bg-secondary/60 px-3 py-2', span && 'col-span-2')}>
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-semibold tabular-nums">{value}</p>
       {sub ? <p className="text-[11px] text-muted-foreground">{sub}</p> : null}
@@ -63,17 +64,21 @@ export function PracticeSheet({
               </div>
               <SheetTitle className="mt-2">{practice.name}</SheetTitle>
               <SheetDescription>
-                {practice.manager} · {practice.pmsSystem} · mentor {practice.mentorName}
+                {practice.manager} · practice manager
               </SheetDescription>
             </SheetHeader>
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <Metric label="Revenue" value={practice.revenueDisplay} sub={`${practice.revenueAttainmentDisplay} of ${practice.revenueTargetDisplay}`} />
-              <Metric label="vs last month" value={practice.revenueMoMDisplay} sub="revenue" />
+              <Metric label="Revenue change" value={practice.revenueMoMDisplay} sub="vs last month" />
               <Metric label="Conversion" value={practice.conversionDisplay} sub={practice.conversionMoMDisplay} />
               <Metric label="Contact lens" value={practice.clAttainmentDisplay} sub={`${practice.clActualDisplay} of ${practice.clTargetDisplay}`} />
-              <Metric label="Training" value={practice.trainingCompletionDisplay} sub={practice.trainingOverdue > 0 ? `${practice.trainingOverdue} overdue` : 'no overdue'} />
-              <Metric label="Manager" value={practice.manager.split(' ')[0]} sub="practice manager" />
+              <Metric
+                label="Training"
+                value={practice.trainingCompletionDisplay}
+                sub={practice.trainingOverdue > 0 ? `${practice.trainingOverdue} overdue` : 'no overdue'}
+                span
+              />
             </div>
 
             <div className="mt-5">

@@ -280,31 +280,35 @@ export function MapView({
                 </SelectContent>
               </Select>
 
-              <div className="flex flex-wrap items-center gap-1">
-                {lens.filters.map((item) => (
-                  <motion.button
-                    key={item.id}
-                    onClick={() => setFilterId(item.id)}
-                    whileTap={{ scale: 0.96 }}
-                    className={cn(
-                      'relative rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-                      filterId === item.id
-                        ? 'border-coral text-foreground'
-                        : 'border-border text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {/* Same sliding highlight language as the rail. */}
-                    {filterId === item.id ? (
-                      <motion.span
-                        layoutId="map-filter-pill"
-                        className="absolute inset-0 rounded-full bg-coral/10"
-                        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                      />
-                    ) : null}
-                    <span className="relative">{item.label}</span>
-                  </motion.button>
-                ))}
-              </div>
+              {/* Filter presets. Hidden when the only option is "all", so a
+                  lens that has nothing to filter never shows a dead chip. */}
+              {lens.filters.length > 1 ? (
+                <div className="flex flex-wrap items-center gap-1">
+                  {lens.filters.map((item) => (
+                    <motion.button
+                      key={item.id}
+                      onClick={() => setFilterId(item.id)}
+                      whileTap={{ scale: 0.96 }}
+                      className={cn(
+                        'relative rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                        filterId === item.id
+                          ? 'border-coral text-foreground'
+                          : 'border-border text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {/* Same sliding highlight language as the rail. */}
+                      {filterId === item.id ? (
+                        <motion.span
+                          layoutId="map-filter-pill"
+                          className="absolute inset-0 rounded-full bg-coral/10"
+                          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                        />
+                      ) : null}
+                      <span className="relative">{item.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="relative ml-auto w-[190px]">
                 <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -494,7 +498,7 @@ export function MapView({
                   <div className="mb-2 flex items-center gap-2">
                     <span className="label-caps">Mentor portfolios</span>
                     <span className="text-[10px] text-muted-foreground">
-                      observed results for the same practices, not a causal estimate and not a ranking of people
+                      observed results for their practices, not proof of cause, not a ranking of people
                     </span>
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-1">
