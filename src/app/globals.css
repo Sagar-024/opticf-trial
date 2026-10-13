@@ -135,4 +135,18 @@
   .label-caps {
     @apply text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground;
   }
+
+  /*
+   * Streaming text: each new chunk of an answer settles in as it arrives.
+   * Starts at 0.15 rather than 0 on purpose, so if animation frames are frozen
+   * the text is still readable instead of invisible.
+   */
+  @keyframes ink-settle {
+    from { opacity: 0.15; }
+    to { opacity: 1; }
+  }
+
+  .anim-ink {
+    animation: ink-settle 240ms ease-out both;
+  }
 }

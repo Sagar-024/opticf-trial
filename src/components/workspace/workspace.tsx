@@ -45,6 +45,20 @@ const SECONDARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+/**
+ * Rail entrance: the logo leads, then the org block, then each nav item and the
+ * profile follow a beat later. Replays whenever the rail reopens.
+ */
+const railStagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.045, delayChildren: 0.06 } },
+};
+
+const railItem: Variants = {
+  hidden: { opacity: 0, x: -10 },
+  show: { opacity: 1, x: 0, transition: { duration: 0.34, ease: EASE } },
+};
+
 function PriorityCard({
   item,
   onOpenPractice,
@@ -237,6 +251,7 @@ export function Workspace({
         key={item.key}
         onClick={() => setView(item.key)}
         aria-current={active ? 'page' : undefined}
+        variants={railItem}
         className={cn(
           'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs',
           active ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -272,33 +287,38 @@ export function Workspace({
         )}
         aria-hidden={!railOpen || mapFocus}
       >
-        <div className="flex h-full flex-col px-3 py-5">
-          <div className="mb-5 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
+        <motion.div
+          className="flex h-full flex-col px-3 py-5"
+          variants={railStagger}
+          initial="hidden"
+          animate={railOpen && !mapFocus ? 'show' : 'hidden'}
+        >
+          <motion.div variants={railItem} className="mb-5 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
             <Logo className="size-6" /> Optific<span className="text-coral">+</span>
-          </div>
+          </motion.div>
 
-          <div className="mb-4 flex items-center gap-2 border-y border-border px-1.5 py-2.5">
+          <motion.div variants={railItem} className="mb-4 flex items-center gap-2 border-y border-border px-1.5 py-2.5">
             <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">N</span>
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold leading-tight">Northstar Group</p>
               <p className="truncate text-[10px] leading-tight text-muted-foreground">{latestMonth}</p>
             </div>
-          </div>
+          </motion.div>
 
           <nav aria-label="Sections">{PRIMARY_NAV.map(navButton)}</nav>
 
-          <div className="my-3 border-t border-border" />
+          <motion.div variants={railItem} className="my-3 border-t border-border" />
 
           <nav aria-label="Workspace tools">{SECONDARY_NAV.map(navButton)}</nav>
 
-          <div className="mt-auto flex items-center gap-2.5 border-t border-border px-1 pt-3">
+          <motion.div variants={railItem} className="mt-auto flex items-center gap-2.5 border-t border-border px-1 pt-3">
             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-rail-active text-[10px] font-semibold">SK</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold leading-tight">Sara Kelly</p>
               <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </motion.aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -356,14 +376,20 @@ export function Workspace({
                   Every figure comes from the data layer.
                 </p>
                 <div className="mt-6 grid grid-cols-1 gap-4">
-                  {today.items.map((item) => (
-                    <PriorityCard
+                  {today.items.map((item, index) => (
+                    <motion.div
                       key={item.id}
-                      item={item}
-                      onOpenPractice={openPracticeOnMap}
-                      onOpenRegion={openRegionOnMap}
-                      onOpenDashboard={openDashboardFor}
-                    />
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: 0.06 * index, ease: EASE }}
+                    >
+                      <PriorityCard
+                        item={item}
+                        onOpenPractice={openPracticeOnMap}
+                        onOpenRegion={openRegionOnMap}
+                        onOpenDashboard={openDashboardFor}
+                      />
+                    </motion.div>
                   ))}
                 </div>
               </div>

@@ -64,6 +64,8 @@ const sendFill = rgb(PALETTE.brand.fill);
 interface Turn {
   role: 'user' | 'assistant';
   text: string;
+  /** Streamed pieces, used only while the answer is arriving. */
+  chunks?: string[];
   widgets: Widget[];
   mapHighlight: string[];
   sources: string[];
@@ -208,7 +210,8 @@ export function ChatView({
             }
 
             if (event.type === 'delta') {
-              patchLast({ text: (draft.text += event.text) });
+              draft.chunks = [...(draft.chunks ?? []), event.text];
+              patchLast({ text: (draft.text += event.text), chunks: draft.chunks });
             } else if (event.type === 'tool') {
               draft.tools = [...(draft.tools ?? []), event.name];
               patchLast({ tools: draft.tools });
@@ -219,6 +222,8 @@ export function ChatView({
               contextRef.current = event.context;
               patchLast({
                 text: event.text,
+                // Settled: drop the chunks so history renders as plain text.
+                chunks: undefined,
                 widgets: event.widgets,
                 mapHighlight: event.mapHighlight,
                 sources: event.sources,
@@ -374,7 +379,14 @@ export function ChatView({
 
                     {turn.text ? (
                       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                        {turn.text}
+                        {/* While the answer streams, each arriving chunk settles in. */}
+                        {turn.chunks && turn.chunks.length > 0
+                          ? turn.chunks.map((chunk, chunkIndex) => (
+                              <span key={chunkIndex} data-anim className="anim-ink">
+                                {chunk}
+                              </span>
+                            ))
+                          : turn.text}
                         {loading && index === turns.length - 1 ? (
                           <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-coral align-text-bottom" />
                         ) : null}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { FileText, Pencil, RotateCcw, Search, Sparkles, TriangleAlert } from 'lucide-react';
 import { BRAIN_DOCUMENTS, BRAIN_SECTIONS, type BrainDocument } from '@/content/brain';
 import { Badge } from '@/components/ui/badge';
@@ -170,10 +171,21 @@ export function BrainView({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {filtered.map((document) => (
-            <Card key={document.id} className="shadow-panel">
-              <CardContent className="flex h-full flex-col p-4">
+        {/* Cards reflow into their new places when the section filter changes,
+            instead of jumping. */}
+        <motion.div layout className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {filtered.map((document, index) => (
+              <motion.div
+                key={document.id}
+                layout
+                initial={{ opacity: 0, x: -14, scale: 0.98 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ duration: 0.34, delay: Math.min(index * 0.04, 0.24), ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Card className="h-full shadow-panel">
+                  <CardContent className="flex h-full flex-col p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">{document.scope}</Badge>
                   <span className="text-[10px] uppercase tracking-[1.3px] text-muted-foreground">{document.section}</span>
@@ -204,13 +216,15 @@ export function BrainView({
                     </Button>
                   ) : null}
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
           {filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground">No guidance matches this search.</p>
           ) : null}
-        </div>
+        </motion.div>
       </div>
 
       {/* Read */}

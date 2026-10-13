@@ -282,18 +282,27 @@ export function MapView({
 
               <div className="flex flex-wrap items-center gap-1">
                 {lens.filters.map((item) => (
-                  <button
+                  <motion.button
                     key={item.id}
                     onClick={() => setFilterId(item.id)}
+                    whileTap={{ scale: 0.96 }}
                     className={cn(
-                      'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                      'relative rounded-full border px-2.5 py-1 text-[11px] transition-colors',
                       filterId === item.id
-                        ? 'border-coral bg-coral/10 text-foreground'
-                        : 'border-border text-muted-foreground hover:bg-accent',
+                        ? 'border-coral text-foreground'
+                        : 'border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    {item.label}
-                  </button>
+                    {/* Same sliding highlight language as the rail. */}
+                    {filterId === item.id ? (
+                      <motion.span
+                        layoutId="map-filter-pill"
+                        className="absolute inset-0 rounded-full bg-coral/10"
+                        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                      />
+                    ) : null}
+                    <span className="relative">{item.label}</span>
+                  </motion.button>
                 ))}
               </div>
 
@@ -409,6 +418,7 @@ export function MapView({
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
             className="pointer-events-none absolute inset-0 grid place-items-center"
           >
             <div className="pointer-events-auto rounded-lg border border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground shadow-soft">
@@ -442,16 +452,24 @@ export function MapView({
               className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-1.5 py-1 shadow-soft backdrop-blur"
             >
               {lenses.map((item) => (
-                <button
+                <motion.button
                   key={item.id}
                   onClick={() => selectLens(item.id)}
+                  whileTap={{ scale: 0.96 }}
                   className={cn(
-                    'rounded-full px-2.5 py-1 text-[11px] transition-colors',
-                    lensId === item.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+                    'relative rounded-full px-2.5 py-1 text-[11px] transition-colors',
+                    lensId === item.id ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
-                  {item.label}
-                </button>
+                  {lensId === item.id ? (
+                    <motion.span
+                      layoutId="focus-lens-pill"
+                      className="absolute inset-0 rounded-full bg-primary"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  ) : null}
+                  <span className="relative">{item.label}</span>
+                </motion.button>
               ))}
               <span className="mx-1 h-4 w-px bg-border" />
               <button
