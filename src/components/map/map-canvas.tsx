@@ -54,6 +54,18 @@ interface Transform {
   height: number;
 }
 
+/** First two letters of a practice name, for the mark inside a large node. */
+function initialsOf(name: string): string {
+  const letters = name.replace(/[^A-Za-z]/g, '');
+  return letters.length >= 2 ? letters.slice(0, 2) : letters || '?';
+}
+
+/** Rough lightness of an oklch() string, used to pick letter contrast. */
+function oklchLightness(color: string): number {
+  const match = color.match(/oklch\(\s*([\d.]+)/);
+  return match ? Number(match[1]) : 0.5;
+}
+
 // The toolbar, legend and focus strip are separate rows, not overlays, so the
 // fit only needs room for the floating zoom cluster at the bottom. Kept tight
 // on purpose: every pixel reserved here shrinks the whole graph.
@@ -284,6 +296,21 @@ export function MapCanvas({
         context.lineWidth = 1.5;
         context.strokeStyle = palette.background;
         context.stroke();
+      }
+
+      // Once a disc can hold them, the first two letters of the practice name go
+      // inside it, so a place is identifiable at a glance instead of by reading
+      // a label. Below this size a letter would only be a smudge, so small nodes
+      // stay plain dots.
+      if (radius >= 10) {
+        const lightness = oklchLightness(palette.colors[visual.colorKey]);
+        context.save();
+        context.font = `600 ${Math.round(radius * 0.9)}px Inter, sans-serif`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillStyle = lightness > 0.62 ? 'rgba(15, 17, 20, 0.78)' : 'rgba(255, 255, 255, 0.94)';
+        context.fillText(initialsOf(practice.name), point.x, point.y + radius * 0.04);
+        context.restore();
       }
 
       if (inFilter && (isSelected || isHovered || (highlightActive && inHighlight))) {
