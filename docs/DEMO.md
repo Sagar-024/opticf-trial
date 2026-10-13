@@ -20,6 +20,10 @@ Then in the browser:
    animations, and the Dither Kit chart bars (they paint on animation frames, so a background tab shows
    axes but no bars).
 
+> **Never run `npm run build` while `npm run dev` is running.** They share the `.next` folder and the
+> dev server breaks (unstyled page, 500s, missing CSS). If the page ever looks unstyled: stop the
+> server, delete `.next` (`Remove-Item -Recurse -Force .next`), then `npm run dev` again.
+
 Sanity check, one command that tells you the model is reachable and can call tools:
 
 ```bash
