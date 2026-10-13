@@ -10,6 +10,9 @@ npm run seed        # regenerate the sample data (deterministic)
 npm run dev         # http://localhost:3000
 ```
 
+The hosted copy for the call is **https://opticf-trial.vercel.app**. The walkthrough below works on either one;
+keep the local server running as the backup. The hosted build generates its own data from the same seed.
+
 Then in the browser:
 
 1. Open http://localhost:3000 and **hard refresh** (`Ctrl+Shift+R`).
