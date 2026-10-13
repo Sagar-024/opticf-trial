@@ -221,7 +221,7 @@ export function MapCanvas({
     }
 
     // ── Edges ──
-    context.lineWidth = 0.7;
+    context.lineWidth = 0.8;
     for (const edge of layout.edges) {
       const a = hubPoints.get(edge.a) ?? nodePoints.get(edge.a);
       const b = hubPoints.get(edge.b) ?? nodePoints.get(edge.b);
@@ -230,10 +230,12 @@ export function MapCanvas({
       const touched = highlightActive && (highlightSet.has(edge.a) || highlightSet.has(edge.b));
       const practice = byId.get(edge.b);
       const dimmedByFilter = practice ? !matches(practice) : false;
-      // Practice links are the connective tissue of the graph: faint enough to
-      // stay behind the nodes, strong enough to see on a dark canvas.
-      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.55 : 0.3;
-      context.strokeStyle = palette.border;
+      // Practice links are the connective tissue of the graph, so they are
+      // drawn in the foreground colour (near white in dark, ink in light) rather
+      // than the border grey: faint enough to stay behind the nodes, clearly
+      // visible without hovering.
+      context.strokeStyle = palette.labelStrong;
+      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.6 : 0.38;
       context.setLineDash(edge.kind === 'practice' ? [3, 4] : []);
       context.beginPath();
       context.moveTo(a.x, a.y);

@@ -23,7 +23,9 @@ function Sparkline({ values }: { values: number[] }) {
   const falling = values[values.length - 1] < values[0];
   return (
     <svg viewBox="0 0 100 32" className="h-8 w-full" role="img" aria-label="Revenue over the last six months" preserveAspectRatio="none">
-      <polyline points={points} fill="none" stroke={falling ? 'var(--coral)' : 'oklch(var(--chart-3))'} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+      {/* Tokens are bare oklch triples, so the stroke must wrap them: `var(--coral)`
+          alone is not a colour and painted nothing, which left an empty gap. */}
+      <polyline points={points} fill="none" stroke={falling ? 'oklch(var(--coral))' : 'oklch(var(--chart-3))'} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
