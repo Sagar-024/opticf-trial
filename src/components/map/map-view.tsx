@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight, LayoutGrid, List, Maximize2, Minimize2, Search, Sparkles, X } from 'lucide-react';
 import type { MapModel, MapPractice } from '@/data/map-model';
+import { mentor_portfolios } from '@/data/map-model';
 import { buildLenses, filterById, lensById, type LensId } from '@/map/lenses';
 import type { MapLevel } from '@/map/layout';
 import { Badge } from '@/components/ui/badge';
@@ -113,6 +114,8 @@ export function MapView({
     () => model.practices.find((practice) => practice.practiceId === selectedId) ?? null,
     [model.practices, selectedId],
   );
+
+  const portfolios = useMemo(() => mentor_portfolios(model), [model]);
 
   // The URL only mirrors the current view. Deep links are parsed once by the
   // shell (see the `intent` prop), so a stale query can never be replayed when
@@ -468,36 +471,81 @@ export function MapView({
         {!focus ? (
           <motion.div key="strip" {...SLIDE} className="shrink-0 overflow-hidden border-t border-border">
             <div className="px-4 py-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="label-caps">Where to focus</span>
-                <span className="text-[10px] text-muted-foreground">
-                  top {focus_top.length} by attention score in {lens.label.toLowerCase()} view
-                </span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {focus_top.map((practice) => (
-                  <button
-                    key={practice.practiceId}
-                    onClick={() => {
-                      selectPractice(practice.practiceId);
-                      onHighlightChange([practice.practiceId]);
-                    }}
-                    className={cn(
-                      'min-w-[190px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
-                      highlightSet.has(practice.practiceId) ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
-                    )}
-                  >
-                    <p className="text-xs font-semibold">{practice.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{practice.region} · score {practice.attentionScore}/100</p>
-                    <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
-                      {practice.revenueDisplay} ({practice.revenueMoMDisplay})
-                    </p>
-                  </button>
-                ))}
-                {focus_top.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No practices need attention in this view.</p>
-                ) : null}
-              </div>
+              {lensId === 'mentors' ? (
+                <>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="label-caps">Mentor portfolios</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      observed results for the same practices, not a causal estimate and not a ranking of people
+                    </span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {portfolios.map((portfolio) => (
+                      <button
+                        key={portfolio.mentorId}
+                        onClick={() => {
+                          onHighlightChange(portfolio.practiceIds);
+                          setFilterId(`mentor-${portfolio.mentorId}`);
+                          setRegion(null);
+                        }}
+                        className={cn(
+                          'min-w-[220px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
+                          filterId === `mentor-${portfolio.mentorId}` ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
+                        )}
+                      >
+                        <p className="text-xs font-semibold">{portfolio.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {portfolio.practiceCount} practices
+                          {portfolio.attentionCount > 0 ? ` · ${portfolio.attentionCount} need attention` : ''}
+                          {portfolio.trainingGaps > 0 ? ` · ${portfolio.trainingGaps} with training gaps` : ''}
+                        </p>
+                        <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                          Revenue {portfolio.revenueDisplay} ({portfolio.revenueChangeDisplay})
+                        </p>
+                        <p className="text-[11px] tabular-nums text-muted-foreground">
+                          Conversion {portfolio.conversionDisplay} ({portfolio.conversionChangeDisplay}) · {portfolio.practicesImproving}/{portfolio.practiceCount} grew
+                        </p>
+                      </button>
+                    ))}
+                    {portfolios.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No mentor assignments recorded.</p>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="label-caps">Where to focus</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      top {focus_top.length} by attention score in {lens.label.toLowerCase()} view
+                    </span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {focus_top.map((practice) => (
+                      <button
+                        key={practice.practiceId}
+                        onClick={() => {
+                          selectPractice(practice.practiceId);
+                          onHighlightChange([practice.practiceId]);
+                        }}
+                        className={cn(
+                          'min-w-[190px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
+                          highlightSet.has(practice.practiceId) ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
+                        )}
+                      >
+                        <p className="text-xs font-semibold">{practice.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{practice.region} · score {practice.attentionScore}/100</p>
+                        <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                          {practice.revenueDisplay} ({practice.revenueMoMDisplay})
+                        </p>
+                      </button>
+                    ))}
+                    {focus_top.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No practices need attention in this view.</p>
+                    ) : null}
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         ) : null}

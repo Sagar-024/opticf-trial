@@ -171,4 +171,62 @@ export function mapMeta(dataset: Dataset): { totalPractices: number; totalRegion
   };
 }
 
-export { formatMoney, formatPercent };
+/**
+ * How each mentor's portfolio is performing.
+ *
+ * Revenue change uses portfolio totals; conversion change is the mean of the
+ * practices so one large practice cannot dominate. This is an observed result
+ * for the same cohort, not a causal estimate and not a ranking of people.
+ */
+export interface MentorPortfolio {
+  mentorId: string;
+  name: string;
+  practiceCount: number;
+  revenueDisplay: string;
+  revenueChangePct: number;
+  revenueChangeDisplay: string;
+  conversionDisplay: string;
+  conversionChangePp: number;
+  conversionChangeDisplay: string;
+  practicesImproving: number;
+  attentionCount: number;
+  trainingGaps: number;
+  practiceIds: string[];
+}
+
+export function mentor_portfolios(model: MapModel): MentorPortfolio[] {
+  return model.mentors.map((mentor) => {
+    const practices = model.practices.filter((practice) => practice.mentorId === mentor.mentorId);
+
+    const revenue = practices.reduce((total, practice) => total + practice.revenue, 0);
+    const previousRevenue = practices.reduce((total, practice) => {
+      // Recover the previous month from the published change.
+      const factor = 1 + practice.revenueMoMPct / 100;
+      return total + (factor > 0.01 ? practice.revenue / factor : practice.revenue);
+    }, 0);
+    const revenueChangePct = previousRevenue > 0 ? ((revenue - previousRevenue) / previousRevenue) * 100 : 0;
+
+    const conversion = practices.length
+      ? practices.reduce((total, practice) => total + practice.conversionPct, 0) / practices.length
+      : 0;
+    const conversionChangePp = practices.length
+      ? practices.reduce((total, practice) => total + practice.conversionMoMPp, 0) / practices.length
+      : 0;
+
+    return {
+      mentorId: mentor.mentorId,
+      name: mentor.name,
+      practiceCount: practices.length,
+      revenueDisplay: formatMoney(revenue),
+      revenueChangePct,
+      revenueChangeDisplay: formatSignedPercent(revenueChangePct),
+      conversionDisplay: formatPercent(conversion),
+      conversionChangePp,
+      conversionChangeDisplay: formatSignedPp(conversionChangePp),
+      practicesImproving: practices.filter((practice) => practice.revenueMoMPct > 0).length,
+      attentionCount: practices.filter((practice) => practice.attentionBand === 'high').length,
+      trainingGaps: practices.filter((practice) => practice.trainingCompletionPct < 100).length,
+      practiceIds: practices.map((practice) => practice.practiceId),
+    };
+  });
+}

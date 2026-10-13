@@ -21,6 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { DitherButton } from '@/components/dither-kit/button';
 import { Logo } from '@/components/logo';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
@@ -421,49 +422,50 @@ export function ChatView({
         </div>
       </ScrollArea>
 
-      <div className="shrink-0 border-t border-border bg-background/95 backdrop-blur">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            send(input);
-          }}
-          className="mx-auto w-full max-w-3xl px-6 py-4"
-        >
-          <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-2 shadow-soft transition-shadow focus-within:ring-2 focus-within:ring-ring/40">
-            <Textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  send(input);
-                }
-              }}
-              placeholder="Ask your group a question..."
-              rows={1}
-              className="min-h-9 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
-              disabled={loading}
-            />
-            {loading ? (
-              <Button type="button" size="icon" variant="outline" className="shrink-0 rounded-xl" onClick={stop} aria-label="Stop">
-                <Square className="size-3.5" />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                size="icon"
-                className="shrink-0 rounded-xl"
-                disabled={!input.trim()}
-                aria-label="Send question"
-              >
-                <ArrowUp />
-              </Button>
-            )}
-          </div>
-          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+      {/* Composer: a single floating pill so the conversation keeps the space. */}
+      <div className="shrink-0 px-6 pb-4">
+        <div className="mx-auto w-full max-w-3xl">
+          <p className="mb-1.5 text-center text-[10px] text-muted-foreground">
             Live AI, fictional data. Every number comes from the loaded data.
           </p>
-        </form>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              send(input);
+            }}
+          >
+            <div className="flex items-end gap-2 rounded-full border border-border bg-card py-1.5 pl-4 pr-1.5 shadow-soft transition-shadow focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/25">
+              <Textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    send(input);
+                  }
+                }}
+                placeholder="Ask your group a question..."
+                rows={1}
+                className="max-h-32 min-h-8 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-sm shadow-none focus-visible:ring-0"
+                disabled={loading}
+              />
+              <DitherButton
+                type={loading ? 'button' : 'submit'}
+                color="orange"
+                variant="gradient"
+                bloom="aura"
+                onClick={loading ? stop : undefined}
+                disabled={!loading && !input.trim()}
+                aria-label={loading ? 'Stop generating' : 'Send question'}
+                /* Dark ink on the fixed orange fill, the only combination that
+                   keeps the icon legible in both themes. */
+                className="size-9 shrink-0 rounded-full p-0 text-[#1a2438]"
+              >
+                {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
+              </DitherButton>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

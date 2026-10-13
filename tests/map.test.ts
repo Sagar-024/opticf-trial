@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { boundsOfSubset, computeFit, computeLayout, nearestNode, type LayoutItem } from '../src/map/layout';
 import { buildLenses, filterById, lensById, tooltipLines } from '../src/map/lenses';
-import { buildMapModel } from '../src/data/map-model';
+import { buildMapModel, mentor_portfolios } from '../src/data/map-model';
+import { query_metrics } from '../src/data/metrics';
 import { getTool } from '../src/ai/tools';
 import { generateDataset } from '../src/seed/generate';
 
@@ -164,6 +165,35 @@ describe('lenses', () => {
   });
 });
 
+describe('mentor portfolios', () => {
+  const portfolios = mentor_portfolios(model);
+
+  it('gives every mentor one portfolio, covering every practice exactly once', () => {
+    expect(portfolios).toHaveLength(model.mentors.length);
+    const ids = portfolios.flatMap((portfolio) => portfolio.practiceIds);
+    expect(ids).toHaveLength(model.practices.length);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('the portfolios add up to the group revenue for the month', () => {
+    const total = portfolios.reduce((sum, portfolio) => sum + Number(portfolio.revenueDisplay.replace(/[^\d]/g, '')), 0);
+    const group = query_metrics(dataset, { month: '2026-10' });
+    expect(total).toBe(group.revenue.actual);
+  });
+
+  it('reports formatted figures and honest counts', () => {
+    for (const portfolio of portfolios) {
+      expect(portfolio.revenueDisplay).toMatch(/£/);
+      expect(portfolio.revenueChangeDisplay).toMatch(/%/);
+      expect(portfolio.conversionDisplay).toMatch(/%/);
+      expect(portfolio.conversionChangeDisplay).toMatch(/pp/);
+      expect(portfolio.practicesImproving).toBeGreaterThanOrEqual(0);
+      expect(portfolio.practicesImproving).toBeLessThanOrEqual(portfolio.practiceCount);
+      expect(portfolio.attentionCount).toBeLessThanOrEqual(portfolio.practiceCount);
+    }
+  });
+});
+
 describe('the map and the chat cannot disagree', () => {
   it('contact lens shortfalls match the chat tool exactly', () => {
     const lens = lensById(lenses, 'contactLens');
@@ -181,8 +211,7 @@ describe('the map and the chat cannot disagree', () => {
     expect(mapCount).toBe(chatCount);
   });
 
-  it('builds one map row per practice with no missing metrics', () => {
-    expect(model.practices).toHaveLength(dataset.practices.length);
+  it('builds one map row per practice with no missing metrics', () => {    expect(model.practices).toHaveLength(dataset.practices.length);
     for (const practice of model.practices) {
       expect(practice.revenueDisplay).toMatch(/£/);
       expect(practice.revenueMoMDisplay).toMatch(/%/);
