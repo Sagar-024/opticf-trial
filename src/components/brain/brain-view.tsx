@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FileText, Pencil, RotateCcw, Search, Sparkles, TriangleAlert } from 'lucide-react';
+import { FileText, MapPin, Pencil, RotateCcw, Search, Sparkles, TriangleAlert } from 'lucide-react';
 import { BRAIN_DOCUMENTS, BRAIN_SECTIONS, type BrainDocument } from '@/content/brain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,37 @@ interface Override {
 }
 
 /**
+ * The practices a document is linked to, as chips. This is the connection the
+ * brief asks for: knowledge points at places, and a place can point back.
+ */
+function PracticeLinks({
+  ids,
+  label,
+  onOpen,
+}: {
+  ids?: string[];
+  label: (practiceId: string) => string;
+  onOpen?: (practiceId: string) => void;
+}) {
+  if (!ids || ids.length === 0 || !onOpen) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {ids.map((practiceId) => (
+        <button
+          key={practiceId}
+          onClick={() => onOpen(practiceId)}
+          title="Open on the map"
+          className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <MapPin className="size-2.5 text-coral" />
+          {label(practiceId)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The Brain tab: the group's written guidance, with read and edit dialogs.
  * Edits are kept locally for the demo and are used by the chat's search_brain
  * tool (which reads the same documents).
@@ -35,9 +66,13 @@ interface Override {
 export function BrainView({
   openDocumentTitle,
   onOpened,
+  onOpenPractice,
+  practiceName,
 }: {
   openDocumentTitle?: string | null;
   onOpened?: () => void;
+  onOpenPractice?: (practiceId: string) => void;
+  practiceName?: (practiceId: string) => string;
 } = {}) {
   const [section, setSection] = useState<string>('all');
   const [query, setQuery] = useState('');
@@ -204,6 +239,13 @@ export function BrainView({
                 <p className="mt-2 text-[10px] text-muted-foreground">
                   {document.owner} · reviewed {document.reviewed}
                 </p>
+                <div className="mt-2">
+                  <PracticeLinks
+                    ids={document.relatedPracticeIds}
+                    label={(practiceId) => practiceName?.(practiceId) ?? practiceId}
+                    onOpen={onOpenPractice}
+                  />
+                </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => setReading(document)}>Read</Button>
@@ -241,6 +283,13 @@ export function BrainView({
                 <DialogDescription>
                   {reading.owner} · reviewed {reading.reviewed}
                 </DialogDescription>
+                <div className="mt-2">
+                  <PracticeLinks
+                    ids={reading.relatedPracticeIds}
+                    label={(practiceId) => practiceName?.(practiceId) ?? practiceId}
+                    onOpen={onOpenPractice}
+                  />
+                </div>
               </DialogHeader>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{reading.content}</p>
               <p className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">

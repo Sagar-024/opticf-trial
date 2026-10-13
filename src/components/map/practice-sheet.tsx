@@ -1,7 +1,8 @@
 'use client';
 
-import { ArrowRight, GraduationCap, MessageSquare, TrendingDown, User } from 'lucide-react';
+import { ArrowRight, FileText, GraduationCap, MessageSquare, TrendingDown, User } from 'lucide-react';
 import type { MapPractice } from '@/data/map-model';
+import { BRAIN_DOCUMENTS } from '@/content/brain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -43,13 +44,18 @@ export function PracticeSheet({
   onOpenChange,
   onAsk,
   onHighlight,
+  onOpenBrain,
 }: {
   practice: MapPractice | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAsk: (question: string) => void;
   onHighlight: (practiceId: string) => void;
+  onOpenBrain?: (documentTitle: string) => void;
 }) {
+  const contextDocuments = practice
+    ? BRAIN_DOCUMENTS.filter((document) => (document.relatedPracticeIds ?? []).includes(practice.practiceId))
+    : [];
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-md">
@@ -112,6 +118,29 @@ export function PracticeSheet({
                     </li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+
+            {contextDocuments.length > 0 ? (
+              <div className="mt-5">
+                <p className="label-caps mb-2">Context from the Brain</p>
+                <div className="space-y-1.5">
+                  {contextDocuments.map((document) => (
+                    <button
+                      key={document.id}
+                      onClick={() => onOpenBrain?.(document.title)}
+                      className="flex w-full items-start gap-2 rounded-lg border border-border px-3 py-2 text-left transition-colors hover:bg-accent"
+                    >
+                      <FileText className="mt-0.5 size-3.5 shrink-0 text-coral" />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium">{document.title}</span>
+                        <span className="block text-[10px] text-muted-foreground">
+                          {document.section} · {document.owner}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
 

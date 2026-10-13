@@ -51,6 +51,8 @@ export interface MapViewProps {
   onIntentHandled?: () => void;
   focus?: boolean;
   onToggleFocus?: () => void;
+  /** Opens a linked Brain document from the practice sheet. */
+  onOpenBrain?: (documentTitle: string) => void;
 }
 
 function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId {
@@ -76,6 +78,7 @@ export function MapView({
   onIntentHandled,
   focus = false,
   onToggleFocus,
+  onOpenBrain,
 }: MapViewProps) {
   const [lensId, setLensId] = useState<LensId>('region');
   const [region, setRegion] = useState<string | null>(null);
@@ -579,6 +582,7 @@ export function MapView({
         onOpenChange={setSheetOpen}
         onAsk={onAsk}
         onHighlight={(practiceId) => onHighlightChange([practiceId])}
+        onOpenBrain={onOpenBrain}
       />
     </div>
   );

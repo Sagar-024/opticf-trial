@@ -419,11 +419,17 @@ export function Workspace({
               onIntentHandled={() => setMapIntent(null)}
               focus={mapFocus}
               onToggleFocus={() => setMapFocus((value) => !value)}
+              onOpenBrain={openBrainDocument}
             />
           ) : null}
 
           {view === 'brain' ? (
-            <BrainView openDocumentTitle={brainDocument} onOpened={() => setBrainDocument(null)} />
+            <BrainView
+              openDocumentTitle={brainDocument}
+              onOpened={() => setBrainDocument(null)}
+              onOpenPractice={openPracticeOnMap}
+              practiceName={(practiceId) => mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId}
+            />
           ) : null}
 
           {view === 'automations' ? (

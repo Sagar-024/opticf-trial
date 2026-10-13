@@ -160,6 +160,16 @@ const goldens: EvalCase[] = [
     ],
   },
   {
+    id: 'brain-context',
+    title: 'Practice context is found in the Brain and cited',
+    turns: ['What do we know about Chorlton?'],
+    check: ([result]) => [
+      ...expect(result.toolCalls.some((call) => call.name === 'search_brain'), 'searched the Brain'),
+      ...expect(result.sources.some((source) => source.startsWith('Brain: ')), 'cited a Brain document'),
+      ...expect(!result.flagged, 'not flagged'),
+    ],
+  },
+  {
     id: 'latency',
     title: 'Answers stay inside the time budget',
     turns: ['Which practices need the most attention?'],
@@ -224,6 +234,7 @@ function makeMockClient(): LlmClient {
     if (unknown) return { text: '', toolCalls: [{ id: 'call_mock_1', name: 'get_practice', arguments: JSON.stringify({ practice_id: `P0${unknown[1]}` }) }], finishReason: 'tool_calls' };
 
     const pick = (): { tool: string; input: Record<string, unknown> } => {
+      if (/what do we know|practice context|chorlton/.test(q)) return { tool: 'search_brain', input: { query: 'Chorlton', practiceIds: ['P001'] } };
       if (/dashboard/.test(q)) return { tool: 'build_dashboard', input: { metrics: ['revenue', 'conversion'], group_by: 'group' } };
       if (/why did|explain/.test(q)) return { tool: 'query_metrics', input: { regions: ['North West'] } };
       if (/attention/.test(q)) return { tool: 'rank_attention', input: { limit: 5 } };

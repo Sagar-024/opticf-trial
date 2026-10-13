@@ -19,6 +19,13 @@ export interface BrainDocument {
   content: string;
   /** Marks guidance that contradicts other guidance and needs clarification. */
   conflict?: boolean;
+  /**
+   * Practices this document is linked to. Group guidance leaves this empty;
+   * practice context points at the practices it describes, which is what makes
+   * the knowledge explorable from the map and usable by the chat for a specific
+   * practice.
+   */
+  relatedPracticeIds?: string[];
 }
 
 export const BRAIN_SECTIONS = [
@@ -27,6 +34,7 @@ export const BRAIN_SECTIONS = [
   'People & Training',
   'Buying & Suppliers',
   'Marketing',
+  'Practice context',
 ] as const;
 
 export const BRAIN_DOCUMENTS: BrainDocument[] = [
@@ -127,6 +135,7 @@ export const BRAIN_DOCUMENTS: BrainDocument[] = [
     owner: 'Buying team',
     reviewed: '2026-10-06',
     scope: 'Chorlton only',
+    relatedPracticeIds: ['P001'],
     content:
       'Chorlton uses a local frame supply account. The demonstration record has no current warranty term sheet attached. Buying must confirm the applicable terms before any replacement is promised.',
     conflict: true,
@@ -150,6 +159,67 @@ export const BRAIN_DOCUMENTS: BrainDocument[] = [
     scope: 'Group guidance',
     content:
       'Start with the practice objective, the intended audience, the available appointment capacity and the budget. Ask Marketing to review the brief before any campaign is launched. Do not run a contact lens campaign at a practice with outstanding contact lens fitting training.',
+  },
+
+  // ── Practice context ──
+  // Knowledge about specific places. These link to practice ids, so the map's
+  // practice sheet can show them and the chat can pull the right context when a
+  // question names a practice. Wording is deliberately descriptive: context is
+  // recorded, never presented as a measured cause.
+  {
+    id: 'ctx-chorlton',
+    section: 'Practice context',
+    title: 'Chorlton: refit, supply account and local cover',
+    owner: 'Practice Mentoring',
+    reviewed: '2026-10-09',
+    scope: 'Chorlton',
+    relatedPracticeIds: ['P001'],
+    content:
+      'Chorlton relocated its dispensing desk during an August refit and has been working around the works since. The practice runs a local frame supply account and uses an independent repair partner for rush jobs, which can lengthen replacement lead times. The refit is recorded as local context only: the performance data does not measure any effect it may have had on trading.',
+  },
+  {
+    id: 'ctx-didsbury',
+    section: 'Practice context',
+    title: 'Didsbury: new practice manager and open review',
+    owner: 'People team',
+    reviewed: '2026-10-08',
+    scope: 'Didsbury',
+    relatedPracticeIds: ['P002'],
+    content:
+      'Tom Whitaker took over as practice manager in August. Onboarding follows the group checklist: required training is booked, the performance review guide has been walked through with mentor Alex Morgan, and one action with an owner and a review date is open. Trading has been uneven during the handover, and the handover is recorded as context rather than an explanation of any specific movement.',
+  },
+  {
+    id: 'ctx-stockport',
+    section: 'Practice context',
+    title: 'Stockport: weekend cover and dispensing capacity',
+    owner: 'Practice Mentoring',
+    reviewed: '2026-10-07',
+    scope: 'Stockport',
+    relatedPracticeIds: ['P004'],
+    content:
+      'Stockport covers Saturdays with one dispenser on the floor. Holiday cover for the dispensing desk is arranged through Sale where the rota permits, and peak hour cover is the open topic with mentor Alex Morgan. Contact lens trial stock is counted monthly; the September count came back short and was noted for supply.',
+  },
+  {
+    id: 'ctx-chester',
+    section: 'Practice context',
+    title: 'Chester: campaign readiness',
+    owner: 'Marketing Support',
+    reviewed: '2026-10-06',
+    scope: 'Chester',
+    relatedPracticeIds: ['P007'],
+    content:
+      'Chester opened in 2005 and has a long standing local patient base. A local campaign is being scoped for the new year. Required training is complete, so the contact lens promotion rule in the campaign briefing is satisfied; keep the campaign decisions with Marketing until the brief is reviewed.',
+  },
+  {
+    id: 'ctx-warwick',
+    section: 'Practice context',
+    title: 'Warwick: contact lens coaching reference site',
+    owner: 'Practice Mentoring',
+    reviewed: '2026-10-05',
+    scope: 'Warwick',
+    relatedPracticeIds: ['P030'],
+    content:
+      'Warwick is used as the reference site for contact lens growth coaching. Required training is complete and mentor Priya Nair runs quarterly sessions here. The visits are descriptive: Warwick being a reference site does not make its figures a target for any other practice.',
   },
 ];
 

@@ -500,6 +500,9 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
   const query = String(input.query ?? '').trim();
   const limit = Math.min(6, Math.max(1, Number(input.limit) || 3));
   const documents = ctx?.brainDocuments ?? BRAIN_DOCUMENTS;
+  const practiceIds = Array.isArray(input.practiceIds)
+    ? input.practiceIds.filter((id): id is string => typeof id === 'string')
+    : [];
 
   if (query.length === 0) {
     return withNumbers({
@@ -509,9 +512,21 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
     });
   }
 
+  // Documents linked to the practice in question come first: when the model
+  // asks about a specific practice, its recorded context outranks a generic
+  // keyword hit. Keyword matches fill the remaining slots.
+  const linked = practiceIds.length > 0
+    ? documents.filter((document) => (document.relatedPracticeIds ?? []).some((id) => practiceIds.includes(id)))
+    : [];
   const matches = searchBrain(documents, query, limit);
 
-  if (matches.length === 0) {
+  const chosen: BrainDocument[] = [];
+  for (const document of [...linked, ...matches.map((match) => match.document)]) {
+    if (chosen.length >= limit) break;
+    if (!chosen.some((existing) => existing.id === document.id)) chosen.push(document);
+  }
+
+  if (chosen.length === 0) {
     return withNumbers({
       summary: `The Brain has no guidance matching "${query}". Say that the guidance is missing rather than inventing a procedure.`,
       widgets: [],
@@ -524,7 +539,7 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
     id: 'brain-table',
     title: 'Guidance found in the Brain',
     columns: ['Section', 'Guidance', 'Owner', 'Reviewed', 'Scope'],
-    rows: matches.map(({ document }) => [
+    rows: chosen.map((document) => [
       document.section,
       document.title,
       document.owner,
@@ -534,11 +549,11 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
   };
 
   const summary = [
-    `Found ${matches.length} guidance document${matches.length === 1 ? '' : 's'} for "${query}".`,
-    ...matches.map(({ document }) =>
+    `Found ${chosen.length} guidance document${chosen.length === 1 ? '' : 's'} for "${query}"${practiceIds.length > 0 ? `, including context for ${practiceIds.join(', ')}` : ''}.`,
+    ...chosen.map((document) =>
       `[${document.title} | ${document.scope} | owner ${document.owner} | reviewed ${document.reviewed}] <<<${document.content}>>>`,
     ),
-    matches.some(({ document }) => document.conflict)
+    chosen.some((document) => document.conflict)
       ? 'One of these documents is marked as conflicting with other guidance and needs clarification before it is relied on.'
       : '',
   ].join(' ');
@@ -546,7 +561,7 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
   return withNumbers({
     summary,
     widgets: [table],
-    sources: matches.map(({ document }) => `Brain: ${document.title}`),
+    sources: chosen.map((document) => `Brain: ${document.title}`),
     context: context({ metric: 'knowledge' }),
   });
 }
@@ -576,11 +591,16 @@ export const TOOLS: Tool[] = [
     definition: {
       name: 'search_brain',
       description:
-        'Search the group written guidance (the Brain): procedures, policies and practice context. Use this for any question about how something should be done, what the policy is, or what guidance applies. Returns the matching documents so the answer can cite them.',
+        'Search the group written guidance (the Brain): procedures, policies and practice context. Use this for any question about how something should be done, what the policy is, what guidance applies, or what the group has recorded about a specific practice. Returns the matching documents so the answer can cite them.',
       input_schema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'What to look up, e.g. "frame warranty" or "contact lens training".' },
+          practiceIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Practice ids the question is about. Their context documents are returned first.',
+          },
           limit: { type: 'number', description: 'Maximum documents to return (default 3, max 6).' },
         },
         required: ['query'],

@@ -67,24 +67,30 @@ npm run llm:check
 17. On **Mentors**, the strip becomes **Mentor portfolios**: four mentors, each with revenue, conversion
     change and how many practices grew. Click one to highlight their practices.
 18. Click a single practice node to open the inspector: metrics, six month trend, the evidence behind its
-    attention score, training gaps, mentor, and buttons to ask about it or highlight it.
+    attention score, training gaps, context from the Brain, mentor, and buttons to ask about it or highlight it.
 19. Press the **Focus** button in the bottom centre cluster. The shell animates away and the graph fills
     the screen. Press **Esc** or **Exit focus** to come back.
 20. Try **Fit**, the **+ / -** buttons and the scroll wheel to zoom.
 
 ### The Brain (1 minute)
 
-21. Go to **Brain**. Five sections, 12 documents, each with an owner, a review date and a scope.
+21. Go to **Brain**. Six sections, 17 documents, each with an owner, a review date and a scope.
 22. Search **warranty** and open the procedure. Note it says guidance is cited in chat sources.
 23. Click **Edit** on that document, change the wording, and **Save**. The card shows an **Edited** badge.
 24. Go back to **Chat** and ask **How do we handle a frame warranty claim?**
     - Expect: it quotes **your edited wording**, and the source chip opens the document in the Brain.
     - That is the proof that guidance edits reach the AI.
-25. Mark a document as conflicting, ask about it, and it will say clarification is required.
+25. Ask **What do we know about Chorlton?**
+    - Expect: it searches the Brain, returns the **Practice context** documents and cites them.
+    - This is the knowledge layer working alongside the numbers, for one specific practice.
+26. Filter **Practice context** and open the Chorlton note. Click the **Chorlton** chip on the card: it
+    jumps to the map with the practice highlighted. On the map, open Chorlton's sheet and the same
+    document appears under **Context from the Brain**. Knowledge and place point at each other.
+27. Mark a document as conflicting, ask about it, and it will say clarification is required.
 
 ### Light and dark (15 seconds)
 
-26. Toggle the sun/moon in the top bar. Everything follows, including the map canvas and the charts.
+28. Toggle the sun/moon in the top bar. Everything follows, including the map canvas and the charts.
 
 ## 3. If something goes wrong
 

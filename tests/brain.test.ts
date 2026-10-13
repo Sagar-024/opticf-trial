@@ -43,6 +43,34 @@ describe('brain content', () => {
   });
 });
 
+describe('brain links to practices', () => {
+  it('every linked practice id exists in the dataset', () => {
+    const known = new Set(dataset.practices.map((practice) => practice.practiceId));
+    for (const document of BRAIN_DOCUMENTS) {
+      for (const practiceId of document.relatedPracticeIds ?? []) {
+        expect(known.has(practiceId), `${document.id} links to unknown ${practiceId}`).toBe(true);
+      }
+    }
+  });
+
+  it('has a practice context section with real context, not just guidance', () => {
+    expect(BRAIN_SECTIONS).toContain('Practice context');
+    const context = BRAIN_DOCUMENTS.filter((document) => document.section === 'Practice context');
+    expect(context.length).toBeGreaterThanOrEqual(4);
+    expect(context.every((document) => (document.relatedPracticeIds ?? []).length > 0)).toBe(true);
+  });
+
+  it('links the conflicting Chorlton supply note to the practice it is about', () => {
+    const supplier = BRAIN_DOCUMENTS.find((document) => document.id === 'supplier');
+    expect(supplier?.relatedPracticeIds).toEqual(['P001']);
+  });
+
+  it('a practice can point back at its documents', () => {
+    const linked = BRAIN_DOCUMENTS.filter((document) => (document.relatedPracticeIds ?? []).includes('P001'));
+    expect(linked.map((document) => document.id).sort()).toEqual(['ctx-chorlton', 'supplier']);
+  });
+});
+
 describe('guidance edits reach the answers', () => {
   it('applies a local edit over the shipped document', () => {
     const edited = mergeBrainDocuments({
@@ -135,5 +163,31 @@ describe('search_brain tool', () => {
     const output = search('practice', 2);
     const table = output.widgets.find((widget) => widget.type === 'table');
     if (table?.type === 'table') expect(table.rows.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('chat can use practice context', () => {
+  it('finds the context document when the question names the practice', () => {
+    const output = getTool('search_brain')!.run(dataset, { query: 'Chorlton' });
+    expect(output.sources).toContain('Brain: Chorlton: refit, supply account and local cover');
+  });
+
+  it('returns linked practice context first when a practice id is passed', () => {
+    const output = getTool('search_brain')!.run(dataset, { query: 'compliance', practiceIds: ['P030'] });
+    const table = output.widgets.find((widget) => widget.type === 'table');
+    expect(table && table.type === 'table' ? table.rows[0][1] : '').toContain('Warwick');
+    expect(output.summary).toContain('context for P030');
+  });
+
+  it('keeps the conflict warning when the linked document is conflicting', () => {
+    const output = getTool('search_brain')!.run(dataset, { query: 'frame warranty', practiceIds: ['P001'] });
+    expect(output.sources).toContain('Brain: Frame supplier terms and local accounts');
+    expect(output.summary).toContain('needs clarification');
+  });
+
+  it('still reports when there is nothing to find', () => {
+    const output = getTool('search_brain')!.run(dataset, { query: 'zzzz-nothing' });
+    expect(output.sources).toHaveLength(0);
+    expect(output.summary).toContain('no guidance matching');
   });
 });
