@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { DitherButton } from '@/components/dither-kit/button';
+import { PALETTE, rgb } from '@/components/dither-kit/palette';
 import { Logo } from '@/components/logo';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,9 @@ const SUGGESTIONS = [
 ];
 
 const STORAGE_KEY = 'opticf-chat-v1';
+
+/** The Dither palette orange, used as a solid base under the dither texture. */
+const orangeFill = rgb(PALETTE.orange.fill);
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -452,13 +456,16 @@ export function ChatView({
               <DitherButton
                 type={loading ? 'button' : 'submit'}
                 color="orange"
-                variant="gradient"
+                variant="solid"
                 bloom="aura"
                 onClick={loading ? stop : undefined}
                 disabled={!loading && !input.trim()}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
-                /* Dark ink on the fixed orange fill, the only combination that
-                   keeps the icon legible in both themes. */
+                /* The palette orange is painted under the dither texture so the
+                   button reads as solid orange at rest, not a sparse wash. Dark
+                   ink is used for the icon: the only pairing that keeps
+                   contrast on a saturated orange fill in both themes. */
+                style={{ backgroundColor: orangeFill }}
                 className="size-9 shrink-0 rounded-full p-0 text-[#1a2438]"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
