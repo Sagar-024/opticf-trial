@@ -142,9 +142,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Browser surfaces carry the palette too. */
+  /*
+   * Text selection. Dark mode gets a solid white block with dark ink on top, so
+   * the selection reads as white and never as the coral accent. Light mode keeps
+   * a neutral wash instead, because white on a cream page would be invisible.
+   */
   ::selection {
-    background: oklch(var(--coral) / 0.28);
+    background: oklch(var(--ink) / 0.16);
+  }
+
+  .dark ::selection {
+    background: oklch(1 0 0 / 0.92);
+    color: oklch(0.145 0 0);
   }
 }
 
