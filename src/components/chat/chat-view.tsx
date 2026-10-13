@@ -1,13 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, type Variants } from 'framer-motion';
+import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   ArrowUp,
   Check,
   Copy,
   FileText,
-  Loader2,
   MapPin,
   RefreshCw,
   Square,
@@ -63,6 +62,54 @@ function cleanAnswer(text: string): string {
   return cleaned;
 }
 
+/** Tool ids are for us; these phrases are for the person reading the answer. */
+const TOOL_LABELS: Record<string, string> = {
+  search_brain: 'searching the Brain',
+  query_metrics: 'reading the numbers',
+  compare: 'comparing periods',
+  training_status: 'checking training',
+  rank_attention: 'ranking attention',
+  today_priorities: 'reading the priorities',
+  get_practice: 'reading the practice',
+  below_cl_target: 'checking contact lens targets',
+  highlight_on_map: 'marking the map',
+  build_dashboard: 'building the dashboard',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
+}
+
+/**
+ * The working indicator: three ink dots that swell in sequence with a short
+ * label. It always sits at the end of the content that has arrived, so it reads
+ * as "more is coming" rather than something that was left behind at the top.
+ */
+function WorkingIndicator({ label }: { label: string }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      data-anim
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: EASE }}
+      className="flex items-center gap-2 text-xs text-muted-foreground"
+    >
+      <span className="flex items-center gap-[3px]">
+        {[0, 1, 2].map((index) => (
+          <motion.span
+            key={index}
+            className="size-1 rounded-full bg-coral"
+            animate={reduceMotion ? { opacity: 0.6 } : { opacity: [0.25, 1, 0.25] }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 1.1, repeat: Infinity, delay: index * 0.16, ease: 'easeInOut' }}
+          />
+        ))}
+      </span>
+      {label}
+    </motion.div>
+  );
+}
+
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE } },
@@ -94,6 +141,8 @@ interface Turn {
   withdrawn?: boolean;
   stopped?: boolean;
   tools?: string[];
+  /** What the assistant is doing right now: writing or working between steps. */
+  phase?: 'working' | 'writing';
 }
 
 type StreamEvent =
@@ -138,6 +187,10 @@ export function ChatView({
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** Synchronous single-flight guard, so one question can never start two streams. */
+  const sendingRef = useRef(false);
+  /** A handed over question is sent exactly once, even across effect double runs. */
+  const handledPendingRef = useRef<string | null>(null);
 
   // Restore the thread.
   useEffect(() => {
@@ -239,13 +292,13 @@ export function ChatView({
 
             if (event.type === 'delta') {
               draft.chunks = [...(draft.chunks ?? []), event.text];
-              patchLast({ text: (draft.text += event.text), chunks: draft.chunks });
+              patchLast({ text: (draft.text += event.text), chunks: draft.chunks, phase: 'writing' });
             } else if (event.type === 'tool') {
               draft.tools = [...(draft.tools ?? []), event.name];
-              patchLast({ tools: draft.tools });
+              patchLast({ tools: draft.tools, phase: 'working' });
             } else if (event.type === 'widgets') {
               draft.widgets = event.widgets;
-              patchLast({ widgets: event.widgets });
+              patchLast({ widgets: event.widgets, phase: 'working' });
             } else if (event.type === 'done') {
               contextRef.current = event.context;
               patchLast({
@@ -282,18 +335,28 @@ export function ChatView({
 
   function send(question: string): void {
     const text = question.trim();
-    if (!text || loading) return;
+    // Single flight: a synchronous guard, because a handed over question can
+    // arrive twice (React double effect) before the loading state settles, and
+    // two streams into one turn produce exactly the "placeholder above the
+    // answer" artefact this guard exists to prevent.
+    if (!text || loading || sendingRef.current) return;
+    sendingRef.current = true;
     setInput('');
     const history: Turn[] = [...turns, { role: 'user', text, widgets: [], mapHighlight: [], sources: [] }];
-    void runStream(history);
+    void runStream(history).finally(() => {
+      sendingRef.current = false;
+    });
   }
 
   function regenerate(): void {
-    if (loading) return;
+    if (loading || sendingRef.current) return;
     const lastUser = [...turns].reverse().findIndex((turn) => turn.role === 'user');
     if (lastUser === -1) return;
+    sendingRef.current = true;
     const cut = turns.length - lastUser;
-    void runStream(turns.slice(0, cut));
+    void runStream(turns.slice(0, cut)).finally(() => {
+      sendingRef.current = false;
+    });
   }
 
   function stop(): void {
@@ -320,9 +383,12 @@ export function ChatView({
   const empty = turns.length === 0;
   const lastIsAssistant = turns.length > 0 && turns[turns.length - 1].role === 'assistant';
 
-  // A question handed over from the map is sent once the thread has restored.
+  // A question handed over from the map or Today is sent once the thread has
+  // restored, and exactly once per question.
   useEffect(() => {
     if (!hydrated || !pendingQuestion || loading) return;
+    if (handledPendingRef.current === pendingQuestion) return;
+    handledPendingRef.current = pendingQuestion;
     send(pendingQuestion);
     onPendingHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -405,7 +471,7 @@ export function ChatView({
                       <span className="text-xs font-semibold">Optific</span>
                       {turn.tools && turn.tools.length > 0 ? (
                         <span className="text-[10px] text-muted-foreground">
-                          {[...new Set(turn.tools)].join(', ')}
+                          {[...new Set(turn.tools)].map(toolLabel).join(' · ')}
                         </span>
                       ) : null}
                     </div>
@@ -420,15 +486,13 @@ export function ChatView({
                               </span>
                             ))
                           : cleanAnswer(turn.text)}
-                        {loading && index === turns.length - 1 ? (
+                        {loading && index === turns.length - 1 && turn.phase === 'writing' ? (
                           <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-coral align-text-bottom" />
                         ) : null}
                       </p>
-                    ) : loading && index === turns.length - 1 ? (
+                    ) : loading && index === turns.length - 1 && turn.widgets.length === 0 ? (
                       <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Loader2 className="size-3.5 animate-spin" /> Thinking about your data
-                        </div>
+                        <WorkingIndicator label="Thinking about your data" />
                         <Skeleton className="h-16 w-full rounded-xl" />
                       </div>
                     ) : null}
@@ -508,6 +572,14 @@ export function ChatView({
                         <MapPin className="size-3.5 text-coral" />
                         Show {turn.mapHighlight.length} practices on the map
                       </motion.button>
+                    ) : null}
+
+                    {/* The working indicator lives at the end of whatever has
+                        arrived: below text, below widgets, never at the top. */}
+                    {loading && index === turns.length - 1 && turn.phase !== 'writing' && (Boolean(turn.text) || turn.widgets.length > 0) ? (
+                      <WorkingIndicator
+                        label={turn.tools && turn.tools.length > 0 ? toolLabel(turn.tools[turn.tools.length - 1]) : 'Thinking about your data'}
+                      />
                     ) : null}
 
                     {!loading && index === turns.length - 1 ? (
