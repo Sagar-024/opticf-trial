@@ -94,9 +94,10 @@ so they follow the theme automatically.
 Chat and BI charts render with **Dither Kit** (`src/components/dither-kit/`, installed from the
 `tripwire.sh` registry via the shadcn CLI; it brings `d3-scale`, `d3-shape` and `motion`).
 
-- Series colours are the Dither Kit palette, plus one local addition: `burnt` (`[201, 86, 43]`),
-  the deeper orange used for the send button to match the brand reference. It is a local edit to
-  `palette.ts`, so keep it in mind when running `dither-kit update`.
+- Series colours are the Dither Kit palette, plus one local addition: `brand` (`[210, 94, 40]`,
+  `#D25E28` burnt orange), the send button colour supplied from the brand reference. It is a local
+  edit to `palette.ts`, so keep it in mind when running `dither-kit update`. To change the button
+  colour, change that one entry.
 - `variant="solid"` with `bloom="aura"` gives the dithered fill and glow. Note that Dither Kit's
   `gradient` variant is deliberately sparse at rest and only densifies on hover, which reads as a
   pale wash on a button.

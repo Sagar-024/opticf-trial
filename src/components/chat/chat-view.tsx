@@ -467,10 +467,9 @@ export function ChatView({
                 disabled={!loading && !input.trim()}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
                 /* Solid base in the same colour as the dither, white arrow dead
-                   centre. The icon is dark ink because on a fully saturated
-                   orange that is the only pairing with real contrast. */
+                   centre, matching the brand reference for the send control. */
                 style={{ backgroundColor: sendFill }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-[#1a2438]"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-white"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
               </DitherButton>
