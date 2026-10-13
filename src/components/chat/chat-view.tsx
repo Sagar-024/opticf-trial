@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, type Variants } from 'framer-motion';
 import {
   ArrowUp,
   Check,
@@ -23,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { PALETTE, rgb } from '@/components/dither-kit/palette';
 import { Logo } from '@/components/logo';
+import { forceVisibleIfStuck } from '@/lib/anim';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +39,19 @@ const SUGGESTIONS = [
 ];
 
   const STORAGE_KEY = 'opticf-chat-v1';
+
+/** Shared easing so every chat animation feels like one system. */
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE } },
+};
+
+const stagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06, delayChildren: 0.04 } },
+};
 
 /**
  * The Dither Kit fill is only ~82% opaque by design, so on a pale page it
@@ -121,6 +136,9 @@ export function ChatView({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // If frames are frozen, do not leave a message or widget invisible.
+    const timer = window.setTimeout(() => forceVisibleIfStuck(document.querySelector('main')), 900);
+    return () => window.clearTimeout(timer);
   }, [turns, loading]);
 
   const patchLast = useCallback((patch: Partial<Turn>) => {
@@ -280,24 +298,37 @@ export function ChatView({
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-3xl px-6">
           {empty ? (
-            <div className="flex min-h-[58vh] flex-col items-center justify-center py-14 text-center">
-              <Logo className="size-12" />
-              <h1 className="mt-4 text-2xl font-semibold tracking-tight">What needs your attention?</h1>
-              <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            <motion.div
+              data-anim
+              className="flex min-h-[58vh] flex-col items-center justify-center py-14 text-center"
+              variants={stagger}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.div variants={fadeUp}>
+                <Logo className="size-12" />
+              </motion.div>
+              <motion.h1 variants={fadeUp} className="mt-4 text-2xl font-semibold tracking-tight">
+                What needs your attention?
+              </motion.h1>
+              <motion.p variants={fadeUp} className="mt-2 max-w-md text-sm text-muted-foreground">
                 Ask about your practices. Answers, numbers and charts all come from the loaded data.
-              </p>
-              <div className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
+              </motion.p>
+              <motion.div variants={fadeUp} className="mt-7 flex max-w-2xl flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((suggestion) => (
-                  <button
+                  <motion.button
                     key={suggestion}
                     onClick={() => send(suggestion)}
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 28 }}
                     className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-panel transition-colors hover:bg-accent hover:text-foreground"
                   >
                     {suggestion}
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
           ) : (
             <div className="space-y-6 py-8">
               <div className="flex justify-end">
@@ -308,13 +339,27 @@ export function ChatView({
 
               {turns.map((turn, index) =>
                 turn.role === 'user' ? (
-                  <div key={index} className="flex justify-end">
+                  <motion.div
+                    key={index}
+                    data-anim
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.25, ease: EASE }}
+                    className="flex justify-end"
+                  >
                     <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
                       {turn.text}
                     </div>
-                  </div>
+                  </motion.div>
                 ) : (
-                  <div key={index} className="w-full space-y-3">
+                  <motion.div
+                    key={index}
+                    data-anim
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: EASE }}
+                    className="w-full space-y-3"
+                  >
                     <div className="flex items-center gap-2">
                       <span className="grid size-6 place-items-center rounded-full bg-rail-active">
                         <Logo className="size-4" />
@@ -348,8 +393,16 @@ export function ChatView({
                     ) : null}
 
                     <ErrorBoundary>
-                      {turn.widgets.map((widget) => (
-                        <WidgetRenderer key={widget.id} widget={widget} />
+                      {turn.widgets.map((widget, widgetIndex) => (
+                        <motion.div
+                          key={widget.id}
+                          data-anim
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.32, delay: Math.min(widgetIndex * 0.07, 0.28), ease: EASE }}
+                        >
+                          <WidgetRenderer widget={widget} />
+                        </motion.div>
                       ))}
                     </ErrorBoundary>
 
@@ -361,7 +414,13 @@ export function ChatView({
                     ) : null}
 
                     {turn.sources.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <motion.div
+                        data-anim
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3, delay: 0.1 }}
+                        className="flex flex-wrap items-center gap-1.5"
+                      >
                         <span className="text-[10px] uppercase tracking-[1.3px] text-muted-foreground">Sources</span>
                         {turn.sources.map((source) => {
                           const isBrain = source.startsWith('Brain: ');
@@ -382,17 +441,23 @@ export function ChatView({
                             </Badge>
                           );
                         })}
-                      </div>
+                      </motion.div>
                     ) : null}
 
                     {turn.mapHighlight.length > 0 ? (
-                      <button
+                      <motion.button
                         onClick={() => onShowMap(turn.mapHighlight)}
+                        data-anim
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.15, ease: EASE }}
+                        whileHover={{ y: -1 }}
+                        whileTap={{ scale: 0.98 }}
                         className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-panel transition-colors hover:bg-accent"
                       >
                         <MapPin className="size-3.5 text-coral" />
                         Show {turn.mapHighlight.length} practices on the map
-                      </button>
+                      </motion.button>
                     ) : null}
 
                     {!loading && index === turns.length - 1 ? (
@@ -412,7 +477,7 @@ export function ChatView({
                         </button>
                       </div>
                     ) : null}
-                  </div>
+                  </motion.div>
                 ),
               )}
 
@@ -460,15 +525,18 @@ export function ChatView({
               {/* Plain filled button, no dither and no disabled fade, so the
                   colour is exactly the brand orange at all times. Empty input
                   is ignored by send() rather than dimming the control. */}
-              <button
+              <motion.button
                 type={loading ? 'button' : 'submit'}
                 onClick={loading ? stop : undefined}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
                 style={{ backgroundColor: sendFill }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-soft transition-[transform,filter] duration-150 hover:brightness-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.9 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-soft focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
-              </button>
+              </motion.button>
             </div>
           </form>
         </div>

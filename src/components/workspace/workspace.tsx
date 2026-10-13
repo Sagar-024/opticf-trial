@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion, type Variants } from 'framer-motion';
+import { forceVisibleIfStuck } from '@/lib/anim';
 import {
   ArrowRight,
   CalendarDays,
@@ -220,34 +222,54 @@ export function Workspace({
     return () => window.removeEventListener('keydown', onKey);
   }, [mapFocus]);
 
+  // If animation frames are frozen (background tab), make sure the section we
+  // just switched to is not left invisible mid entrance.
+  useEffect(() => {
+    const timer = window.setTimeout(() => forceVisibleIfStuck(document.querySelector('main')), 800);
+    return () => window.clearTimeout(timer);
+  }, [view, mapFocus]);
+
   const navButton = (item: { key: View; label: string; icon: LucideIcon }) => {
     const Icon = item.icon;
     const active = view === item.key;
     return (
-      <button
+      <motion.button
         key={item.key}
         onClick={() => setView(item.key)}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs transition-colors',
-          active ? 'bg-rail-active font-semibold text-foreground' : 'text-muted-foreground hover:bg-rail-active/60',
+          'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs',
+          active ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
+        whileHover={{ x: 2 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
       >
-        <Icon className="size-4 shrink-0" />
-        {item.label}
-      </button>
+        {/* One pill that slides between items instead of swapping backgrounds. */}
+        {active ? (
+          <motion.span
+            layoutId="rail-active-pill"
+            className="absolute inset-0 rounded-md bg-rail-active"
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+          />
+        ) : null}
+        <Icon className="relative size-4 shrink-0" />
+        <span className="relative">{item.label}</span>
+      </motion.button>
     );
   };
 
   return (
     <div className="flex h-dvh overflow-hidden">
       {/* Rail: the only navigation. Nothing decorative. */}
-      <aside
+      <motion.aside
+        initial={false}
+        animate={{ width: railOpen && !mapFocus ? 220 : 0, opacity: railOpen && !mapFocus ? 1 : 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 32, mass: 0.9 }}
         className={cn(
-          'flex shrink-0 flex-col overflow-hidden bg-rail transition-[width,opacity] duration-300 ease-out',
+          'flex shrink-0 flex-col overflow-hidden bg-rail',
           railOpen && !mapFocus ? 'border-r border-border' : 'border-r-0',
         )}
-        style={{ width: railOpen && !mapFocus ? 220 : 0, opacity: railOpen && !mapFocus ? 1 : 0 }}
         aria-hidden={!railOpen || mapFocus}
       >
         <div className="flex h-full flex-col px-3 py-5">
@@ -277,7 +299,7 @@ export function Workspace({
             </div>
           </div>
         </div>
-      </aside>
+      </motion.aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Top bar: no tabs here, navigation lives in the rail. */}
@@ -314,6 +336,16 @@ export function Workspace({
         </header>
 
         <div className="min-h-0 min-w-0 flex-1">
+          {/* Enter-only transition on section change: no exit delay, so switching
+              views stays instant while the new content eases in. */}
+          <motion.div
+            key={view}
+            data-anim
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: EASE }}
+            className="h-full"
+          >
           {view === 'today' ? (
             <ScrollArea className="h-full">
               <div className="mx-auto max-w-4xl px-8 py-8">
@@ -387,6 +419,7 @@ export function Workspace({
               ]}
             />
           ) : null}
+          </motion.div>
         </div>
 
         {/* Status bar */}
