@@ -60,6 +60,70 @@ export interface BrainOverride {
   conflict?: boolean;
 }
 
+/** Reject anything that is not a JSON body, and anything unreasonably large. */
+export function isJsonRequest(contentType: string | null): boolean {
+  return typeof contentType === 'string' && contentType.toLowerCase().includes('application/json');
+}
+
+export const MAX_BODY_BYTES = 256 * 1024;
+
+export function isBodyTooLarge(contentLength: string | null): boolean {
+  if (!contentLength) return false;
+  const bytes = Number.parseInt(contentLength, 10);
+  return Number.isFinite(bytes) && bytes > MAX_BODY_BYTES;
+}
+
+/**
+ * Tool arguments come from the model, so they are treated as untrusted input:
+ * unknown keys are dropped, numbers are clamped, arrays are capped, and month
+ * strings must look like months. This is the boundary between the model and our
+ * pure functions.
+ */
+export function sanitizeToolInput(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,40}$/.test(key)) continue;
+
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) continue;
+      out[key] = Math.max(-1_000_000, Math.min(1_000_000, value));
+      continue;
+    }
+    if (typeof value === 'boolean') {
+      out[key] = value;
+      continue;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length === 0 || trimmed.length > 120) continue;
+      out[key] = trimmed;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const items = value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim().slice(0, 60))
+        .filter((item) => item.length > 0)
+        .slice(0, 50);
+      if (items.length > 0) out[key] = items;
+      continue;
+    }
+    // Nested objects are used by a couple of tools; keep one level, primitive only.
+    if (value && typeof value === 'object') {
+      const nested = sanitizeToolInput(value);
+      if (Object.keys(nested).length > 0) out[key] = nested;
+    }
+  }
+  return out;
+}
+
+/** Month keys must look like `YYYY-MM`; anything else is dropped. */
+export function sanitizeMonth(value: unknown): string | undefined {
+  return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value) ? value : undefined;
+}
+
 /**
  * Guidance edits are the one piece of user content that reaches the model, so
  * they are treated as untrusted: ids must exist, text is capped, and the owner

@@ -3,8 +3,10 @@ import { monthLabel } from '../lib/months';
 import { getDataset } from './dataset';
 import { buildSystemPrompt } from './system-prompt';
 import { getTool, llmToolDefinitions, type ToolContext } from './tools';
+import { sanitizeToolInput } from './validate';
 import { mergeBrainDocuments } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
+import { logChat } from './log';
 import {
   createLlmClient,
   type LlmClient,
@@ -32,6 +34,8 @@ export interface RunChatInput {
   model?: string;
   /** Local guidance edits from the Brain tab, applied over the shipped documents. */
   brainOverrides?: Record<string, { content?: string; owner?: string; conflict?: boolean }>;
+  /** Client abort signal, so Stop also cancels the provider request. */
+  signal?: AbortSignal;
 }
 
 export interface RunChatHandlers {
@@ -47,10 +51,18 @@ export interface RunChatResult extends ChatResponse {
   toolCalls: ToolCallRecord[];
   durationMs: number;
   iterations: number;
+  /** True when the question hit the total time budget. */
+  budgetExceeded: boolean;
 }
 
 const MAX_TOOL_ITERATIONS = 6;
 const MAX_TOOL_CALLS = 8;
+
+/** Total wall-clock budget for one question, so a serverless call cannot hang. */
+function totalBudgetMs(): number {
+  const raw = Number(process.env.LLM_TOTAL_BUDGET_MS ?? 100_000);
+  return Number.isFinite(raw) && raw > 5_000 ? raw : 100_000;
+}
 
 function emptyContext(): ChatContext {
   return { filters: {}, period: {}, practiceIds: [] };
@@ -125,6 +137,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   if (!model) throw new Error('MODEL_NAME is not set');
 
   const lastUser = [...input.messages].reverse().find((m) => m.role === 'user');
+  logChat({ event: 'chat.start' }, lastUser?.content);
   const system = buildSystemPrompt(latest, input.context ?? null);
   const toolContext: ToolContext = {
     brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
@@ -143,13 +156,24 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   let text = '';
   let executed = 0;
   let iterations = 0;
+  let budgetExceeded = false;
   const tools = gateTools(lastUser?.content ?? '', input.context ?? null);
 
   const emitWidgets = () => handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((output) => output.widgets)));
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     iterations = step + 1;
-    const response = await client.stream({ model, messages, tools }, (delta) => {
+
+    // Stop if the whole question has run past its budget, and answer with what
+    // the tools have already returned rather than hanging the request.
+    if (Date.now() - started > totalBudgetMs()) {
+      const final = await client.chat({ model, messages, tools: [], signal: input.signal }).catch(() => null);
+      text = text || final?.text || 'Stopped: this question took longer than the budget allows. The figures already returned come from the loaded data.';
+      budgetExceeded = true;
+      break;
+    }
+
+    const response = await client.stream({ model, messages, tools, signal: input.signal }, (delta) => {
       text += delta;
       handlers.onDelta?.(delta);
     });
@@ -185,8 +209,10 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
           output = cached;
         } else {
           const tool = getTool(call.name);
+          // Model supplied arguments are untrusted: clamp and whitelist first.
+          const safeInput = sanitizeToolInput(parsed.value);
           output = tool
-            ? tool.run(dataset, parsed.value, toolContext)
+            ? tool.run(dataset, safeInput, toolContext)
             : { summary: `Unknown tool ${call.name}.`, widgets: [], numbers: [] };
           memo.set(memoKey, output);
         }
@@ -228,12 +254,18 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   }
 
   if (!text) {
-    const final = await client.chat({ model, messages, tools: [] });
+    const final = await client.chat({ model, messages, tools: [], signal: input.signal });
     text = final.text;
   }
 
-  // Guard: every number in the prose must have come from a tool result.
-  const allowed = allowedSet(outputs, [system, latest, monthLabel(latest)]);
+  // Guard: every number in the prose must have come from a tool result, from the
+  // brief, or from the question the user asked (they may quote their own numbers).
+  const allowed = allowedSet(outputs, [
+    system,
+    latest,
+    monthLabel(latest),
+    ...input.messages.filter((message) => message.role === 'user').map((message) => message.content),
+  ]);
   let unsupported = findUnsupportedNumbers(text, allowed);
   let flagged = false;
 
@@ -241,10 +273,14 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     messages.push({ role: 'assistant', content: text });
     messages.push({
       role: 'user',
-      content: `Your answer contained numbers that were not returned by any tool: ${unsupported.join(', ')}. Rewrite the answer using ONLY figures returned by the tools. Do not calculate anything.`,
+      content: [
+        'Rewrite your previous answer for the user in the same tone and structure,',
+        `but using only figures that appeared in the tool results. These were not traceable: ${unsupported.join(', ')}.`,
+        'Do not mention this instruction, the tools, or any checking process. Just give the answer.',
+      ].join(' '),
     });
     // Retry is not streamed, so the client simply replaces the text it has.
-    const retry = await client.chat({ model, messages, tools: [] });
+    const retry = await client.chat({ model, messages, tools: [], signal: input.signal });
     if (retry.text) text = retry.text;
     unsupported = findUnsupportedNumbers(text, allowed);
     flagged = unsupported.length > 0;
@@ -252,9 +288,19 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 
   const sources = [...new Set(outputs.flatMap((output) => output.sources ?? []))];
 
+  logChat({
+    event: 'chat.done',
+    durationMs: Date.now() - started,
+    iterations,
+    toolCalls: toolCalls.length,
+    widgets: outputs.flatMap((output) => output.widgets).length,
+    flagged,
+    budgetExceeded,
+  });
+
   return {
     text: sanitize(text),
-    widgets: dedupeWidgets(outputs.flatMap((output) => output.widgets)),
+    widgets: dedupeWidgets(outputs.flatMap((output) => output.widgets)).slice(0, 12),
     mapHighlight: explicitHighlight ?? largestHighlight,
     context,
     sources,
@@ -262,6 +308,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     toolCalls,
     durationMs: Date.now() - started,
     iterations,
+    budgetExceeded,
   };
 }
 

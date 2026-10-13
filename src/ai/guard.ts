@@ -16,9 +16,17 @@ export function extractNumbers(text: string): string[] {
   return text.match(NUMBER_RE) ?? [];
 }
 
-/** Normalise a token so `£3,282,110` and `3,282,110` compare equal. */
+/**
+ * Normalise a token so `£3,282,110` and `3,282,110` compare equal.
+ *
+ * Signs are dropped deliberately. Our formatters emit signed values such as
+ * `-2.9%` and `-2.3pp`, while a model writing "conversion fell 2.3pp" omits the
+ * minus. Comparing magnitudes avoids flagging correct answers, at the cost of
+ * not catching a flipped sign. Direction is carried by the words around it, and
+ * an invented or wrong magnitude is still caught.
+ */
 export function normalizeNumber(token: string): string {
-  return token.toLowerCase().replace(/[£,%\s+]/g, '');
+  return token.toLowerCase().replace(/[£,%\s+]/g, '').replace(/^-/, '');
 }
 
 /** The set of every normalised number the tools have returned. */

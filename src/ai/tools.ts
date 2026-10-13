@@ -536,7 +536,7 @@ function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: Tool
   const summary = [
     `Found ${matches.length} guidance document${matches.length === 1 ? '' : 's'} for "${query}".`,
     ...matches.map(({ document }) =>
-      `[${document.title} | ${document.scope} | owner ${document.owner} | reviewed ${document.reviewed}] ${document.content}`,
+      `[${document.title} | ${document.scope} | owner ${document.owner} | reviewed ${document.reviewed}] <<<${document.content}>>>`,
     ),
     matches.some(({ document }) => document.conflict)
       ? 'One of these documents is marked as conflicting with other guidance and needs clarification before it is relied on.'

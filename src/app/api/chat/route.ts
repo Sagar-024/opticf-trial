@@ -1,12 +1,21 @@
 import { runChatStream } from '@/ai/chat';
 import { getDataset } from '@/ai/dataset';
 import { LlmError } from '@/ai/llm';
-import { sanitizeBrainOverrides, sanitizeContext, validateMessages } from '@/ai/validate';
+import { logChat } from '@/ai/log';
+import { callerKey, checkRateLimit } from '@/ai/rate-limit';
+import {
+  isBodyTooLarge,
+  isJsonRequest,
+  sanitizeBrainOverrides,
+  sanitizeContext,
+  validateMessages,
+} from '@/ai/validate';
+import { MAX_BODY_BYTES } from '@/ai/validate';
 
 /**
  * POST /api/chat
  *
- * Body:  { messages: {role,content}[], context?: ChatContext }
+ * Body:  { messages: {role,content}[], context?: ChatContext, brainOverrides? }
  * Reply: newline-delimited JSON events, in order:
  *   { type: 'delta',   text }        prose chunks, streamed
  *   { type: 'tool',    name }        a tool ran
@@ -14,8 +23,8 @@ import { sanitizeBrainOverrides, sanitizeContext, validateMessages } from '@/ai/
  *   { type: 'done',    text, widgets, mapHighlight, context, sources, flagged }
  *   { type: 'error',   message, status? }
  *
- * Both messages and context are validated before anything reaches the model.
- * Provider config is server-only: LLM_BASE_URL, LLM_API_KEY, MODEL_NAME.
+ * Guards, in order: content type, body size, rate limit, message shape, context
+ * and guidance whitelisting. Nothing untrusted reaches the model.
  */
 
 export const runtime = 'nodejs';
@@ -26,11 +35,30 @@ interface ChatRequestBody {
   brainOverrides?: unknown;
 }
 
+function jsonError(message: string, status: number, extra: Record<string, unknown> = {}): Response {
+  return Response.json({ error: message, ...extra }, { status });
+}
+
 export async function POST(request: Request): Promise<Response> {
   if (!process.env.LLM_BASE_URL || !process.env.LLM_API_KEY || !process.env.MODEL_NAME) {
+    return jsonError('LLM not configured. Set LLM_BASE_URL, LLM_API_KEY and MODEL_NAME in .env.local.', 500);
+  }
+
+  if (!isJsonRequest(request.headers.get('content-type'))) {
+    return jsonError('Content-Type must be application/json.', 415);
+  }
+
+  if (isBodyTooLarge(request.headers.get('content-length'))) {
+    return jsonError(`Request too large. Limit is ${Math.round(MAX_BODY_BYTES / 1024)} KB.`, 413);
+  }
+
+  // No auth by design for the trial, so the key is protected by a rate limit.
+  const limit = checkRateLimit(callerKey(request), { limit: 20, windowMs: 60_000 });
+  if (!limit.allowed) {
+    logChat({ event: 'chat.error', error: 'rate limited', status: 429 });
     return Response.json(
-      { error: 'LLM not configured. Set LLM_BASE_URL, LLM_API_KEY and MODEL_NAME in .env.local.' },
-      { status: 500 },
+      { error: `Too many questions in a short time. Try again in ${limit.retryAfterSeconds}s.` },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
     );
   }
 
@@ -38,12 +66,17 @@ export async function POST(request: Request): Promise<Response> {
   try {
     body = (await request.json()) as ChatRequestBody;
   } catch {
-    return Response.json({ error: 'Invalid JSON body.' }, { status: 400 });
+    return jsonError('Invalid JSON body.', 400);
   }
 
   const validated = validateMessages(body.messages);
   if (!validated.ok) {
-    return Response.json({ error: validated.error }, { status: validated.status });
+    return jsonError(validated.error, validated.status);
+  }
+
+  const lastUser = [...validated.messages].reverse().find((message) => message.role === 'user');
+  if (!lastUser || lastUser.content.trim().length === 0) {
+    return jsonError('Ask a question before sending.', 400);
   }
 
   const context = sanitizeContext(body.context, getDataset());
@@ -58,7 +91,7 @@ export async function POST(request: Request): Promise<Response> {
 
       try {
         const result = await runChatStream(
-          { messages: validated.messages, context, brainOverrides },
+          { messages: validated.messages, context, brainOverrides, signal: request.signal },
           {
             onDelta: (text) => send({ type: 'delta', text }),
             onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),
@@ -77,9 +110,15 @@ export async function POST(request: Request): Promise<Response> {
           durationMs: result.durationMs,
         });
       } catch (error) {
-        const message = error instanceof LlmError ? error.message : 'Chat request failed.';
-        const status = error instanceof LlmError ? error.status : undefined;
-        send({ type: 'error', message, status });
+        if (error instanceof LlmError) {
+          logChat({ event: 'chat.error', error: error.message, status: error.status });
+          send({ type: 'error', message: error.message, status: error.status });
+        } else {
+          // Never leak internals; log the detail and return something usable.
+          const detail = error instanceof Error ? error.message : 'unknown error';
+          logChat({ event: 'chat.error', error: detail.slice(0, 120) });
+          send({ type: 'error', message: 'Something went wrong while answering. Please try again.' });
+        }
       } finally {
         controller.close();
       }
@@ -91,6 +130,7 @@ export async function POST(request: Request): Promise<Response> {
       'Content-Type': 'application/x-ndjson; charset=utf-8',
       'Cache-Control': 'no-store, no-transform',
       'X-Accel-Buffering': 'no',
+      'X-RateLimit-Remaining': String(limit.remaining),
     },
   });
 }

@@ -43,6 +43,8 @@ export interface LlmChatParams {
   model: string;
   messages: LlmMessage[];
   tools: LlmToolDefinition[];
+  /** Caller signal, so a client abort also cancels the provider request. */
+  signal?: AbortSignal;
 }
 
 export interface LlmResponse {
@@ -124,11 +126,16 @@ export function createLlmClient(): LlmClient {
     ...(Object.keys(headers).length > 0 ? { defaultHeaders: headers } : {}),
   });
 
-  // A hard per-call timeout, so a hung provider cannot hang the request.
-  const signal = (): AbortSignal => AbortSignal.timeout(timeoutMs());
+  // A per-call timeout, and the caller's own signal if they provided one, so a
+  // client abort stops the provider request instead of paying for it.
+  const signalFor = (caller?: AbortSignal): AbortSignal => {
+    const timeout = AbortSignal.timeout(timeoutMs());
+    if (!caller) return timeout;
+    return typeof AbortSignal.any === 'function' ? AbortSignal.any([timeout, caller]) : timeout;
+  };
 
   return {
-    async chat({ model, messages, tools }: LlmChatParams): Promise<LlmResponse> {
+    async chat({ model, messages, tools, signal }: LlmChatParams): Promise<LlmResponse> {
       try {
         const response = await client.chat.completions.create(
           {
@@ -138,7 +145,7 @@ export function createLlmClient(): LlmClient {
             tool_choice: 'auto',
             max_tokens: 1400,
           },
-          { signal: signal() },
+          { signal: signalFor(signal) },
         );
         const choice = response.choices[0];
         const message = choice?.message;
@@ -151,7 +158,7 @@ export function createLlmClient(): LlmClient {
       }
     },
 
-    async stream({ model, messages, tools }: LlmChatParams, onDelta): Promise<LlmResponse> {
+    async stream({ model, messages, tools, signal }: LlmChatParams, onDelta): Promise<LlmResponse> {
       try {
         const stream = await client.chat.completions.create(
           {
@@ -162,7 +169,7 @@ export function createLlmClient(): LlmClient {
             max_tokens: 1400,
             stream: true,
           },
-          { signal: signal() },
+          { signal: signalFor(signal) },
         );
 
         let text = '';
