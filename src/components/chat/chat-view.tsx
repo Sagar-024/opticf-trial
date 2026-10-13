@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { DitherButton } from '@/components/dither-kit/button';
+import { PALETTE, rgb } from '@/components/dither-kit/palette';
 import { Logo } from '@/components/logo';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
@@ -36,7 +37,15 @@ const SUGGESTIONS = [
   'Show those practices on the map.',
 ];
 
-const STORAGE_KEY = 'opticf-chat-v1';
+  const STORAGE_KEY = 'opticf-chat-v1';
+
+/**
+ * The Dither Kit fill is only ~82% opaque by design, so on a pale page it
+ * blends to a wash. Painting the same colour underneath keeps the button a
+ * true, solid orange while the dither texture and bloom sit on top.
+ */
+const sendFill = rgb(PALETTE.burnt.fill);
+
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -457,9 +466,10 @@ export function ChatView({
                 onClick={loading ? stop : undefined}
                 disabled={!loading && !input.trim()}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
-                /* White icon on the deeper orange, matching the brand reference
-                   for the send control. */
-                className="size-9 shrink-0 rounded-full p-0 text-white"
+                /* Solid base in the same colour, white icon, and flex centring
+                   so the arrow sits dead centre of the circle. */
+                style={{ backgroundColor: sendFill }}
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-white"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
               </DitherButton>
