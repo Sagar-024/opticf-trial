@@ -54,8 +54,10 @@ interface Transform {
 }
 
 // The toolbar, legend and focus strip are separate rows, not overlays, so the
-// fit only needs room for the floating zoom cluster at the bottom.
-const VIEWPORT_PADDING = { top: 24, right: 24, bottom: 68, left: 24 };
+// fit only needs room for the floating zoom cluster at the bottom. Kept tight
+// on purpose: every pixel reserved here shrinks the whole graph.
+const VIEWPORT_PADDING = { top: 14, right: 20, bottom: 56, left: 20 };
+const FIT_PADDING = 22;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 5;
 
@@ -165,7 +167,7 @@ export function MapCanvas({
     context.clearRect(0, 0, width, height);
 
     // Fit is computed here, from the real DOM size, so React state cannot lag it.
-    const fit = computeFit(layout.bounds, { width, height, ...VIEWPORT_PADDING });
+    const fit = computeFit(layout.bounds, { width, height, ...VIEWPORT_PADDING }, FIT_PADDING);
     transformRef.current = { scale: fit.scale, offsetX: fit.offsetX, offsetY: fit.offsetY, width, height };
 
     const screen = (node: LayoutNode) => ({
@@ -180,6 +182,29 @@ export function MapCanvas({
       layout.hubs.map((hub) => [hub.id, screen(hub as unknown as LayoutNode)]),
     );
     const nodePoints = new Map(layout.nodes.map((node) => [node.id, screen(node)]));
+
+    // ── Region territories ──
+    // A soft neutral disc under each cluster. This is what turns a cloud of
+    // dots into readable places, and it costs one arc per region.
+    const grouped = new Map<number, Array<{ x: number; y: number; r: number }>>();
+    for (const node of layout.nodes) {
+      const point = nodePoints.get(node.id);
+      if (!point) continue;
+      const list = grouped.get(node.regionIndex);
+      if (list) list.push(point);
+      else grouped.set(node.regionIndex, [point]);
+    }
+    for (const points of grouped.values()) {
+      const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+      const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+      const spread = Math.max(...points.map((point) => Math.hypot(point.x - cx, point.y - cy) + point.r)) + 16;
+      context.globalAlpha = highlightActive ? 0.20 : 0.42;
+      context.beginPath();
+      context.arc(cx, cy, spread, 0, Math.PI * 2);
+      context.fillStyle = palette.border;
+      context.fill();
+    }
+    context.globalAlpha = 1;
 
     // ── Edges ──
     context.lineWidth = 0.7;
@@ -208,6 +233,7 @@ export function MapCanvas({
     context.setLineDash([]);
 
     // ── Practices ──
+    const nodeBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
     for (const node of layout.nodes) {
       const practice = byId.get(node.id);
       const point = nodePoints.get(node.id);
@@ -225,6 +251,7 @@ export function MapCanvas({
       if (!inHighlight) alpha = Math.min(alpha, palette.dimOpacity);
       // Never let a node become an unreadable speck.
       const radius = Math.max(3.5, point.r * visual.sizeFactor);
+      nodeBoxes.push({ x: point.x - radius, y: point.y - radius, w: radius * 2, h: radius * 2 });
 
       context.globalAlpha = alpha;
       context.beginPath();
@@ -246,8 +273,8 @@ export function MapCanvas({
     for (const hub of layout.hubs) {
       const point = hubPoints.get(hub.id);
       if (!point) continue;
-      const radius = Math.max(4, point.r);
       const isGroup = hub.kind === 'group';
+      const radius = Math.max(isGroup ? 12 : 7, point.r);
 
       context.globalAlpha = 0.5;
       context.beginPath();
@@ -272,20 +299,53 @@ export function MapCanvas({
         context.fill();
       }
 
-      context.textAlign = 'center';
-      const labelY = point.y + radius + (isGroup ? 20 : 16);
+      // Label placement: try below, above, right, left. The first position that
+      // clears every box already placed wins, so region names never stack. The
+      // group label also avoids practice nodes, because it sits over the busiest
+      // part of the graph where its fixed pixel size matters most.
+      const gap = isGroup ? 12 : 9;
       context.font = `600 ${isGroup ? 13 : 11}px ${'Inter, sans-serif'}`;
       const labelWidth = context.measureText(hub.label).width;
-      labelBoxes.push({ x: point.x - labelWidth / 2 - 5, y: labelY - 12, w: labelWidth + 10, h: 30 });
+      context.font = `400 9px ${'Inter, sans-serif'}`;
+      const subWidth = context.measureText(hub.sub).width;
+      const boxWidth = Math.max(labelWidth, subWidth) + 14;
+      const boxHeight = 30;
+      const options = [
+        { x: point.x - boxWidth / 2, y: point.y + radius + gap },
+        { x: point.x - boxWidth / 2, y: point.y - radius - gap - boxHeight },
+        { x: point.x + radius + gap, y: point.y - boxHeight / 2 },
+        { x: point.x - radius - gap - boxWidth, y: point.y - boxHeight / 2 },
+      ];
+      const obstacles = isGroup ? [...labelBoxes, ...nodeBoxes] : labelBoxes;
+      const collides = (box: { x: number; y: number }): boolean =>
+        obstacles.some((other) =>
+          box.x < other.x + other.w && box.x + boxWidth > other.x && box.y < other.y + other.h && box.y + boxHeight > other.y,
+        );
+      const chosen = options.find((box) => !collides(box)) ?? options[0];
+      labelBoxes.push({ ...chosen, w: boxWidth, h: boxHeight });
+
+      const centreX = chosen.x + boxWidth / 2;
+      const line1Y = chosen.y + 11;
+      context.textAlign = 'center';
       context.lineWidth = 4;
       context.strokeStyle = palette.background;
-      context.strokeText(hub.label, point.x, labelY);
+      context.strokeText(hub.label, centreX, line1Y);
       context.fillStyle = palette.labelStrong;
-      context.fillText(hub.label, point.x, labelY);
+      context.fillText(hub.label, centreX, line1Y);
       context.font = `400 9px ${'Inter, sans-serif'}`;
-      context.strokeText(hub.sub, point.x, labelY + 13);
+      context.strokeText(hub.sub, centreX, line1Y + 12);
       context.fillStyle = palette.label;
-      context.fillText(hub.sub, point.x, labelY + 13);
+      context.fillText(hub.sub, centreX, line1Y + 12);
+    }
+
+    // Hub circles join the collision map, so a practice label can never be
+    // drawn across a hub, only beside it.
+    for (const hub of layout.hubs) {
+      const point = hubPoints.get(hub.id);
+      if (!point) continue;
+      const isGroup = hub.kind === 'group';
+      const radius = Math.max(isGroup ? 12 : 7, point.r) + 2;
+      labelBoxes.push({ x: point.x - radius, y: point.y - radius, w: radius * 2, h: radius * 2 });
     }
 
     // ── Practice labels: the important ones are always on ──

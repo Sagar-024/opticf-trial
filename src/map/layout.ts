@@ -112,8 +112,14 @@ function cloud(
   });
 }
 
-/** Push overlapping practice nodes apart, within a region. */
-function relax(nodes: LayoutNode[], steps = 44): void {
+/** Push overlapping practice nodes apart, within a region, and keep a clear
+ *  ring around each region hub so the hub never disappears under its cluster. */
+function relax(nodes: LayoutNode[], hubs: LayoutHub[] = [], steps = 44): void {
+  const hubByRegion = new Map<number, LayoutHub>();
+  for (const hub of hubs) {
+    if (hub.regionIndex !== undefined) hubByRegion.set(hub.regionIndex, hub);
+  }
+
   for (let step = 0; step < steps; step += 1) {
     for (let i = 0; i < nodes.length; i += 1) {
       for (let j = i + 1; j < nodes.length; j += 1) {
@@ -136,6 +142,26 @@ function relax(nodes: LayoutNode[], steps = 44): void {
           b.x += (dx / distance) * shift;
           b.y += (dy / distance) * shift;
         }
+      }
+    }
+
+    for (const node of nodes) {
+      const hub = hubByRegion.get(node.regionIndex);
+      if (!hub) continue;
+      let dx = node.x - hub.x;
+      let dy = node.y - hub.y;
+      let distance = Math.hypot(dx, dy);
+      if (distance < 0.01) {
+        // Deterministic escape direction, so the layout stays reproducible.
+        dx = node.id.length % 2 === 0 ? 0.1 : -0.1;
+        dy = 0.1;
+        distance = 0.1414;
+      }
+      const min = hub.r + node.r + 10;
+      if (distance < min) {
+        const push = (min - distance) * 0.55;
+        node.x += (dx / distance) * push;
+        node.y += (dy / distance) * push;
       }
     }
   }
@@ -211,6 +237,29 @@ function separateRegions(nodes: LayoutNode[], hubs: LayoutHub[], gap = 48): void
   }
 }
 
+/** Keep region clusters out of the middle, so the group hub owns the centre. */
+function clearCentre(nodes: LayoutNode[], hubs: LayoutHub[], minDistance = 190): void {
+  for (const hub of hubs) {
+    if (hub.kind !== 'region') continue;
+    const members = nodes.filter((node) => node.regionIndex === hub.regionIndex);
+    let nearest = Math.hypot(hub.x, hub.y) - hub.r;
+    for (const node of members) {
+      nearest = Math.min(nearest, Math.hypot(node.x, node.y) - node.r);
+    }
+    if (nearest >= minDistance) continue;
+    const push = minDistance - nearest;
+    const length = Math.hypot(hub.x, hub.y) || 1;
+    const dx = (hub.x / length) * push;
+    const dy = (hub.y / length) * push;
+    hub.x += dx;
+    hub.y += dy;
+    for (const node of members) {
+      node.x += dx;
+      node.y += dy;
+    }
+  }
+}
+
 function boundsOfNodes(nodes: LayoutNode[], hubs: LayoutHub[]): Bounds {
   const xs: number[] = [];
   const ys: number[] = [];
@@ -260,7 +309,7 @@ export function computeLayout(
       regionIndex: 0,
     };
     const nodes = cloud(regionItems, 0, 0, 0, 2, seed);
-    relax(nodes);
+    relax(nodes, [hub]);
     normalise(nodes, [hub]);
     const edges: LayoutEdge[] = nodes.map((node) => ({
       a: hub.id,
@@ -299,8 +348,9 @@ export function computeLayout(
     allNodes.push(...cloud(regionItems, index, cx, cy, 1, seed));
   });
 
-  relax(allNodes);
+  relax(allNodes, hubs.filter((hub) => hub.kind === 'region'));
   separateRegions(allNodes, hubs.filter((hub) => hub.kind === 'region'));
+  clearCentre(allNodes, hubs.filter((hub) => hub.kind === 'region'));
   normalise(allNodes, hubs);
 
   for (const node of allNodes) {
