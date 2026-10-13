@@ -37,6 +37,10 @@ import { MAX_BODY_BYTES } from '@/ai/validate';
  */
 
 export const runtime = 'nodejs';
+// The slowest questions run 25 to 30 seconds across several tool rounds. Vercel
+// would kill a function at its default limit mid-stream, so the route declares
+// its own budget. Keep this above the chat loop's total budget.
+export const maxDuration = 60;
 
 /** Ten minute cache of identical questions, so repeats cost nothing. */
 const cache = new ResponseCache<RunChatResult>(10 * 60_000);
