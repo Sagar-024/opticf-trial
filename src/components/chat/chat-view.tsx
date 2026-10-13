@@ -434,7 +434,7 @@ export function ChatView({
       <div className="shrink-0 px-6 pb-4">
         <div className="mx-auto w-full max-w-3xl">
           <p className="mb-1.5 text-center text-[10px] text-muted-foreground">
-            Live AI, fictional data. Every number comes from the loaded data.
+            Answers are generated from your data. Check the sources on each answer.
           </p>
           <form
             onSubmit={(event) => {
