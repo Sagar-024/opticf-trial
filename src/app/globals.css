@@ -170,23 +170,19 @@
 
   /*
    * Depth for raised surfaces: border led, a lit top edge, two short shadows.
-   * Hover raises it one step. Total entrance budget under 800ms, because the
-   * freeze safety net sweeps at 800ms and must never catch a healthy animation
-   * mid flight.
+   * Hover deepens the shadow and firms the edge, but the card never moves.
    */
 
   .surface-card {
     box-shadow: var(--edge-highlight), var(--lift-1);
     transition:
       box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+      border-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .surface-card:hover {
     border-color: oklch(var(--ink) / 0.16);
     box-shadow: var(--edge-highlight), var(--lift-2);
-    transform: translateY(-2px);
   }
 
   /* A recessed area, for facts that sit inside a raised card. */
@@ -216,6 +212,5 @@
   @media (prefers-reduced-motion: reduce) {
     .wave-word { animation: none; }
     .surface-card { transition: none; }
-    .surface-card:hover { transform: none; }
   }
 }
