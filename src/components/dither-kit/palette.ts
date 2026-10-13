@@ -27,12 +27,14 @@ export const PALETTE: Record<DitherColor, Seed> = {
     line: [255, 195, 130],
     star: [255, 220, 175],
   },
-  // Optific: the deeper orange used for the send button, matching the brand
-  // reference. Local addition, keep it when updating the kit.
+  // Optific: the send button orange, matched to the brand reference. A burnt
+  // orange has very little blue in it; raising blue is what makes it read as
+  // peach, so keep B low. To change the button colour, change it here only.
+  // Local addition: keep it when updating the kit.
   burnt: {
-    fill: [201, 86, 43],
-    line: [224, 130, 96],
-    star: [238, 178, 155],
+    fill: [202, 76, 26],
+    line: [222, 124, 84],
+    star: [238, 172, 142],
   },
   red: { fill: [240, 70, 70], line: [255, 150, 140], star: [255, 195, 185] },
   // No-data: a muted grey so empty metrics read as "nothing here".
