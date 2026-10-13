@@ -56,7 +56,7 @@ function WaveText({
   text,
   className,
   delay = 0,
-  step = 28,
+  step = 24,
 }: {
   text: string;
   className?: string;
@@ -141,11 +141,10 @@ function PriorityCard({
           ))}
         </ul>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" onClick={openRelated}>
-            {item.practiceId ? 'Open practice' : 'Open region'} <ArrowRight />
+            Show on map <ArrowRight />
           </Button>
-          <Button size="sm" variant="ghost" onClick={openRelated}>Show on map</Button>
           <Button size="sm" variant="ghost" onClick={() => onOpenDashboard(item)}>Open dashboard</Button>
         </div>
       </CardContent>
@@ -385,7 +384,6 @@ export function Workspace({
             </div>
             <div className="ml-auto flex items-center gap-1">
               <ThemeToggle />
-              <Badge variant="outline" className="text-[10px]">Prototype</Badge>
             </div>
           </div>
         </header>
@@ -403,16 +401,15 @@ export function Workspace({
           >
           {view === 'today' ? (
             <ScrollArea className="h-full">
-              <div className="mx-auto max-w-4xl px-8 py-8">
-                <p className="label-caps">Today</p>
-                <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight">
+              <div className="mx-auto max-w-4xl px-8 pb-10 pt-7">
+                <h1 className="text-balance text-2xl font-semibold tracking-tight">
                   <WaveText text="What should I focus on today?" />
                 </h1>
-                <p className="mt-1 max-w-[62ch] text-pretty text-sm text-muted-foreground">
+                <p className="mt-2 max-w-[62ch] text-pretty text-sm text-muted-foreground">
                   <WaveText
-                    text={`${today.items.length} priorities for ${today.monthLabel}, across ${practiceCount} practices and ${regionCount} regions. Every figure comes from the data layer.`}
-                    delay={160}
-                    step={11}
+                    text={`${today.items.length} priorities for ${today.monthLabel}, across ${practiceCount} practices and ${regionCount} regions.`}
+                    delay={120}
+                    step={9}
                   />
                 </p>
                 <div className="mt-6 grid grid-cols-1 gap-4">
@@ -420,9 +417,9 @@ export function Workspace({
                     <motion.div
                       key={item.id}
                       data-anim
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.46, delay: 0.05 * index, ease: EASE }}
+                      transition={{ duration: 0.42, delay: 0.05 * index, ease: EASE }}
                     >
                       <PriorityCard
                         item={item}

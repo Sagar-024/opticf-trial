@@ -68,8 +68,8 @@
     /* Depth: border led, a lit top edge, and two short shadows. No wide halo,
        so a card never reads as a floating ghost. */
     --edge-highlight: inset 0 1px 0 oklch(1 0 0 / 0.75);
-    --lift-1: 0 1px 1px oklch(0.261 0.040 263.50 / 0.05), 0 3px 6px -3px oklch(0.261 0.040 263.50 / 0.09);
-    --lift-2: 0 1px 1px oklch(0.261 0.040 263.50 / 0.07), 0 7px 14px -7px oklch(0.261 0.040 263.50 / 0.16);
+    --lift-1: 0 1px 1px oklch(0.261 0.040 263.50 / 0.06), 0 4px 8px -4px oklch(0.261 0.040 263.50 / 0.10);
+    --lift-2: 0 1px 1px oklch(0.261 0.040 263.50 / 0.08), 0 9px 18px -9px oklch(0.261 0.040 263.50 / 0.18);
     --well: inset 0 1px 2px oklch(0.261 0.040 263.50 / 0.07);
 
     --radius: 0.75rem;
@@ -178,15 +178,15 @@
   .surface-card {
     box-shadow: var(--edge-highlight), var(--lift-1);
     transition:
-      box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .surface-card:hover {
     border-color: oklch(var(--ink) / 0.16);
     box-shadow: var(--edge-highlight), var(--lift-2);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
   /* A recessed area, for facts that sit inside a raised card. */
@@ -196,19 +196,21 @@
 
   /*
    * The Today page reads as ink: each word rises out of a soft blur a beat
-   * after the one before it, so the text arrives as one wave. Fill mode holds
-   * the start frame until the word's turn, `data-anim` lets the freeze safety
-   * net rescue words if frames stop, and reduced motion renders them plain.
+   * after the one before it, so the text arrives as one wave. Snappy enough
+   * for a working surface: half a second per word, about a fifth of a second
+   * of stagger across the whole line. Fill mode holds the start frame until
+   * the word's turn, `data-anim` lets the freeze safety net rescue words if
+   * frames stop, and reduced motion renders them plain.
    */
   @keyframes wave-word {
-    0% { opacity: 0; transform: translateY(0.55em) scale(0.985); filter: blur(7px); }
+    0% { opacity: 0; transform: translateY(0.45em) scale(0.99); filter: blur(5px); }
     60% { filter: blur(0); }
     100% { opacity: 1; transform: translateY(0); filter: blur(0); }
   }
 
   .wave-word {
     display: inline-block;
-    animation: wave-word 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: wave-word 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   @media (prefers-reduced-motion: reduce) {
