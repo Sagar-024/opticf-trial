@@ -217,7 +217,9 @@ export function MapCanvas({
       const touched = highlightActive && (highlightSet.has(edge.a) || highlightSet.has(edge.b));
       const practice = byId.get(edge.b);
       const dimmedByFilter = practice ? !matches(practice) : false;
-      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.5 : 0.13;
+      // Practice links are the connective tissue of the graph: faint enough to
+      // stay behind the nodes, strong enough to see on a dark canvas.
+      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.55 : 0.3;
       context.strokeStyle = palette.border;
       context.setLineDash(edge.kind === 'practice' ? [3, 4] : []);
       context.beginPath();
@@ -250,8 +252,11 @@ export function MapCanvas({
       let alpha = visual.opacity;
       if (!inFilter) alpha = Math.min(alpha, palette.dimOpacity);
       if (!inHighlight) alpha = Math.min(alpha, palette.dimOpacity);
-      // Never let a node become an unreadable speck.
-      const radius = Math.max(3.5, point.r * visual.sizeFactor);
+      // Never let a node become an unreadable speck. In a drilled region there
+      // are only a handful of nodes and the fit scale is large, so the radius is
+      // scaled down to keep the cluster airy instead of ballooning into blobs.
+      const levelFactor = level === 'region' ? 0.6 : 1;
+      const radius = Math.max(3.5, point.r * visual.sizeFactor * levelFactor);
       nodeBoxes.push({ x: point.x - radius, y: point.y - radius, w: radius * 2, h: radius * 2 });
 
       context.globalAlpha = alpha;
@@ -259,6 +264,14 @@ export function MapCanvas({
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.fillStyle = palette.colors[visual.colorKey];
       context.fill();
+
+      // Large discs get a background-coloured edge so they read as drawn marks
+      // rather than flat blobs.
+      if (radius >= 10) {
+        context.lineWidth = 1.5;
+        context.strokeStyle = palette.background;
+        context.stroke();
+      }
 
       if (inFilter && (isSelected || isHovered || (highlightActive && inHighlight))) {
         context.strokeStyle = isSelected ? palette.colors.coral : palette.hubRing;
@@ -359,8 +372,10 @@ export function MapCanvas({
         hovered === node.id ||
         emphasisedSet.has(node.id) ||
         (highlightActive && highlightSet.has(node.id));
-      // Every practice once you zoom in a little, otherwise the key ones.
-      return isPriority || zoom >= 1.15;
+      // Every practice once you zoom in a little, every practice in a drilled
+      // region (there are only a handful, and names are the whole point there),
+      // otherwise the key ones.
+      return isPriority || zoom >= 1.15 || level === 'region';
     });
 
     for (const node of labelCandidates) {
