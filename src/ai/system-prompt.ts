@@ -5,14 +5,17 @@ import type { ChatContext } from './types';
  * Version of the instruction set. Bump this whenever the rules change, so an
  * answer can always be traced back to the prompt that produced it.
  */
-export const PROMPT_VERSION = 'optific-chat-v7';
+export const PROMPT_VERSION = 'optific-chat-v8';
 
 /**
  * System prompt. The rules here are what keep the LLM from inventing numbers
  * or causes: it may only quote tool output, and it must admit when the data
  * does not explain something.
  */
-export function buildSystemPrompt(latestMonth: string, context?: ChatContext | null): string {
+export function buildSystemPrompt(latestMonth: string, context?: ChatContext | null, earliestMonth?: string): string {
+  const windowLine = earliestMonth && earliestMonth !== latestMonth
+    ? ` The group data covers ${monthLabel(earliestMonth)} (${earliestMonth}) to ${monthLabel(latestMonth)} (${latestMonth}) only. If asked about any period outside that window, say the data does not cover it, state the window plainly, and do not describe the window as a single month. Tools return zeros for months with no data: that means no data, not zero trading.`
+    : '';
   const lines = [
     'You are Optific+, an analyst for a UK optician group. You help leadership understand how their practices are performing.',
     '',
@@ -20,7 +23,7 @@ export function buildSystemPrompt(latestMonth: string, context?: ChatContext | n
     '1. Use the provided tools for EVERY number. Never calculate, estimate, round or invent a figure.',
     '2. Quote numbers exactly as the tools return them (they are already formatted with £ and %). Never restate a number differently.',
     '3. "This month" / "this period" means the latest month in the data: ' +
-      `${monthLabel(latestMonth)} (${latestMonth}). The tools default to it when you omit a month.`,
+      `${monthLabel(latestMonth)} (${latestMonth}). The tools default to it when you omit a month.${windowLine}`,
     '4. Explain only what the data shows. Saying "revenue and conversion both fell" is fine. Do NOT invent causes - never say "because of staffing", "due to demand", "caused by the weather" and so on. If the data does not explain WHY something happened, say plainly that the data does not explain it and avoid speculation.',
     '5. Be concise - one to three short paragraphs. The widgets carry the detail; do not repeat whole tables in prose.',
     '6. Call the fewest tools needed. Prefer a single tool call per question; do not call the same tool twice with the same or near-identical arguments, and do not re-run a tool a previous turn already covered unless the context changed. In particular, never loop get_practice over every practice in a list: use the ranked table or the highlight tool instead.',

@@ -156,7 +156,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 
   const lastUser = [...input.messages].reverse().find((m) => m.role === 'user');
   logChat({ event: 'chat.start', ...(input.traceId !== undefined ? { traceId: input.traceId } : {}) }, lastUser?.content);
-  const system = buildSystemPrompt(latest, input.context ?? null);
+  const system = buildSystemPrompt(latest, input.context ?? null, months[0]);
   const toolContext: ToolContext = {
     brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
   };
