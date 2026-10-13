@@ -21,7 +21,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { DitherButton } from '@/components/dither-kit/button';
 import { PALETTE, rgb } from '@/components/dither-kit/palette';
 import { Logo } from '@/components/logo';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
@@ -458,21 +457,18 @@ export function ChatView({
                 className="max-h-32 min-h-8 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-sm shadow-none focus-visible:ring-0"
                 disabled={loading}
               />
-              <DitherButton
+              {/* Plain filled button, no dither and no disabled fade, so the
+                  colour is exactly the brand orange at all times. Empty input
+                  is ignored by send() rather than dimming the control. */}
+              <button
                 type={loading ? 'button' : 'submit'}
-                color="brand"
-                variant="solid"
-                bloom="aura"
                 onClick={loading ? stop : undefined}
-                disabled={!loading && !input.trim()}
                 aria-label={loading ? 'Stop generating' : 'Send question'}
-                /* Solid base in the same colour as the dither, white arrow dead
-                   centre, matching the brand reference for the send control. */
                 style={{ backgroundColor: sendFill }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full p-0 text-white"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white shadow-soft transition-[transform,filter] duration-150 hover:brightness-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
-              </DitherButton>
+              </button>
             </div>
           </form>
         </div>
