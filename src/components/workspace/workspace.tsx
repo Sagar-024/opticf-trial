@@ -215,6 +215,14 @@ export function Workspace({
     setView('map');
   }, []);
 
+  // Query parameters only mean something while the map is open. Leaving it
+  // drops them, so a chat or brain URL never carries a stale shared-map link.
+  useEffect(() => {
+    if (view === 'map') return;
+    if (!window.location.search) return;
+    window.history.replaceState(null, '', window.location.pathname);
+  }, [view]);
+
   // Home pops up at most once per browser session. Any close writes the marker;
   // the sidebar Home button stays the manual way back in.
   useEffect(() => {
@@ -426,7 +434,7 @@ export function Workspace({
           whileTap={{ scale: 0.98 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32 }}
           className={cn(
-            'relative flex min-h-8 w-full items-center gap-2 rounded-md py-0 pl-2.5 pr-7 text-left text-xs',
+            'relative flex min-h-8 w-full items-center gap-2 rounded-md py-0 pl-2.5 pr-9 text-left text-xs',
             active ? 'font-semibold text-[var(--accent-text)]' : 'text-muted-foreground hover:text-foreground',
           )}
         >
@@ -455,7 +463,7 @@ export function Workspace({
             <button
               onClick={(event) => event.stopPropagation()}
               aria-label={`Options for ${session.title}`}
-              className="absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground opacity-0 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover:opacity-100"
+              className="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded text-muted-foreground opacity-0 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover:opacity-100"
             >
               <MoreHorizontal className="size-3.5" />
             </button>
@@ -569,7 +577,7 @@ export function Workspace({
           <motion.div
             variants={railItem}
             className={cn(
-              'mb-3 flex h-10 items-center gap-2.5 rounded-lg px-2 transition-colors hover:bg-accent',
+              'mb-3 flex h-10 items-center gap-2.5 rounded-lg px-2',
               !railExpanded && 'justify-center',
             )}
           >
@@ -579,8 +587,6 @@ export function Workspace({
                 {/* One line, like the nav rows; the month lives in the status
                     bar and the Home popup, so it is not repeated here. */}
                 <p className="min-w-0 truncate text-[13px] font-semibold">Northstar Group</p>
-                {/* Decorative for now; an org switcher would land here. */}
-                <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground/70" />
               </>
             ) : null}
           </motion.div>
@@ -652,7 +658,7 @@ export function Workspace({
                   aria-expanded={!chatFolded}
                   aria-label={chatFolded ? 'Show chats' : 'Hide chats'}
                   className={cn(
-                    'absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100',
+                    'absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100',
                     chatOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                   )}
                 >
@@ -712,11 +718,12 @@ export function Workspace({
 
           <nav aria-label="Workspace tools">{SECONDARY_NAV.map(navButton)}</nav>
 
-          {/* Profile as a quiet row, matching the org switcher above. */}
+          {/* Profile as a quiet row, matching the org row above: identity
+              only, no menus behind it yet, so it does not pretend to be one. */}
           <motion.div
             variants={railItem}
             className={cn(
-              'mt-auto flex h-10 items-center gap-2.5 rounded-lg px-2 transition-colors hover:bg-accent',
+              'mt-auto flex h-10 items-center gap-2.5 rounded-lg px-2',
               !railExpanded && 'justify-center',
             )}
           >
@@ -727,30 +734,10 @@ export function Workspace({
                   <p className="truncate text-xs font-semibold leading-tight">Sara Kelly</p>
                   <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
                 </div>
-                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />
               </>
             ) : null}
           </motion.div>
 
-          {/* Undo line: floats above the profile card, never shifts the rail. */}
-          <AnimatePresence>
-            {undoDelete && railExpanded ? (
-              <motion.div
-                key="undo-delete"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.2, ease: EASE }}
-                role="status"
-                className="surface-card absolute inset-x-3 bottom-[74px] z-10 flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs"
-              >
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">Chat deleted</span>
-                <button onClick={undoDeleteChat} className="shrink-0 font-medium text-[var(--accent-text)]">
-                  Undo
-                </button>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
         </motion.div>
       </motion.aside>
 
@@ -901,6 +888,30 @@ export function Workspace({
           </motion.div>
         </div>
       </main>
+
+      {/* The undo lives at the window level so a delete from anywhere, the
+          top bar included, can always be taken back, even with the rail
+          collapsed. The wrapper never blocks clicks; only the toast itself. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
+        <AnimatePresence>
+          {undoDelete ? (
+            <motion.div
+              key="undo-delete"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2, ease: EASE }}
+              role="status"
+              className="surface-card pointer-events-auto flex items-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 text-xs"
+            >
+              <span className="min-w-0 truncate text-muted-foreground">Chat deleted</span>
+              <button onClick={undoDeleteChat} className="shrink-0 font-medium text-[var(--accent-text)]">
+                Undo
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
 
       <HomeDialog
         open={homeOpen}

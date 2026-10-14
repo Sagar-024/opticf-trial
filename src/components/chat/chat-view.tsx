@@ -222,6 +222,7 @@ export function ChatView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
+  const [copyFailed, setCopyFailed] = useState<number | null>(null);
   /** Which answer has its "how this was built" receipt open. */
   const [openReceipt, setOpenReceipt] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -464,13 +465,43 @@ export function ChatView({
     abortRef.current?.abort();
   }
 
-  async function copyTurn(index: number, text: string): Promise<void> {
+  /** Clipboard with a fallback for contexts that block the async API (embedded
+      previews, older browsers): a selection-based copy still lands there. */
+  async function writeClipboard(text: string): Promise<boolean> {
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall through to the selection path
+    }
+    try {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(area);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function copyTurn(index: number, text: string): Promise<void> {
+    const ok = await writeClipboard(text);
+    if (ok) {
+      setCopyFailed(null);
       setCopied(index);
       window.setTimeout(() => setCopied(null), 1600);
-    } catch {
-      // clipboard unavailable
+    } else {
+      setCopied(null);
+      setCopyFailed(index);
+      window.setTimeout(() => setCopyFailed(null), 2000);
     }
   }
 
@@ -737,10 +768,13 @@ export function ChatView({
                           ) : null}
                           <button
                             onClick={() => void copyTurn(index, turn.text)}
-                            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                            className={cn(
+                              'inline-flex items-center gap-1.5 text-[11px] transition-colors hover:text-foreground',
+                              copyFailed === index ? 'text-[var(--destructive)]' : 'text-muted-foreground',
+                            )}
                           >
                             {copied === index ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                            {copied === index ? 'Copied' : 'Copy'}
+                            {copied === index ? 'Copied' : copyFailed === index ? 'Copy failed' : 'Copy'}
                           </button>
                           <button
                             onClick={regenerate}
