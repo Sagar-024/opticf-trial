@@ -36,14 +36,16 @@ import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
 
 /**
- * Four starting questions, shown as a tidy two by two. The first one is the
- * hero: the only chip that carries the orange.
+ * The four questions leadership actually opens with, shown as a tidy two by
+ * two: the pulse check first, then who needs help, what moved, and how the
+ * regions sit. Each one maps to real tools, so none of them is filler. The
+ * first is the hero: the only chip that carries the orange.
  */
 const SUGGESTIONS: Array<{ text: string; icon: LucideIcon; hero?: boolean }> = [
-  { text: 'Create a dashboard showing revenue and conversion across the group this month.', icon: Sparkles, hero: true },
-  { text: 'Which practices have had the biggest revenue drop compared with last month?', icon: TrendingDown },
-  { text: 'Compare the North West with the other regions.', icon: Map },
-  { text: 'Which practices need the most attention, and what in the data suggests that?', icon: Eye },
+  { text: 'How is the group doing this month?', icon: Sparkles, hero: true },
+  { text: 'Which practices need attention, and why?', icon: Eye },
+  { text: 'Which practices dropped the most since last month?', icon: TrendingDown },
+  { text: 'How do the regions compare?', icon: Map },
 ];
 
 /** Shared easing so every chat animation feels like one system. */
@@ -539,10 +541,10 @@ export function ChatView({
                     whileTap={{ scale: 0.98 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 28 }}
                     className={cn(
-                      'lift flex min-h-[56px] items-center gap-2.5 rounded-full border px-4 py-3 text-left text-xs [box-shadow:var(--hi),var(--shadow-raised)]',
+                      'lift flex min-h-[56px] items-center gap-2.5 rounded-full border px-4 py-3 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]',
                       hero
-                        ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
-                        : 'border-border bg-card text-muted-foreground hover:text-foreground',
+                        ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-text)] [box-shadow:var(--hi),var(--shadow-hero)]'
+                        : 'border-[color:var(--line)] bg-card text-muted-foreground [box-shadow:var(--hi),var(--shadow-raised)] hover:text-foreground',
                     )}
                   >
                     <Icon className="size-4 shrink-0" />

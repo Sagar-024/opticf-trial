@@ -906,10 +906,11 @@ export function Workspace({
         open={homeOpen}
         onOpenChange={handleHomeOpenChange}
         today={today}
-        practiceCount={practiceCount}
-        regionCount={regionCount}
         practiceName={(practiceId) =>
           mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId
+        }
+        practiceOf={(practiceId) =>
+          mapModel.practices.find((practice) => practice.practiceId === practiceId)
         }
         onOpenPractice={homeOpenPractice}
         onAskAbout={homeAskAbout}

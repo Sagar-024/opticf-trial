@@ -22,6 +22,29 @@ function oklch(styles: CSSStyleDeclaration, name: string, fallback: string): str
   return `oklch(${value || fallback})`;
 }
 
+/**
+ * The CSS variable each palette key reads from. The legend and the canvas both
+ * resolve through this, so a swatch can never disagree with the node it labels.
+ */
+const TOKEN_OF: Record<PaletteKey, string> = {
+  coral: '--coral',
+  amber: '--chart-4',
+  green: '--chart-3',
+  blue: '--chart-2',
+  ink: '--foreground',
+  muted: '--muted-foreground',
+  chart1: '--chart-1',
+  chart2: '--chart-2',
+  chart3: '--chart-3',
+  chart4: '--chart-4',
+  chart5: '--chart-5',
+};
+
+/** `oklch(var(--chart-1))` and friends: valid in any CSS value slot. */
+export function tokenVarFor(key: PaletteKey): string {
+  return TOKEN_OF[key];
+}
+
 export function readPalette(): Palette {
   const styles = getComputedStyle(document.documentElement);
 

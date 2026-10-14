@@ -7,6 +7,7 @@ import type { MapModel, MapPractice } from '@/data/map-model';
 import { mentor_portfolios } from '@/data/map-model';
 import { buildLenses, filterById, lensById, type LensId } from '@/map/lenses';
 import type { MapLevel } from '@/map/layout';
+import { tokenVarFor } from '@/components/map/palette';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -295,7 +296,7 @@ export function MapView({
                   <span key={entry.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span
                       className="size-2 rounded-full"
-                      style={{ background: `oklch(var(--${entry.colorKey === 'coral' ? 'coral' : entry.colorKey}))` }}
+                      style={{ background: `oklch(var(${tokenVarFor(entry.colorKey)}))` }}
                     />
                     {entry.label}
                   </span>
