@@ -39,7 +39,6 @@ export interface LensFilter {
 export interface Lens {
   id: LensId;
   label: string;
-  question: string;
   legend: Array<{ colorKey: PaletteKey; label: string }>;
   filters: LensFilter[];
   visual: (practice: MapPractice) => LensVisual;
@@ -68,7 +67,6 @@ export function buildLenses(context: LensContext): Lens[] {
     {
       id: 'region',
       label: 'Region',
-      question: 'Where is each practice, and how do the regions compare?',
       legend: regions.map((region) => ({ colorKey: regionColorKey(region, regions), label: region })),
       filters: [ALL_FILTER],
       visual: (practice) => ({ colorKey: regionColorKey(practice.region, regions), opacity: 1, sizeFactor: 1 }),
@@ -77,7 +75,6 @@ export function buildLenses(context: LensContext): Lens[] {
     {
       id: 'sales',
       label: 'Sales',
-      question: 'Which practices are selling well, and which are falling?',
       legend: [
         { colorKey: 'coral', label: 'Falling' },
         { colorKey: 'amber', label: 'Watch' },
@@ -103,7 +100,6 @@ export function buildLenses(context: LensContext): Lens[] {
     {
       id: 'contactLens',
       label: 'Contact lens',
-      question: 'Which practices are missing their contact lens target?',
       legend: [
         { colorKey: 'coral', label: 'Below 90% of target' },
         { colorKey: 'amber', label: 'Just below target' },
@@ -124,7 +120,6 @@ export function buildLenses(context: LensContext): Lens[] {
     {
       id: 'training',
       label: 'Training',
-      question: 'Who has not completed their required training?',
       legend: [
         { colorKey: 'coral', label: 'Overdue' },
         { colorKey: 'amber', label: 'Incomplete' },
@@ -145,7 +140,6 @@ export function buildLenses(context: LensContext): Lens[] {
     {
       id: 'mentors',
       label: 'Mentors',
-      question: 'Which practices does each mentor support, and how are they doing?',
       legend: mentors.map((mentor, index) => ({
         colorKey: MENTOR_COLOR_KEYS[index % MENTOR_COLOR_KEYS.length],
         label: mentor.name,

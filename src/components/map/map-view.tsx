@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LayoutGrid, List, Maximize2, Minimize2, Search, Sparkles, X } from 'lucide-react';
+import { LayoutGrid, List, Maximize2, Minimize2, Search, X } from 'lucide-react';
 import type { MapModel, MapPractice } from '@/data/map-model';
 import { mentor_portfolios } from '@/data/map-model';
 import { buildLenses, filterById, lensById, type LensId } from '@/map/lenses';
@@ -304,9 +304,6 @@ export function MapView({
                 <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <span className="size-1.5 rounded-full bg-muted-foreground" />
                   node size = monthly revenue
-                </span>
-                <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Sparkles className="size-3 text-[var(--accent-500)]" /> {lens.question}
                 </span>
               </div>
             </div>
