@@ -748,6 +748,7 @@ export function Workspace({
         <header
           className={cn(
             'shrink-0 overflow-hidden bg-background/80 transition-[height,opacity] duration-300 ease-out',
+            '[box-shadow:var(--header-depth)]',
             mapFocus ? 'border-b-0' : 'border-b border-border',
           )}
           style={{ height: mapFocus ? 0 : 48, opacity: mapFocus ? 0 : 1 }}

@@ -59,6 +59,11 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.85),
       inset -1px 0 0 rgba(255, 255, 255, 0.85),
       12px 0 28px -16px rgba(120, 80, 50, 0.3);
+    /* The top bar carries the same treatment turned sideways, so the whole
+       chrome reads as one raised frame around the content. */
+    --header-depth:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 12px 28px -16px rgba(120, 80, 50, 0.3);
     /* Dialog level: a second hairline drawn 5px inside the frame, at the same
        strength as the border, so the popup reads as a framed plate. Both lines
        are neutral black on the white card: warm brown read as a smudge here.
@@ -169,6 +174,7 @@
     --rail-depth:
       inset 0 1px 0 rgba(255, 255, 255, 0.05),
       inset -1px 0 0 rgba(255, 255, 255, 0.05);
+    --header-depth: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     /* The dialog keeps real depth even on black: the inner double hairline at
        the same weight as the border, plus deep black falloff. */
     --dialog-border: #333333;
