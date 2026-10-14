@@ -33,6 +33,7 @@ const config: Config = {
           DEFAULT: token('destructive'),
           foreground: token('destructive-foreground'),
         },
+        positive: token('positive'),
         muted: {
           DEFAULT: token('muted'),
           foreground: token('muted-foreground'),
@@ -53,11 +54,13 @@ const config: Config = {
         coral: {
           DEFAULT: token('coral'),
           deep: token('coral-deep'),
+          text: token('coral-text'),
         },
         ink: token('ink'),
         rail: {
           DEFAULT: token('rail'),
           active: token('rail-active'),
+          card: token('rail-card'),
         },
         map: {
           bg: token('map-bg'),

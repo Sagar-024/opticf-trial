@@ -19,7 +19,7 @@ const cascadeItem: Variants = {
 
 function Kpi({ widget }: { widget: KpiWidget }) {
   return (
-    <Card className="surface-card shadow-none">
+    <Card>
       <CardContent className="p-4">
         <p className="label-caps mb-3">{widget.title}</p>
         <motion.div className="grid grid-cols-2 gap-3 sm:grid-cols-4" variants={cascade} initial="hidden" animate="show">
@@ -38,7 +38,7 @@ function Kpi({ widget }: { widget: KpiWidget }) {
 
 function DataTable({ widget }: { widget: TableWidget }) {
   return (
-    <Card className="surface-card overflow-hidden shadow-none">
+    <Card className="overflow-hidden">
       <CardContent className="p-4">
         <p className="label-caps mb-3">{widget.title}</p>
         <div className="overflow-x-auto">

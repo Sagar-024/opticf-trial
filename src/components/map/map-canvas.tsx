@@ -707,7 +707,7 @@ export function MapCanvas({
 
       {tooltip ? (
         <div
-          className="pointer-events-none absolute z-10 w-56 rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-soft"
+          className="pointer-events-none absolute z-10 w-56 rounded-lg border border-border bg-card px-3 py-2 text-xs [box-shadow:var(--shadow-floating)]"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           <p className="font-semibold">{tooltip.title}</p>
@@ -718,7 +718,7 @@ export function MapCanvas({
       ) : null}
 
       {/* View controls, bottom centre so they are always easy to find. */}
-      <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-soft backdrop-blur">
+      <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 [box-shadow:var(--shadow-floating)] backdrop-blur">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 transition-transform active:scale-90" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value / 1.3))}>
           <Minus className="size-3.5" />
         </Button>

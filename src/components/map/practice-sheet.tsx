@@ -100,7 +100,7 @@ export function PracticeSheet({
                 <ul className="space-y-1.5">
                   {practice.attentionSignals.map((signal, index) => (
                     <li key={`${index}-${signal.slice(0, 24)}`} className="flex gap-2 text-xs text-muted-foreground">
-                      <TrendingDown className="mt-0.5 size-3.5 shrink-0 text-coral" />
+                      <TrendingDown className="mt-0.5 size-3.5 shrink-0 text-[var(--accent-600)]" />
                       <span>{signal}</span>
                     </li>
                   ))}
@@ -116,7 +116,7 @@ export function PracticeSheet({
                 <ul className="space-y-1">
                   {practice.trainingGaps.map((gap) => (
                     <li key={gap} className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <GraduationCap className="size-3.5 text-coral" /> {gap}
+                      <GraduationCap className="size-3.5 text-[var(--accent-600)]" /> {gap}
                     </li>
                   ))}
                 </ul>
@@ -133,7 +133,7 @@ export function PracticeSheet({
                       onClick={() => onOpenBrain?.(document.title)}
                       className="flex w-full items-start gap-2 rounded-lg border border-border px-3 py-2 text-left transition-colors hover:bg-accent"
                     >
-                      <FileText className="mt-0.5 size-3.5 shrink-0 text-coral" />
+                      <FileText className="mt-0.5 size-3.5 shrink-0 text-[var(--accent-600)]" />
                       <span className="min-w-0">
                         <span className="block text-xs font-medium">{document.title}</span>
                         <span className="block text-[10px] text-muted-foreground">

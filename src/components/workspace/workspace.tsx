@@ -1,39 +1,63 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion, type Variants } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { forceVisibleIfStuck } from '@/lib/anim';
+import {
+  deleteSession,
+  groupSessions,
+  listSessions,
+  migrateLegacy,
+  renameSession,
+  setSessionPinned,
+  subscribeToChats,
+  upsertSession,
+  type ChatSession,
+} from '@/lib/chat-store';
 import { WaveText } from '@/components/wave-text';
 import {
-  ArrowRight,
-  CalendarDays,
   CheckSquare,
+  ChevronDown,
+  ChevronRight,
   FileText,
+  Home as HomeIcon,
   Map as MapIcon,
   MessageSquare,
-  PanelLeft,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Pin,
+  PinOff,
   Sparkles,
-  TrendingDown,
+  SquarePen,
+  Trash2,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import type { TodayPriorities, TodayPriority } from '@/data';
 import type { MapModel } from '@/data/map-model';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ChatView } from '@/components/chat/chat-view';
 import { BrainView } from '@/components/brain/brain-view';
+import { HomeDialog } from '@/components/home/home-dialog';
+import { RailLeaves } from '@/components/workspace/rail-leaves';
 import { Logo } from '@/components/logo';
 import { MapView, type MapIntent } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
-type View = 'today' | 'chat' | 'map' | 'brain' | 'automations' | 'people';
+type View = 'chat' | 'map' | 'brain' | 'automations' | 'people';
 
 const PRIMARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
-  { key: 'today', label: 'Today', icon: CalendarDays },
   { key: 'chat', label: 'Chat', icon: MessageSquare },
   { key: 'map', label: 'Map', icon: MapIcon },
   { key: 'brain', label: 'Brain', icon: FileText },
@@ -43,6 +67,11 @@ const SECONDARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
   { key: 'automations', label: 'Automations', icon: CheckSquare },
   { key: 'people', label: 'People & logs', icon: Users },
 ];
+
+/** Home auto-opens at most once per browser session; any close sets this. */
+const HOME_SESSION_KEY = 'optific.home.dismissed';
+/** Whether the conversation list under Chat is folded, per browser. */
+const CHAT_FOLD_KEY = 'optific.rail.chat-fold';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -59,64 +88,6 @@ const railItem: Variants = {
   hidden: { opacity: 0, x: -10 },
   show: { opacity: 1, x: 0, transition: { duration: 0.34, ease: EASE } },
 };
-
-function PriorityCard({
-  item,
-  onOpenPractice,
-  onOpenRegion,
-  onOpenDashboard,
-}: {
-  item: TodayPriority;
-  onOpenPractice: (practiceId: string) => void;
-  onOpenRegion: (region: string) => void;
-  onOpenDashboard: (item: TodayPriority) => void;
-}) {
-  const openRelated = () => {
-    if (item.practiceId) onOpenPractice(item.practiceId);
-    else if (item.region) onOpenRegion(item.region);
-  };
-
-  return (
-    <Card className="surface-card shadow-none">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Badge variant={item.kind === 'region' ? 'default' : 'secondary'}>
-              {item.kind === 'region' ? 'Region' : 'Practice'}
-            </Badge>
-            <span className="text-xs text-muted-foreground">{item.region}</span>
-          </div>
-          <Badge variant="outline" className="capitalize">{item.issue.replace(/-/g, ' ')}</Badge>
-        </div>
-
-        <h3 className="mt-3 text-base font-semibold text-pretty">{item.title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground text-pretty">{item.summary}</p>
-
-        <div className="surface-well mt-4 flex items-baseline gap-2 rounded-lg bg-secondary/60 px-3 py-2">
-          <span className="label-caps">{item.metric.label}</span>
-          <span className="text-lg font-semibold tabular-nums">{item.metric.value}</span>
-          <span className="text-xs text-muted-foreground">{item.metric.comparison}</span>
-        </div>
-
-        <ul className="mt-3 space-y-1">
-          {item.evidence.slice(0, 3).map((line, index) => (
-            <li key={`${index}-${line.slice(0, 24)}`} className="flex gap-2 text-xs text-muted-foreground">
-              <span className="mt-[6px] size-1 shrink-0 rounded-full bg-coral" />
-              {line}
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={openRelated}>
-            Show on map <ArrowRight />
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => onOpenDashboard(item)}>Open dashboard</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function PlaceholderPage({
   title,
@@ -135,7 +106,7 @@ function PlaceholderPage({
       <p className="mt-2 max-w-2xl text-pretty text-sm text-muted-foreground">{description}</p>
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         {items.map((item) => (
-          <Card key={item.title} className="surface-card shadow-none">
+          <Card key={item.title}>
             <CardContent className="p-4">
               <p className="text-sm font-semibold">{item.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
@@ -163,16 +134,33 @@ export function Workspace({
   regionCount: number;
   latestMonth: string;
 }) {
-  const [view, setView] = useState<View>('today');
+  const [view, setView] = useState<View>('chat');
   const [railOpen, setRailOpen] = useState(true);
   const [mapFocus, setMapFocus] = useState(false);
   const [highlighted, setHighlighted] = useState<string[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [mapIntent, setMapIntent] = useState<MapIntent | null>(null);
   const [brainDocument, setBrainDocument] = useState<string | null>(null);
+  const [homeOpen, setHomeOpen] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  /** The chat being renamed inline, if any. */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  /** The last deleted chat, held for the undo line under the rail. */
+  const [undoDelete, setUndoDelete] = useState<ChatSession | null>(null);
+  /** Whether the conversation list under Chat is folded away. */
+  const [chatFolded, setChatFolded] = useState(false);
+  const undoTimerRef = useRef<number | null>(null);
 
   function openPracticeOnMap(practiceId: string): void {
     setHighlighted([practiceId]);
+    setView('map');
+  }
+
+  /** Deep-opens the practice sheet on the map; used by Home's Open Practice. */
+  function openPracticeDetails(practiceId: string): void {
+    setHighlighted([]);
+    setMapIntent({ selectedId: practiceId, nonce: Date.now() });
     setView('map');
   }
 
@@ -182,16 +170,9 @@ export function Workspace({
     setView('map');
   }
 
-  function openDashboardFor(item: TodayPriority): void {
-    const name = item.practiceId
-      ? mapModel.practices.find((practice) => practice.practiceId === item.practiceId)?.name
-      : undefined;
-    setPendingQuestion(
-      item.kind === 'region' || !name
-        ? `Compare ${item.region} with the other regions this month.`
-        : `Show me ${name} performance this month and what changed compared with last month.`,
-    );
-    setView('chat');
+  function showPriorityOnMap(item: TodayPriority): void {
+    if (item.practiceId) openPracticeOnMap(item.practiceId);
+    else if (item.region) openRegionOnMap(item.region);
   }
 
   function askFromMap(question: string): void {
@@ -227,6 +208,109 @@ export function Workspace({
     setView('map');
   }, []);
 
+  // Home pops up at most once per browser session. Any close writes the marker;
+  // the sidebar Home button stays the manual way back in.
+  useEffect(() => {
+    if (window.sessionStorage.getItem(HOME_SESSION_KEY) === '1') return;
+    setHomeOpen(true);
+  }, []);
+
+  function handleHomeOpenChange(next: boolean): void {
+    setHomeOpen(next);
+    if (!next) window.sessionStorage.setItem(HOME_SESSION_KEY, '1');
+  }
+
+  function homeOpenPractice(practiceId: string): void {
+    openPracticeDetails(practiceId);
+    handleHomeOpenChange(false);
+  }
+
+  function homeShowOnMap(item: TodayPriority): void {
+    showPriorityOnMap(item);
+    handleHomeOpenChange(false);
+  }
+
+  /** Home hands a question to the chat, so a priority becomes a follow-up. */
+  function homeAskAbout(question: string): void {
+    setPendingQuestion(question);
+    setView('chat');
+    handleHomeOpenChange(false);
+  }
+
+  // Chat history lives in this browser for now. When the backend arrives, this
+  // list comes from the server and nothing else on the rail changes.
+  useEffect(() => {
+    migrateLegacy();
+    const refresh = () => setChatSessions(listSessions());
+    refresh();
+    return subscribeToChats(refresh);
+  }, []);
+
+  function startNewChat(): void {
+    setChatSessionId(null);
+    setView('chat');
+  }
+
+  function selectChat(id: string): void {
+    setChatSessionId(id);
+    setView('chat');
+  }
+
+  function renameChat(id: string, title: string): void {
+    renameSession(id, title);
+    setRenamingId(null);
+  }
+
+  /** Deleting keeps the thread in memory for a few seconds of undo. */
+  function deleteChat(session: ChatSession): void {
+    deleteSession(session.id);
+    if (chatSessionId === session.id) setChatSessionId(null);
+    setUndoDelete(session);
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = window.setTimeout(() => setUndoDelete(null), 7000);
+  }
+
+  function undoDeleteChat(): void {
+    if (!undoDelete) return;
+    upsertSession(undoDelete);
+    setUndoDelete(null);
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+  }
+
+  function togglePin(session: ChatSession): void {
+    setSessionPinned(session.id, !session.pinned);
+  }
+
+  /** Fold or unfold the conversation list under Chat. */
+  function toggleChatFold(): void {
+    setChatFolded((folded) => {
+      const next = !folded;
+      try {
+        window.localStorage.setItem(CHAT_FOLD_KEY, next ? '1' : '0');
+      } catch {
+        // Storage unavailable; the choice lasts this session only.
+      }
+      return next;
+    });
+  }
+
+  // The undo line is on a timer; drop it when the workspace unmounts.
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    },
+    [],
+  );
+
+  // The Chat section fold is remembered per browser.
+  useEffect(() => {
+    try {
+      setChatFolded(window.localStorage.getItem(CHAT_FOLD_KEY) === '1');
+    } catch {
+      // Storage unavailable; the list simply starts open.
+    }
+  }, []);
+
   // Focus mode hides the shell, so make sure the user can always leave it.
   useEffect(() => {
     if (!mapFocus) return;
@@ -246,6 +330,8 @@ export function Workspace({
 
   const navButton = (item: { key: View; label: string; icon: LucideIcon }) => {
     const Icon = item.icon;
+    // The section you are on carries the pill. Chat renders its own row below
+    // so its conversations can nest inside it.
     const active = view === item.key;
     return (
       <motion.button
@@ -255,24 +341,131 @@ export function Workspace({
         variants={railItem}
         className={cn(
           'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs',
-          active ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+          active ? 'font-semibold text-[var(--accent-text)]' : 'text-muted-foreground hover:text-foreground',
         )}
         whileTap={{ scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 420, damping: 32 }}
       >
-        {/* One pill that slides between items instead of swapping backgrounds. */}
+        {/* One pill that slides between items: a soft tint with a 1px edge,
+            never a heavy fill. */}
         {active ? (
           <motion.span
             layoutId="rail-active-pill"
-            className="absolute inset-0 rounded-md bg-rail-active"
+            className="absolute inset-0 rounded-md border border-[color:var(--accent-line)] bg-[var(--accent-soft)]"
             transition={{ type: 'spring', stiffness: 420, damping: 34 }}
           />
         ) : null}
-        <Icon className="relative size-4 shrink-0" />
+        <Icon className={cn('relative size-4 shrink-0', active && 'text-[var(--accent-500)]')} />
         <span className="relative">{item.label}</span>
+        {/* Only the section you are on carries the chevron; the others stay quiet. */}
+        <ChevronRight
+          className={cn(
+            'relative ml-auto size-3.5 shrink-0 transition-[opacity,transform] duration-200 ease-out',
+            active && !homeOpen ? 'translate-x-0 text-[var(--accent-500)] opacity-100' : '-translate-x-1 text-muted-foreground/60 opacity-0',
+          )}
+        />
       </motion.button>
     );
   };
+
+  const sessionButton = (session: ChatSession) => {
+    const active = view === 'chat' && chatSessionId === session.id;
+
+    // Inline rename: the row becomes a small input. Enter saves, Esc cancels,
+    // leaving the field cancels too.
+    if (renamingId === session.id) {
+      return (
+        <motion.div key={session.id} variants={railItem} className="flex w-full items-center">
+          <input
+            autoFocus
+            defaultValue={session.title}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') renameChat(session.id, event.currentTarget.value);
+              if (event.key === 'Escape') setRenamingId(null);
+            }}
+            onBlur={() => setRenamingId(null)}
+            aria-label="Rename chat"
+            className="min-h-8 w-full rounded-md border border-[color:var(--accent-border)] bg-card px-2.5 py-0 text-xs outline-none"
+          />
+        </motion.div>
+      );
+    }
+
+    return (
+      <motion.div key={session.id} variants={railItem} className="group relative flex w-full items-center">
+        <motion.button
+          onClick={() => selectChat(session.id)}
+          aria-current={active ? 'true' : undefined}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+          className={cn(
+            'relative flex min-h-8 w-full items-center gap-2 rounded-md py-0 pl-2.5 pr-7 text-left text-xs',
+            active ? 'font-semibold text-[var(--accent-text)]' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {active ? (
+            <motion.span
+              layoutId="rail-active-pill"
+              className="absolute inset-0 rounded-md border border-[color:var(--accent-line)] bg-[var(--accent-soft)]"
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            />
+          ) : null}
+          <span className="relative min-w-0 flex-1 truncate">{session.title}</span>
+          <ChevronRight
+            className={cn(
+              'relative size-3 shrink-0 transition-[opacity,transform] duration-200 ease-out',
+              active
+                ? 'translate-x-0 text-[var(--accent-500)] opacity-100 group-hover:opacity-0'
+                : '-translate-x-1 text-muted-foreground/60 opacity-0',
+            )}
+          />
+        </motion.button>
+
+        {/* Pin, rename, delete. Appears on hover or keyboard focus so the list
+            stays quiet at rest. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(event) => event.stopPropagation()}
+              aria-label={`Options for ${session.title}`}
+              className="absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground opacity-0 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover:opacity-100"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="bottom" sideOffset={2}>
+            <DropdownMenuItem onSelect={() => togglePin(session)}>
+              {session.pinned ? <PinOff /> : <Pin />}
+              {session.pinned ? 'Unpin' : 'Pin'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setRenamingId(session.id)}>
+              <Pencil />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => deleteChat(session)}
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </motion.div>
+    );
+  };
+
+  const recentGroups = groupSessions(chatSessions);
+  // Chat is one section: `open` lights its icon while you are anywhere in
+  // chat, `exact` marks the Chat row itself as "you are here" only when no
+  // conversation is open. An open conversation takes the pill instead, so the
+  // section light and the exact position never compete.
+  const chatOpen = view === 'chat';
+  const chatExact = view === 'chat' && !chatSessionId;
+  // Folded, the conversation row is hidden, so the Chat row itself carries the
+  // pill while you are in chat; unfolded, the exact-position rule above holds.
+  const chatRowMarked = chatExact || (chatFolded && chatOpen);
 
   return (
     <div className="flex h-dvh overflow-hidden">
@@ -282,42 +475,180 @@ export function Workspace({
         animate={{ width: railOpen && !mapFocus ? 220 : 0, opacity: railOpen && !mapFocus ? 1 : 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 32, mass: 0.9 }}
         className={cn(
-          'flex shrink-0 flex-col overflow-hidden bg-rail',
+          'relative flex shrink-0 flex-col overflow-hidden bg-[var(--surface-2)]',
           railOpen && !mapFocus ? 'border-r border-border' : 'border-r-0',
         )}
         aria-hidden={!railOpen || mapFocus}
       >
+        <RailLeaves className="pointer-events-none absolute inset-0" />
         <motion.div
-          className="flex h-full flex-col px-3 py-5"
+          className="relative flex h-full flex-col px-3 py-5"
           variants={railStagger}
           initial="hidden"
           animate={railOpen && !mapFocus ? 'show' : 'hidden'}
         >
-          <motion.div variants={railItem} className="mb-5 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
-            <Logo className="size-6" /> Optific<span className="text-coral">+</span>
+          <motion.div variants={railItem} className="mb-4 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
+            <Logo className="size-6" /> Optific<span className="text-[var(--accent-600)]">+</span>
+            {/* The collapse control lives here, inside the rail it controls. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto size-7 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setRailOpen(false)}
+              aria-label="Hide navigation"
+              aria-expanded={railOpen}
+            >
+              <PanelLeftClose />
+            </Button>
           </motion.div>
 
-          <motion.div variants={railItem} className="mb-4 flex items-center gap-2 border-y border-border px-1.5 py-2.5">
-            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">N</span>
+          <motion.div variants={railItem} className="surface-card mb-4 flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-bold text-primary-foreground ring-1 ring-[color:var(--line-strong)]">N</span>
             <div className="min-w-0">
-              <p className="truncate text-xs font-semibold leading-tight">Northstar Group</p>
-              <p className="truncate text-[10px] leading-tight text-muted-foreground">{latestMonth}</p>
+              <p className="truncate text-[13px] font-semibold leading-tight">Northstar Group</p>
+              <p className="truncate text-[11px] leading-tight text-muted-foreground">{latestMonth}</p>
             </div>
+            {/* Decorative for now; an org switcher would land here. */}
+            <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground/70" />
           </motion.div>
 
-          <nav aria-label="Sections">{PRIMARY_NAV.map(navButton)}</nav>
+          <nav aria-label="Sections">
+            {/* Home opens the priorities dialog; the old Today page is gone. */}
+            <motion.button
+              key="home"
+              onClick={() => setHomeOpen(true)}
+              variants={railItem}
+              className="relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:text-foreground"
+              whileTap={{ scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            >
+              <HomeIcon className="relative size-4 shrink-0" />
+              <span className="relative">Home</span>
+              {/* Home carries the chevron only while its dialog is open. */}
+              <ChevronRight
+                className={cn(
+                  'relative ml-auto size-3.5 shrink-0 text-muted-foreground/60 transition-[opacity,transform] duration-200 ease-out',
+                  homeOpen ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0',
+                )}
+              />
+            </motion.button>
+            {/* Chat is a section: its conversations live inside it, so there is
+                only ever one place to look for "where am I". The row keeps the
+                section light (orange icon and name) while you are in chat. */}
+            <motion.div variants={railItem} className="relative mb-0.5">
+              <motion.button
+                onClick={() => setView('chat')}
+                aria-current={chatRowMarked ? 'page' : undefined}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                className={cn(
+                  'relative flex min-h-9 w-full items-center gap-2.5 rounded-md py-0 pl-2.5 pr-8 text-left text-xs',
+                  chatOpen
+                    ? cn('text-[var(--accent-text)]', chatRowMarked && 'font-semibold')
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {chatRowMarked ? (
+                  <motion.span
+                    layoutId="rail-active-pill"
+                    className="absolute inset-0 rounded-md border border-[color:var(--accent-line)] bg-[var(--accent-soft)]"
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  />
+                ) : null}
+                <MessageSquare className={cn('relative size-4 shrink-0', chatOpen && 'text-[var(--accent-500)]')} />
+                <span className="relative">Chat</span>
+              </motion.button>
+              {/* The fold is a click, never a hover, so nothing opens under the
+                  pointer on the way to Map or Brain. */}
+              <button
+                onClick={toggleChatFold}
+                aria-expanded={!chatFolded}
+                aria-label={chatFolded ? 'Show chats' : 'Hide chats'}
+                className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+              >
+                <ChevronDown className={cn('size-3.5 transition-transform duration-200', chatFolded && '-rotate-90')} />
+              </button>
+            </motion.div>
+
+            {/* The conversations, nested under Chat: New chat first, then the
+                day groups. The list caps with the window and scrolls on its
+                own, so a long history never pushes the rail around. */}
+            <motion.div variants={railItem} className="mb-0.5">
+              <AnimatePresence initial={false}>
+                {!chatFolded ? (
+                  <motion.div
+                    key="chat-list"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.22, ease: EASE }}
+                    className="overflow-hidden"
+                  >
+                    <div className="max-h-[min(20rem,calc(100dvh-520px))] space-y-0.5 overflow-y-auto pb-1 pl-3 pr-0.5">
+                      <button
+                        onClick={startNewChat}
+                        className="relative flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <SquarePen className="size-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">New chat</span>
+                      </button>
+                      {recentGroups.pinned.length > 0 ? (
+                        <p className="label-caps pb-1 pl-2.5 pt-2">Pinned</p>
+                      ) : null}
+                      {recentGroups.pinned.map(sessionButton)}
+                      {recentGroups.today.length > 0 ? (
+                        <p className="label-caps pb-1 pl-2.5 pt-2">Today</p>
+                      ) : null}
+                      {recentGroups.today.map(sessionButton)}
+                      {recentGroups.yesterday.length > 0 ? (
+                        <p className="label-caps pb-1 pl-2.5 pt-3">Yesterday</p>
+                      ) : null}
+                      {recentGroups.yesterday.map(sessionButton)}
+                      {recentGroups.earlier.length > 0 ? (
+                        <p className="label-caps pb-1 pl-2.5 pt-3">Earlier</p>
+                      ) : null}
+                      {recentGroups.earlier.map(sessionButton)}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </motion.div>
+
+            {PRIMARY_NAV.filter((item) => item.key !== 'chat').map(navButton)}
+          </nav>
 
           <motion.div variants={railItem} className="my-3 border-t border-border" />
 
           <nav aria-label="Workspace tools">{SECONDARY_NAV.map(navButton)}</nav>
 
-          <motion.div variants={railItem} className="mt-auto flex items-center gap-2.5 border-t border-border px-1 pt-3">
+          <motion.div variants={railItem} className="surface-card mt-auto flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-rail-active text-[10px] font-semibold">SK</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold leading-tight">Sara Kelly</p>
               <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
             </div>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />
           </motion.div>
+
+          {/* Undo line: floats above the profile card, never shifts the rail. */}
+          <AnimatePresence>
+            {undoDelete ? (
+              <motion.div
+                key="undo-delete"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.2, ease: EASE }}
+                role="status"
+                className="surface-card absolute inset-x-3 bottom-[74px] z-10 flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs"
+              >
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">Chat deleted</span>
+                <button onClick={undoDeleteChat} className="shrink-0 font-medium text-[var(--accent-text)]">
+                  Undo
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </motion.div>
       </motion.aside>
 
@@ -332,15 +663,19 @@ export function Workspace({
           aria-hidden={mapFocus}
         >
           <div className="flex h-14 items-center gap-2 px-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setRailOpen((open) => !open)}
-              aria-label={railOpen ? 'Hide navigation' : 'Show navigation'}
-              aria-expanded={railOpen}
-            >
-              <PanelLeft />
-            </Button>
+            {/* The collapse control lives in the rail; when the rail is
+                closed this is the way back in. */}
+            {railOpen ? null : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setRailOpen(true)}
+                aria-label="Show navigation"
+                aria-expanded={railOpen}
+              >
+                <PanelLeftOpen />
+              </Button>
+            )}
             <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate font-medium text-foreground">Northstar Group</span>
               <span className="text-border">/</span>
@@ -365,47 +700,14 @@ export function Workspace({
             transition={{ duration: 0.28, ease: EASE }}
             className="h-full"
           >
-          {view === 'today' ? (
-            <ScrollArea className="h-full">
-              <div className="mx-auto max-w-4xl px-8 pb-10 pt-7">
-                <h1 className="text-balance text-2xl font-semibold tracking-tight">
-                  <WaveText text="What should I focus on today?" />
-                </h1>
-                <p className="mt-2 max-w-[62ch] text-pretty text-sm text-muted-foreground">
-                  <WaveText
-                    text={`${today.items.length} priorities for ${today.monthLabel}, across ${practiceCount} practices and ${regionCount} regions.`}
-                    delay={120}
-                    step={9}
-                  />
-                </p>
-                <div className="mt-6 grid grid-cols-1 gap-4">
-                  {today.items.map((item, index) => (
-                    <motion.div
-                      key={item.id}
-                      data-anim
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.42, delay: 0.05 * index, ease: EASE }}
-                    >
-                      <PriorityCard
-                        item={item}
-                        onOpenPractice={openPracticeOnMap}
-                        onOpenRegion={openRegionOnMap}
-                        onOpenDashboard={openDashboardFor}
-                      />
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            </ScrollArea>
-          ) : null}
-
           {view === 'chat' ? (
             <ChatView
               onShowMap={showOnMap}
               onOpenBrain={openBrainDocument}
               pendingQuestion={pendingQuestion}
               onPendingHandled={() => setPendingQuestion(null)}
+              sessionId={chatSessionId}
+              onSessionChange={setChatSessionId}
             />
           ) : null}
 
@@ -468,11 +770,25 @@ export function Workspace({
           aria-hidden={mapFocus}
         >
           <div className="flex h-9 items-center gap-4 px-6 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><TrendingDown className="size-3.5 text-coral" /> {practiceCount} practices connected</span>
-            <span>Fictional sample data · {latestMonth}</span>
+            <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-positive" /> {practiceCount} practices connected</span>
+            <span>{latestMonth}</span>
           </div>
         </div>
       </main>
+
+      <HomeDialog
+        open={homeOpen}
+        onOpenChange={handleHomeOpenChange}
+        today={today}
+        practiceCount={practiceCount}
+        regionCount={regionCount}
+        practiceName={(practiceId) =>
+          mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId
+        }
+        onOpenPractice={homeOpenPractice}
+        onAskAbout={homeAskAbout}
+        onShowOnMap={homeShowOnMap}
+      />
     </div>
   );
 }

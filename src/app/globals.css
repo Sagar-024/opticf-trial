@@ -3,15 +3,17 @@
 @tailwind utilities;
 
 /*
- * Optific+ design tokens in oklch, following the shadcn pattern.
+ * Optific+ design tokens.
  *
- * Light: warm cream canvas, navy ink, coral accent (from the reference HTML).
- * Dark:  neutral surfaces on a near-black base. The reference values are the
- *        shadcn dark neutrals: card/popover oklch(0.205 0 0) and
- *        secondary/muted/accent oklch(0.269 0 0). The coral accent is kept.
+ * The palette block is the single source of truth: every colour in the app
+ * resolves to one of these tokens, and no component hardcodes a colour.
  *
- * Every colour is a bare oklch triple, referenced as
- * `oklch(var(--token) / <alpha-value>)` in tailwind.config.ts.
+ * Below it, the "Tailwind bridge" keeps the semantic tokens that utilities are
+ * mapped to (`bg-card`, `border-border`, `text-muted-foreground`, ...). Tailwind
+ * needs bare oklch triples there so opacity modifiers such as `bg-card/80` keep
+ * working, so each bridge entry mirrors a palette value folded over the
+ * surfaces it usually sits on (e.g. --border is the spec hairline seen on
+ * cream). Change a value above, keep its mirror below in step.
  */
 
 @layer base {
@@ -19,115 +21,149 @@
     --font-sans: var(--font-inter), var(--font-geist-sans), sans-serif;
     --font-mono: var(--font-geist-mono), monospace;
 
-    /* Surfaces */
-    --background: 0.978 0.017 84.59;        /* warm cream */
-    --foreground: 0.261 0.040 263.50;       /* navy ink */
-    --card: 0.994 0.006 84.57;
-    --card-foreground: 0.261 0.040 263.50;
+    /* Accent: one orange family, matching the bar chart orange. */
+    --accent-400: #ffa860;                 /* light fill, chart bar top, glows */
+    --accent-500: #f78b2d;                 /* primary - the chart bar orange */
+    --accent-600: #e8741a;                 /* button base, hover, pressed */
+    --accent-700: #b85410;                 /* orange text on cream (AA readable) */
+    --accent-soft: rgba(247, 139, 45, 0.12);   /* tinted backgrounds */
+    --accent-ring: rgba(247, 139, 45, 0.22);   /* focus ring */
+    --accent-line: rgba(247, 139, 45, 0.18);   /* 1px edge on tinted states */
+    --accent-border: rgba(247, 139, 45, 0.35); /* hero chip border */
+    --accent-focus: rgba(247, 139, 45, 0.6);   /* composer focus border */
+
+    /* Surfaces, hairlines and ink. */
+    --bg: #fcf5ea;
+    --surface: #fffdf9;
+    --surface-2: #fbf3e7;
+    --line: rgba(120, 80, 50, 0.12);
+    --line-strong: rgba(120, 80, 50, 0.2);
+    --ink-2: #6b5f55;
+    --ink-3: #a39587;
+    --good: #2f9e6b;
+    --bad: #d64545;
+
+    /* Orange copy is one tone in both themes: the same bright accent as the
+       icons beside it, so an active item never reads in two oranges. */
+    --accent-text: var(--accent-500);
+
+    /* Depth: one lit top edge plus three levels - raised, floating, hover. */
+    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --shadow-raised: 0 1px 2px rgba(120, 80, 50, 0.06), 0 6px 16px -6px rgba(120, 80, 50, 0.14);
+    --shadow-floating: 0 2px 4px rgba(120, 80, 50, 0.06), 0 14px 32px -10px rgba(120, 80, 50, 0.22);
+    --shadow-hover: 0 2px 4px rgba(120, 80, 50, 0.08), 0 12px 24px -8px rgba(120, 80, 50, 0.2);
+    --shadow-send: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px -2px rgba(232, 116, 26, 0.45);
+    --send-gradient: linear-gradient(180deg, #ffa04d, #e8741a);
+    --well: inset 0 1px 2px rgba(120, 80, 50, 0.07);
+
+    /* ---- Tailwind bridge (bare oklch triples) -------------------------- */
+    --background: 0.973 0.016 79.35;        /* --bg */
+    --foreground: 0.255 0.039 268.79;       /* ink #1b2236 */
+    --card: 0.994 0.006 84.57;              /* --surface */
+    --card-foreground: 0.255 0.039 268.79;
     --popover: 0.994 0.006 84.57;
-    --popover-foreground: 0.261 0.040 263.50;
+    --popover-foreground: 0.255 0.039 268.79;
 
-    /* Brand */
-    --primary: 0.261 0.040 263.50;
-    --primary-foreground: 0.978 0.017 84.59;
-    --secondary: 0.948 0.013 82.40;
-    --secondary-foreground: 0.261 0.040 263.50;
-    --muted: 0.948 0.013 82.40;
-    --muted-foreground: 0.568 0.017 277.63;
-    --accent: 0.923 0.022 76.53;
-    --accent-foreground: 0.261 0.040 263.50;
+    --primary: 0.255 0.039 268.79;          /* ink navy */
+    --primary-foreground: 0.994 0.006 84.57;
+    --secondary: 0.952 0.019 80.12;         /* wells on cards */
+    --secondary-foreground: 0.255 0.039 268.79;
+    --muted: 0.952 0.019 80.12;
+    --muted-foreground: 0.494 0.022 62.1;   /* --ink-2 */
+    --accent: 0.938 0.023 78.22;            /* hover wash */
+    --accent-foreground: 0.255 0.039 268.79;
 
-    /* Coral accent */
-    --coral: 0.687 0.125 35.52;
-    --coral-deep: 0.560 0.106 36.81;
-    --ink: 0.261 0.040 263.50;
+    --ink: 0.255 0.039 268.79;
+    /* The send family, kept as aliases for the map and chart code paths. */
+    --coral: 0.740 0.165 56.06;             /* accent-500 */
+    --coral-deep: 0.563 0.148 47.69;        /* accent-700 */
+    --coral-text: 0.682 0.169 51.07;        /* accent-600 */
 
-    /* Lines and states */
-    --border: 0.906 0.017 79.35;
-    --input: 0.906 0.017 79.35;
-    --ring: 0.687 0.125 35.52;
-    --destructive: 0.560 0.106 36.81;
-    --destructive-foreground: 0.978 0.017 84.59;
+    --border: 0.915 0.021 72.14;            /* --line over cream */
+    --input: 0.915 0.021 72.14;
+    --ring: 0.740 0.165 56.06;              /* accent-500 */
+    --destructive: 0.597 0.182 24.51;       /* --bad */
+    --destructive-foreground: 0.994 0.006 84.57;
+    --positive: 0.624 0.126 158.97;         /* --good */
 
-    /* Rail */
-    --rail: 0.968 0.016 86.42;
-    --rail-active: 0.923 0.022 76.53;
+    --rail: 0.967 0.018 78.24;              /* --surface-2 */
+    --rail-card: 0.994 0.006 84.57;
+    --rail-active: 0.932 0.020 74.66;
 
-    /* Dark map canvas (used for the map surface in both modes) */
+    /* Dark map canvas (used for the map surface in both modes). */
     --map-bg: 0.252 0.036 254.13;
     --map-fg: 0.888 0.018 253.35;
     --map-muted: 0.709 0.033 252.77;
 
     /* Charts */
-    --chart-1: 0.687 0.125 35.52;
+    --chart-1: 0.740 0.165 56.06;           /* accent-500 */
     --chart-2: 0.675 0.034 257.26;
     --chart-3: 0.582 0.036 171.23;
     --chart-4: 0.682 0.076 76.28;
-    --chart-5: 0.261 0.040 263.50;
-
-    /* Depth: border led, a lit top edge, and two short shadows. No wide halo,
-       so a card never reads as a floating ghost. */
-    --edge-highlight: inset 0 1px 0 oklch(1 0 0 / 0.75);
-    --lift-1: 0 1px 1px oklch(0.261 0.040 263.50 / 0.06), 0 4px 8px -4px oklch(0.261 0.040 263.50 / 0.10);
-    --lift-2: 0 1px 1px oklch(0.261 0.040 263.50 / 0.08), 0 9px 18px -9px oklch(0.261 0.040 263.50 / 0.18);
-    --well: inset 0 1px 2px oklch(0.261 0.040 263.50 / 0.07);
+    --chart-5: 0.255 0.039 268.79;
 
     --radius: 0.75rem;
     color-scheme: light;
   }
 
   .dark {
-    /* Surfaces: shadcn dark neutrals */
-    --background: 0.145 0 0;
-    --foreground: 0.985 0 0;
-    --card: 0.205 0 0;
-    --card-foreground: 0.985 0 0;
-    --popover: 0.205 0 0;
-    --popover-foreground: 0.985 0 0;
+    /* Same structure, swapped tokens: deep warm brown base, accent unchanged. */
+    --bg: #17120e;
+    --surface: #1f1914;
+    --surface-2: #1b1510;
+    --line: rgba(255, 235, 210, 0.08);
+    --line-strong: rgba(255, 235, 210, 0.14);
+    --ink-2: #b4a697;
+    --ink-3: #8a7c6e;
 
-    /* Brand */
-    --primary: 0.922 0 0;
-    --primary-foreground: 0.205 0 0;
-    --secondary: 0.269 0 0;
-    --secondary-foreground: 0.985 0 0;
-    --muted: 0.269 0 0;
-    --muted-foreground: 0.708 0 0;
-    --accent: 0.269 0 0;
-    --accent-foreground: 0.985 0 0;
+    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -6px rgba(0, 0, 0, 0.35);
+    --shadow-floating: 0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 32px -10px rgba(0, 0, 0, 0.45);
+    --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 24px -8px rgba(0, 0, 0, 0.4);
+    --well: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+    /* --accent-*, --good, --bad, --shadow-send and --send-gradient are kept. */
 
-    /* Coral accent kept in dark */
-    --coral: 0.721 0.109 37.34;
-    --coral-deep: 0.796 0.092 40.94;
-    --ink: 0.985 0 0;
+    --background: 0.187 0.011 60.68;        /* --bg */
+    --foreground: 0.941 0.016 73.68;
+    --card: 0.219 0.013 61.84;              /* --surface */
+    --card-foreground: 0.941 0.016 73.68;
+    --popover: 0.219 0.013 61.84;
+    --popover-foreground: 0.941 0.016 73.68;
 
-    /* Lines and states */
-    --border: 0.30 0 0;
-    --input: 0.30 0 0;
-    --ring: 0.721 0.109 37.34;
-    --destructive: 0.721 0.109 37.34;
-    --destructive-foreground: 0.145 0 0;
+    --primary: 0.941 0.016 73.68;
+    --primary-foreground: 0.219 0.013 61.84;
+    --secondary: 0.234 0.017 58.68;
+    --secondary-foreground: 0.941 0.016 73.68;
+    --muted: 0.234 0.017 58.68;
+    --muted-foreground: 0.733 0.027 69.32;  /* --ink-2 */
+    --accent: 0.234 0.017 58.68;
+    --accent-foreground: 0.941 0.016 73.68;
 
-    /* Rail */
-    --rail: 0.205 0 0;
-    --rail-active: 0.269 0 0;
+    --ink: 0.941 0.016 73.68;
+    --coral: 0.740 0.165 56.06;
+    --coral-deep: 0.804 0.135 58.72;
+    --coral-text: 0.740 0.165 56.06;
 
-    /* Map */
+    --border: 0.262 0.014 57.61;            /* --line over brown */
+    --input: 0.262 0.014 57.61;
+    --ring: 0.740 0.165 56.06;
+    --destructive: 0.597 0.182 24.51;
+    --destructive-foreground: 0.187 0.011 60.68;
+    --positive: 0.624 0.126 158.97;
+
+    --rail: 0.201 0.014 61.72;              /* --surface-2 */
+    --rail-card: 0.219 0.013 61.84;
+    --rail-active: 0.234 0.017 58.68;
+
     --map-bg: 0.205 0 0;
     --map-fg: 0.985 0 0;
     --map-muted: 0.708 0 0;
 
-    /* Charts */
-    --chart-1: 0.721 0.109 37.34;
-    --chart-2: 0.745 0.064 250.90;
+    --chart-1: 0.740 0.165 56.06;
+    --chart-2: 0.745 0.064 250.9;
     --chart-3: 0.701 0.074 169.09;
     --chart-4: 0.758 0.095 75.03;
-    --chart-5: 0.860 0.019 255.54;
-
-    /* Depth in dark: separation comes from the edge, shadows stay deep. */
-    --edge-highlight: inset 0 1px 0 oklch(1 0 0 / 0.06);
-    --lift-1: 0 1px 1px oklch(0 0 0 / 0.40), 0 3px 8px -3px oklch(0 0 0 / 0.50);
-    --lift-2: 0 1px 1px oklch(0 0 0 / 0.45), 0 8px 16px -8px oklch(0 0 0 / 0.60);
-    --well: inset 0 1px 2px oklch(0 0 0 / 0.45);
+    --chart-5: 0.86 0.019 255.54;
 
     color-scheme: dark;
   }
@@ -144,8 +180,8 @@
 
   /*
    * Text selection. Dark mode gets a solid white block with dark ink on top, so
-   * the selection reads as white and never as the coral accent. Light mode keeps
-   * a neutral wash instead, because white on a cream page would be invisible.
+   * the selection reads as white and never as the accent. Light mode keeps a
+   * neutral wash instead, because white on a cream page would be invisible.
    */
   ::selection {
     background: oklch(var(--ink) / 0.16);
@@ -153,7 +189,7 @@
 
   .dark ::selection {
     background: oklch(1 0 0 / 0.92);
-    color: oklch(0.145 0 0);
+    color: oklch(0.187 0.011 60.68);
   }
 }
 
@@ -178,20 +214,26 @@
   }
 
   /*
-   * Depth for raised surfaces: border led, a lit top edge, two short shadows.
-   * Hover deepens the shadow and firms the edge, but the card never moves.
+   * Depth. The lit top edge plus exactly three levels:
+   *   raised    cards, chart cards, sidebar blocks   (.surface-card)
+   *   floating  composer, dialogs, map controls      (--shadow-floating)
+   *   hover     interactive chips lift a little      (.lift)
+   * Nothing else moves elevation.
    */
-
   .surface-card {
-    box-shadow: var(--edge-highlight), var(--lift-1);
-    transition:
-      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: var(--hi), var(--shadow-raised);
   }
 
-  .surface-card:hover {
-    border-color: oklch(var(--ink) / 0.16);
-    box-shadow: var(--edge-highlight), var(--lift-2);
+  .lift {
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      color 160ms ease;
+  }
+
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--hi), var(--shadow-hover);
   }
 
   /* A recessed area, for facts that sit inside a raised card. */
@@ -200,7 +242,7 @@
   }
 
   /*
-   * The Today page reads as ink: each word rises out of a soft blur a beat
+   * The chat headline reads as ink: each word rises out of a soft blur a beat
    * after the one before it, so the text arrives as one wave. Snappy enough
    * for a working surface: half a second per word, about a fifth of a second
    * of stagger across the whole line. Fill mode holds the start frame until
@@ -220,6 +262,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .wave-word { animation: none; }
-    .surface-card { transition: none; }
+    .lift { transition: none; }
+    .lift:hover { transform: none; }
   }
 }

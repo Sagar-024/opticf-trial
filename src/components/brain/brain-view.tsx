@@ -50,7 +50,7 @@ function PracticeLinks({
           title="Open on the map"
           className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <MapPin className="size-2.5 text-coral" />
+          <MapPin className="size-2.5 text-[var(--accent-600)]" />
           {label(practiceId)}
         </button>
       ))}
@@ -163,7 +163,7 @@ export function BrainView({
       <div className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
-            <FileText className="size-3.5 text-coral" /> Northstar Brain
+            <FileText className="size-3.5 text-[var(--accent-600)]" /> Northstar Brain
           </span>
           <span className="text-[11px] text-muted-foreground">
             {documents.length} documents
@@ -185,7 +185,7 @@ export function BrainView({
             onClick={() => setSection('all')}
             className={cn(
               'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-              section === 'all' ? 'border-coral bg-coral/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent',
+              section === 'all' ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-foreground' : 'border-border text-muted-foreground hover:bg-accent',
             )}
           >
             All sections
@@ -196,7 +196,7 @@ export function BrainView({
               onClick={() => setSection(name)}
               className={cn(
                 'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-                section === name ? 'border-coral bg-coral/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent',
+                section === name ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-foreground' : 'border-border text-muted-foreground hover:bg-accent',
               )}
             >
               {name}
@@ -219,7 +219,7 @@ export function BrainView({
               animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{ duration: 0.34, delay: Math.min(index * 0.04, 0.24), ease: [0.22, 1, 0.36, 1] }}
             >
-              <Card className="surface-card h-full shadow-none">
+              <Card className="h-full">
                 <CardContent className="flex h-full flex-col p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">{document.scope}</Badge>
@@ -293,7 +293,7 @@ export function BrainView({
               </DialogHeader>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{reading.content}</p>
               <p className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Sparkles className="size-3 text-coral" /> Ask in chat and this guidance is cited in the sources.
+                <Sparkles className="size-3 text-[var(--accent-600)]" /> Ask in chat and this guidance is cited in the sources.
               </p>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setReading(null); openEditor(reading); }}>Edit this guidance</Button>

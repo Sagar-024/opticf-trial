@@ -11,7 +11,7 @@ export function Logo({ className }: { className?: string }) {
         strokeWidth={2.1}
         strokeLinejoin="round"
       />
-      <circle cx="20" cy="17.6" r="7.6" className="fill-coral stroke-foreground" strokeWidth={2.1} />
+      <circle cx="20" cy="17.6" r="7.6" className="fill-[var(--accent-500)] stroke-foreground" strokeWidth={2.1} />
       <circle cx="20" cy="17.6" r="3.1" className="fill-card stroke-foreground" strokeWidth={2.1} />
     </svg>
   );

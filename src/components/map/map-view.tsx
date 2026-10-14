@@ -220,7 +220,7 @@ export function MapView({
           {matching.length} of {visible.length} matching
         </span>
         {highlighted.length > 0 ? (
-          <Badge className="gap-1 bg-coral text-white">
+          <Badge className="gap-1 bg-[var(--accent-600)] text-white">
             {highlighted.length} highlighted
             <button onClick={() => onHighlightChange([])} aria-label="Clear highlight">
               <X className="size-3" />
@@ -297,7 +297,7 @@ export function MapView({
                       className={cn(
                         'relative rounded-full border px-2.5 py-1 text-[11px] transition-colors',
                         filterId === item.id
-                          ? 'border-coral text-foreground'
+                          ? 'border-[color:var(--accent-border)] text-foreground'
                           : 'border-border text-muted-foreground hover:text-foreground',
                       )}
                     >
@@ -305,7 +305,7 @@ export function MapView({
                       {filterId === item.id ? (
                         <motion.span
                           layoutId="map-filter-pill"
-                          className="absolute inset-0 rounded-full bg-coral/10"
+                          className="absolute inset-0 rounded-full bg-[var(--accent-soft)]"
                           transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                         />
                       ) : null}
@@ -342,7 +342,7 @@ export function MapView({
                   node size = monthly revenue
                 </span>
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Sparkles className="size-3 text-coral" /> {lens.question}
+                  <Sparkles className="size-3 text-[var(--accent-500)]" /> {lens.question}
                 </span>
               </div>
             </div>
@@ -371,7 +371,7 @@ export function MapView({
                   <TableRow
                     key={practice.practiceId}
                     onClick={() => selectPractice(practice.practiceId)}
-                    className={cn('cursor-pointer', highlightSet.has(practice.practiceId) && 'bg-coral/10')}
+                    className={cn('cursor-pointer', highlightSet.has(practice.practiceId) && 'bg-[var(--accent-soft)]')}
                   >
                     <TableCell className="text-xs font-medium">{practice.name}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{practice.region}</TableCell>
@@ -430,7 +430,7 @@ export function MapView({
             exit={{ opacity: 0, y: 6 }}
             className="pointer-events-none absolute inset-0 grid place-items-center"
           >
-            <div className="pointer-events-auto rounded-lg border border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground shadow-soft">
+            <div className="pointer-events-auto rounded-lg border border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground [box-shadow:var(--shadow-floating)]">
               Nothing matches this filter.
               <div className="mt-2">
                 <Button
@@ -458,7 +458,7 @@ export function MapView({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25, ease: EASE }}
-              className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-1.5 py-1 shadow-soft backdrop-blur"
+              className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/95 px-1.5 py-1 [box-shadow:var(--shadow-floating)] backdrop-blur"
             >
               {lenses.map((item) => (
                 <motion.button
@@ -517,7 +517,7 @@ export function MapView({
                         }}
                         className={cn(
                           'min-w-[220px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
-                          filterId === `mentor-${portfolio.mentorId}` ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
+                          filterId === `mentor-${portfolio.mentorId}` ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)]' : 'border-border hover:bg-accent',
                         )}
                       >
                         <p className="text-xs font-semibold">{portfolio.name}</p>
@@ -557,7 +557,7 @@ export function MapView({
                         }}
                         className={cn(
                           'min-w-[190px] shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
-                          highlightSet.has(practice.practiceId) ? 'border-coral bg-coral/10' : 'border-border hover:bg-accent',
+                          highlightSet.has(practice.practiceId) ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)]' : 'border-border hover:bg-accent',
                         )}
                       >
                         <p className="text-xs font-semibold">{practice.name}</p>
