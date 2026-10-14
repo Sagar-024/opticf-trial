@@ -52,6 +52,13 @@
     --shadow-raised: 0 1px 2px rgba(120, 80, 50, 0.06), 0 6px 16px -6px rgba(120, 80, 50, 0.14);
     --shadow-floating: 0 2px 4px rgba(120, 80, 50, 0.06), 0 14px 32px -10px rgba(120, 80, 50, 0.22);
     --shadow-hover: 0 2px 4px rgba(120, 80, 50, 0.08), 0 12px 24px -8px rgba(120, 80, 50, 0.2);
+    /* Chrome depth: the rail reads as a lit plate over the canvas - its top
+       and right edges catch light just inside the border, and a soft shadow
+       falls onto the content to its right. */
+    --rail-depth:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset -1px 0 0 rgba(255, 255, 255, 0.85),
+      12px 0 28px -16px rgba(120, 80, 50, 0.3);
     /* Dialog level: a second hairline drawn 5px inside the frame, at the same
        strength as the border, so the popup reads as a framed plate. Both lines
        are neutral black on the white card: warm brown read as a smudge here.
@@ -157,6 +164,11 @@
     --shadow-raised: 0 0 #0000;
     --shadow-floating: 0 0 #0000;
     --shadow-hover: 0 0 #0000;
+    /* On black the rail is already lighter than the canvas: its depth is the
+       border plus a whisper of light along the top and right edges. */
+    --rail-depth:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      inset -1px 0 0 rgba(255, 255, 255, 0.05);
     /* The dialog keeps real depth even on black: the inner double hairline at
        the same weight as the border, plus deep black falloff. */
     --dialog-border: #333333;

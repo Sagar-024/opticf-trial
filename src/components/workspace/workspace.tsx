@@ -535,7 +535,9 @@ export function Workspace({
         className={cn(
           'absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-[var(--surface-2)]',
           mapFocus ? 'border-r-0' : 'border-r border-border',
-          !mapFocus && !railOpen && railHovered && !railHoverSuppressed ? '[box-shadow:var(--shadow-floating)]' : null,
+          !mapFocus && !railOpen && railHovered && !railHoverSuppressed
+            ? '[box-shadow:var(--shadow-floating),var(--rail-depth)]'
+            : '[box-shadow:var(--rail-depth)]',
         )}
         aria-hidden={mapFocus}
       >
