@@ -49,6 +49,8 @@ const REGION_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4',
 const MENTOR_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4'];
 
 const ALL_FILTER: LensFilter = { id: 'all', label: 'All practices', match: () => true };
+/** The one cross-cutting question, so every lens can answer "where is hot". */
+const ATTENTION_FILTER: LensFilter = { id: 'attention', label: 'Needs attention', match: (p) => p.attentionScore >= 25 };
 
 export interface LensContext {
   regions: string[];
@@ -68,7 +70,7 @@ export function buildLenses(context: LensContext): Lens[] {
       id: 'region',
       label: 'Region',
       legend: regions.map((region) => ({ colorKey: regionColorKey(region, regions), label: region })),
-      filters: [ALL_FILTER],
+      filters: [ALL_FILTER, ATTENTION_FILTER],
       visual: (practice) => ({ colorKey: regionColorKey(practice.region, regions), opacity: 1, sizeFactor: 1 }),
       valueLabel: (practice) => practice.region,
     },
@@ -82,7 +84,7 @@ export function buildLenses(context: LensContext): Lens[] {
       ],
       filters: [
         ALL_FILTER,
-        { id: 'attention', label: 'Needs attention', match: (p) => p.attentionScore >= 25 },
+        ATTENTION_FILTER,
         { id: 'declining', label: 'Revenue falling', match: (p) => p.revenueMoMPct <= -3 },
         { id: 'below-target', label: 'Below revenue target', match: (p) => p.revenueAttainmentPct < 95 },
       ],
@@ -107,8 +109,9 @@ export function buildLenses(context: LensContext): Lens[] {
       ],
       filters: [
         ALL_FILTER,
+        ATTENTION_FILTER,
         { id: 'below-90', label: 'Below 90% of target', match: (p) => p.clAttainmentPct < 90 },
-        { id: 'below-target', label: 'Below target', match: (p) => p.clAttainmentPct < 100 },
+        { id: 'just-below', label: 'Just below target', match: (p) => p.clAttainmentPct >= 90 && p.clAttainmentPct < 100 },
       ],
       visual: (practice) => {
         if (practice.clAttainmentPct < 90) return { colorKey: 'coral', opacity: 1, sizeFactor: 1.15 };
@@ -127,6 +130,7 @@ export function buildLenses(context: LensContext): Lens[] {
       ],
       filters: [
         ALL_FILTER,
+        ATTENTION_FILTER,
         { id: 'incomplete', label: 'Training incomplete', match: (p) => p.trainingCompletionPct < 100 },
         { id: 'overdue', label: 'Training overdue', match: (p) => p.trainingOverdue > 0 },
       ],
@@ -146,6 +150,7 @@ export function buildLenses(context: LensContext): Lens[] {
       })),
       filters: [
         ALL_FILTER,
+        ATTENTION_FILTER,
         ...mentors.map((mentor) => ({
           id: `mentor-${mentor.mentorId}`,
           label: mentor.name,

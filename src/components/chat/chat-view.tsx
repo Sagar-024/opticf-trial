@@ -82,6 +82,7 @@ function toStoredTurn(turn: Turn): StoredTurn {
     flagReason: turn.flagReason ?? null,
     withdrawn: turn.withdrawn,
     stopped: turn.stopped,
+    interrupted: turn.interrupted,
     feedback: turn.feedback,
   };
 }
@@ -99,6 +100,7 @@ function toTurn(stored: StoredTurn): Turn {
     flagReason: stored.flagReason ?? null,
     withdrawn: stored.withdrawn,
     stopped: stored.stopped,
+    interrupted: stored.interrupted,
     feedback: stored.feedback,
   };
 }
@@ -173,6 +175,8 @@ interface Turn {
   flagReason?: 'leak' | 'ungrounded' | 'numbers' | null;
   withdrawn?: boolean;
   stopped?: boolean;
+  /** The run broke mid-stream; the text is what had arrived before it did. */
+  interrupted?: boolean;
   tools?: string[];
   /** The reader's verdict on this answer; kept in the browser for review. */
   feedback?: 'up' | 'down';
@@ -226,6 +230,8 @@ export function ChatView({
   /** Which answer has its "how this was built" receipt open. */
   const [openReceipt, setOpenReceipt] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  /** The stored thread ends on a question whose answer never arrived. */
+  const [dangling, setDangling] = useState(false);
 
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -272,7 +278,11 @@ export function ChatView({
     }
     const session = getSession(sessionId);
     contextRef.current = (session?.context as ChatContext | null) ?? null;
-    setTurns(session ? session.turns.map(toTurn) : []);
+    const loaded = session ? session.turns.map(toTurn) : [];
+    setTurns(loaded);
+    // A stored conversation can only end on a question if its answer was cut
+    // off (a reload or a closed tab), so that question is flagged for retry.
+    setDangling(loaded.length > 0 && loaded[loaded.length - 1].role === 'user');
     setError(null);
   }, [sessionId, hydrated]);
 
@@ -319,6 +329,7 @@ export function ChatView({
     async (history: Turn[], runSessionId: string | null) => {
       setLoading(true);
       setError(null);
+      setDangling(false);
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -410,7 +421,7 @@ export function ChatView({
           patch({ stopped: true, text: draft.text || 'Stopped.' });
         } else {
           setError(requestError instanceof Error ? requestError.message : 'Request failed.');
-          patch({ text: draft.text });
+          patch({ text: draft.text, interrupted: true });
         }
       } finally {
         setLoading(false);
@@ -648,6 +659,10 @@ export function ChatView({
                       <p className="text-xs text-muted-foreground">Stopped before the answer was complete.</p>
                     ) : null}
 
+                    {turn.interrupted ? (
+                      <p className="text-xs text-muted-foreground">Interrupted before the answer finished. Regenerate to try again.</p>
+                    ) : null}
+
                     <ErrorBoundary>
                       {turn.widgets.map((widget, widgetIndex) => (
                         <motion.div
@@ -818,6 +833,15 @@ export function ChatView({
                   </motion.div>
                 ),
               )}
+
+              {dangling ? (
+                <div role="status" className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                  <span>Answer interrupted before it finished.</span>
+                  <button onClick={regenerate} className="font-medium text-[var(--accent-text)] hover:underline">
+                    Ask again
+                  </button>
+                </div>
+              ) : null}
 
               {error ? (
                 <Card className="border-destructive/40">

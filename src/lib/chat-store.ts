@@ -17,6 +17,7 @@ export interface StoredTurn {
   flagReason?: 'leak' | 'ungrounded' | 'numbers' | null;
   withdrawn?: boolean;
   stopped?: boolean;
+  interrupted?: boolean;
   /** The reader's verdict on this answer: kept in the browser for review. */
   feedback?: 'up' | 'down';
 }
