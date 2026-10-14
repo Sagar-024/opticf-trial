@@ -107,6 +107,9 @@
     --rail: 0.967 0.018 78.24;              /* --surface-2 */
     --rail-card: 0.994 0.006 84.57;
     --rail-active: 0.932 0.020 74.66;
+    /* The rail waves: the coral peach over cream. Light theme only; dark
+       hides the decoration and keeps the clean black corner. */
+    --rail-wave: oklch(var(--coral));
 
     /* Dark map canvas (used for the map surface in both modes). */
     --map-bg: 0.252 0.036 254.13;
