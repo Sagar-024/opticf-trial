@@ -5,6 +5,7 @@ import type { KpiWidget, TableWidget, Widget } from '@/ai/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ChartWidget } from './chart-widget';
+import { CompareWidget } from './compare-widget';
 
 /** Widget internals cascade: a different rhythm from the chat's own stagger. */
 const cascade: Variants = {
@@ -17,11 +18,11 @@ const cascadeItem: Variants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
 };
 
-function Kpi({ widget }: { widget: KpiWidget }) {
+function Kpi({ widget, hideTitle }: { widget: KpiWidget; hideTitle?: boolean }) {
   return (
     <Card>
       <CardContent className="p-4">
-        <p className="label-caps mb-3">{widget.title}</p>
+        {hideTitle ? null : <p className="label-caps mb-3">{widget.title}</p>}
         <motion.div className="grid grid-cols-2 gap-3 sm:grid-cols-4" variants={cascade} initial="hidden" animate="show">
           {widget.items.map((item) => (
             <motion.div key={item.label} variants={cascadeItem}>
@@ -73,8 +74,35 @@ function DataTable({ widget }: { widget: TableWidget }) {
   );
 }
 
-export function WidgetRenderer({ widget }: { widget: Widget }) {
-  if (widget.type === 'kpi') return <Kpi widget={widget} />;
+export function WidgetRenderer({
+  widget,
+  notes,
+  notesStreaming,
+  onOpenBrain,
+  onCompareOnMap,
+  hideTitle,
+}: {
+  widget: Widget;
+  /** Prose handed to a comparison widget, shown behind its Explain toggle. */
+  notes?: string[];
+  notesStreaming?: boolean;
+  onOpenBrain?: (documentTitle: string) => void;
+  onCompareOnMap?: (practiceIds: string[]) => void;
+  /** True when the surface above already names this widget (the side panel). */
+  hideTitle?: boolean;
+}) {
+  if (widget.type === 'kpi') return <Kpi widget={widget} hideTitle={hideTitle} />;
   if (widget.type === 'chart') return <ChartWidget widget={widget} />;
+  if (widget.type === 'compare') {
+    return (
+      <CompareWidget
+        widget={widget}
+        notes={notes}
+        notesStreaming={notesStreaming}
+        onOpenBrain={onOpenBrain}
+        onCompareOnMap={onCompareOnMap}
+      />
+    );
+  }
   return <DataTable widget={widget} />;
 }

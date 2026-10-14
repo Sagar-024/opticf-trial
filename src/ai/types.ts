@@ -5,12 +5,16 @@
  * writes prose - it never authors chart numbers.
  */
 
-export type WidgetType = 'kpi' | 'chart' | 'table';
+import type { CompareView } from '@/compare/model';
+
+export type WidgetType = 'kpi' | 'chart' | 'table' | 'compare';
 
 export interface KpiItem {
   label: string;
   value: string;
   sub?: string;
+  /** Month-on-month move, shown as a small chip beside the value. */
+  delta?: { up: boolean; text: string };
 }
 
 export interface KpiWidget {
@@ -49,7 +53,18 @@ export interface TableWidget {
   rows: string[][];
 }
 
-export type Widget = KpiWidget | ChartWidget | TableWidget;
+/**
+ * A practice comparison, drawn as bars rather than described in prose. The
+ * view is built by the same pure builder the map uses, so chat and map agree.
+ */
+export interface CompareWidget {
+  type: 'compare';
+  id: string;
+  title: string;
+  view: CompareView;
+}
+
+export type Widget = KpiWidget | ChartWidget | TableWidget | CompareWidget;
 
 /** The analytical context carried between turns so follow-ups work. */
 export interface ChatContext {

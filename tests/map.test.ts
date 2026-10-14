@@ -238,7 +238,7 @@ describe('mentor portfolios', () => {
       expect(portfolio.conversionChangeDisplay).toMatch(/pp/);
       expect(portfolio.practicesImproving).toBeGreaterThanOrEqual(0);
       expect(portfolio.practicesImproving).toBeLessThanOrEqual(portfolio.practiceCount);
-      expect(portfolio.attentionCount).toBeLessThanOrEqual(portfolio.practiceCount);
+      expect(portfolio.belowTargetCount).toBeLessThanOrEqual(portfolio.practiceCount);
     }
   });
 });

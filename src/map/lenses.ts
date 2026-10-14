@@ -49,8 +49,21 @@ const REGION_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4',
 const MENTOR_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4'];
 
 const ALL_FILTER: LensFilter = { id: 'all', label: 'All practices', match: () => true };
-/** The one cross-cutting question, so every lens can answer "where is hot". */
-const ATTENTION_FILTER: LensFilter = { id: 'attention', label: 'Needs attention', match: (p) => p.attentionScore >= 25 };
+/**
+ * The one cross-cutting question, so every lens can answer "where is hot".
+ * It is a plain rule over real metrics, not a hidden score: falling revenue,
+ * revenue under 95% of target, contact lens under 90% of target, or an
+ * overdue training module.
+ */
+const ATTENTION_FILTER: LensFilter = {
+  id: 'attention',
+  label: 'Needs attention',
+  match: (p) =>
+    p.revenueMoMPct <= -3
+    || p.revenueAttainmentPct < 95
+    || p.clAttainmentPct < 90
+    || p.trainingOverdue > 0,
+};
 
 export interface LensContext {
   regions: string[];
@@ -89,13 +102,13 @@ export function buildLenses(context: LensContext): Lens[] {
         { id: 'below-target', label: 'Below revenue target', match: (p) => p.revenueAttainmentPct < 95 },
       ],
       visual: (practice) => {
-        if (practice.attentionBand === 'high' || practice.revenueMoMPct <= -3 || practice.revenueAttainmentPct < 85) {
-          return { colorKey: 'coral', opacity: 1, sizeFactor: 1 + practice.attentionScore / 100 };
+        if (practice.revenueMoMPct <= -3 || practice.revenueAttainmentPct < 85) {
+          return { colorKey: 'coral', opacity: 1, sizeFactor: 1 };
         }
         if (practice.revenueMoMPct < 0 || practice.revenueAttainmentPct < 95) {
-          return { colorKey: 'amber', opacity: 1, sizeFactor: 1 + practice.attentionScore / 100 };
+          return { colorKey: 'amber', opacity: 1, sizeFactor: 1 };
         }
-        return { colorKey: 'green', opacity: 1, sizeFactor: 1 + practice.attentionScore / 100 };
+        return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
       },
       valueLabel: (practice) => `${practice.revenueDisplay} (${practice.revenueMoMDisplay})`,
     },

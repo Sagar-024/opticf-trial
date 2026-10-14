@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowDown, ArrowUp, ArrowUpRight, MapPin, MoreHorizontal, Sparkles, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpRight, ListPlus, MapPin, MoreHorizontal, Sparkles, X } from 'lucide-react';
 import type { TodayPriorities, TodayPriority } from '@/data';
 import type { MapPractice } from '@/data/map-model';
 import { Button } from '@/components/ui/button';
+import { AssignTaskDialog } from '@/components/tasks/assign-task-dialog';
 import {
   Dialog,
   DialogContent,
@@ -93,6 +94,7 @@ function PriorityRow({
   onAskAbout,
   onShowOnMap,
   onDismiss,
+  onAssign,
 }: {
   item: TodayPriority;
   index: number;
@@ -102,6 +104,7 @@ function PriorityRow({
   onAskAbout: (question: string) => void;
   onShowOnMap: (item: TodayPriority) => void;
   onDismiss: (id: string) => void;
+  onAssign: (item: TodayPriority) => void;
 }) {
   const practiceId = item.practiceId;
   const name = practiceId ? resolvePracticeName(practiceId) : item.region ?? 'Group';
@@ -221,6 +224,10 @@ function PriorityRow({
                 Open practice
               </DropdownMenuItem>
             ) : null}
+            <DropdownMenuItem onSelect={() => onAssign(item)}>
+              <ListPlus />
+              Assign task
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onShowOnMap(item)}>
               <MapPin />
               Show on map
@@ -261,11 +268,28 @@ export function HomeDialog({
   onShowOnMap: (item: TodayPriority) => void;
 }) {
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  /** The priority being turned into a task, if any. */
+  const [assignItem, setAssignItem] = useState<TodayPriority | null>(null);
   const priorities = today.items.slice(0, 5);
   const visible = priorities.filter((item) => !dismissedIds.includes(item.id));
 
+  const assignPractice = assignItem?.practiceId ? practiceOf(assignItem.practiceId) : undefined;
+  const assignLabel = assignItem
+    ? assignItem.practiceId
+      ? practiceName(assignItem.practiceId)
+      : assignItem.region ?? 'Group'
+    : '';
+  const assignees = assignPractice
+    ? [
+        { name: assignPractice.manager, role: 'practice manager' },
+        { name: assignPractice.mentorName, role: 'mentor' },
+        { name: 'Sara Kelly', role: 'group leadership' },
+      ]
+    : [{ name: 'Sara Kelly', role: 'group leadership' }];
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
         <DialogHeader className="relative mx-[5px] border-b border-border px-[19px] pb-4 pr-14 pt-5 text-left">
           <DialogTitle className="text-lg font-semibold tracking-tight">What needs attention today</DialogTitle>
@@ -290,6 +314,7 @@ export function HomeDialog({
                   onAskAbout={onAskAbout}
                   onShowOnMap={onShowOnMap}
                   onDismiss={(id) => setDismissedIds((ids) => [...ids, id])}
+                  onAssign={setAssignItem}
                 />
               ))}
             </AnimatePresence>
@@ -305,6 +330,26 @@ export function HomeDialog({
           </motion.p>
         )}
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      <AssignTaskDialog
+        open={assignItem !== null}
+        onOpenChange={(next) => {
+          if (!next) setAssignItem(null);
+        }}
+        defaultTitle={`Follow up on ${assignLabel}`}
+        source={
+          assignItem
+            ? {
+                label: assignLabel,
+                practiceId: assignItem.practiceId,
+                region: assignItem.region,
+                finding: assignItem.evidence[0],
+              }
+            : undefined
+        }
+        assignees={assignees}
+      />
+    </>
   );
 }

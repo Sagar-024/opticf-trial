@@ -16,12 +16,13 @@ import {
 } from '@/lib/chat-store';
 import { WaveText } from '@/components/wave-text';
 import {
+  ArrowLeft,
+  Bell,
   CheckSquare,
   ChevronDown,
   ChevronRight,
   FileText,
-  Home as HomeIcon,
-  Map as MapIcon,
+  ListChecks,
   MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
@@ -49,24 +50,43 @@ import {
 import { ChatView } from '@/components/chat/chat-view';
 import { BrainView } from '@/components/brain/brain-view';
 import { HomeDialog } from '@/components/home/home-dialog';
+import { AutomationsView } from '@/components/automations/automations-view';
+import { TasksView } from '@/components/tasks/tasks-view';
 import { RailLeaves } from '@/components/workspace/rail-leaves';
+import { ViewSwitcher } from '@/components/workspace/view-switcher';
 import { Logo } from '@/components/logo';
 import { MapView, type MapIntent } from '@/components/map/map-view';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { listTasks, subscribeToTasks } from '@/lib/task-store';
 import { cn } from '@/lib/utils';
 
-type View = 'chat' | 'map' | 'brain' | 'automations' | 'people';
+type View = 'chat' | 'map' | 'brain' | 'automations' | 'tasks' | 'people';
 
+/**
+ * The rail: Chat, Brain, Automations and Tasks are the product; People and logs
+ * sits below the divider as an admin tool. Map is not a tab: it opens from
+ * Chat, which is the only place it belongs.
+ */
 const PRIMARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
   { key: 'chat', label: 'Chat', icon: MessageSquare },
-  { key: 'map', label: 'Map', icon: MapIcon },
   { key: 'brain', label: 'Brain', icon: FileText },
+  { key: 'automations', label: 'Automations', icon: CheckSquare },
+  { key: 'tasks', label: 'Tasks', icon: ListChecks },
 ];
 
 const SECONDARY_NAV: Array<{ key: View; label: string; icon: LucideIcon }> = [
-  { key: 'automations', label: 'Automations', icon: CheckSquare },
   { key: 'people', label: 'People & logs', icon: Users },
 ];
+
+/** Top bar titles, including the views that are not rail tabs (Map). */
+const VIEW_LABELS: Record<View, string> = {
+  chat: 'Chat',
+  map: 'Map',
+  brain: 'Brain',
+  automations: 'Automations',
+  tasks: 'Tasks',
+  people: 'People & logs',
+};
 
 /** Home auto-opens at most once per browser session; any close sets this. */
 const HOME_SESSION_KEY = 'optific.home.dismissed';
@@ -149,6 +169,8 @@ export function Workspace({
   const [homeOpen, setHomeOpen] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  /** Open tasks, for the rail count. */
+  const [openTasks, setOpenTasks] = useState(0);
   /** The chat being renamed inline, if any. */
   const [renamingId, setRenamingId] = useState<string | null>(null);
   /** The top bar title input, while the open conversation is being renamed. */
@@ -182,13 +204,15 @@ export function Workspace({
     else if (item.region) openRegionOnMap(item.region);
   }
 
-  function askFromMap(question: string): void {
-    setPendingQuestion(question);
-    setView('chat');
-  }
-
   function showOnMap(practiceIds: string[]): void {
     setHighlighted(practiceIds);
+    setView('map');
+  }
+
+  /** A chat comparison hands its two practices to the map's compare dock. */
+  function openCompareOnMap(practiceIds: string[]): void {
+    setHighlighted([]);
+    setMapIntent({ compare: practiceIds.slice(0, 2), nonce: Date.now() });
     setView('map');
   }
 
@@ -224,7 +248,7 @@ export function Workspace({
   }, [view]);
 
   // Home pops up at most once per browser session. Any close writes the marker;
-  // the sidebar Home button stays the manual way back in.
+  // the bell in the top bar is the manual way back in.
   useEffect(() => {
     if (window.sessionStorage.getItem(HOME_SESSION_KEY) === '1') return;
     setHomeOpen(true);
@@ -252,6 +276,12 @@ export function Workspace({
     handleHomeOpenChange(false);
   }
 
+  /** Automations hands a question to the chat the same way Home's Ask does. */
+  function askFromAutomations(question: string): void {
+    setPendingQuestion(question);
+    setView('chat');
+  }
+
   // Chat history lives in this browser for now. When the backend arrives, this
   // list comes from the server and nothing else on the rail changes.
   useEffect(() => {
@@ -259,6 +289,13 @@ export function Workspace({
     const refresh = () => setChatSessions(listSessions());
     refresh();
     return subscribeToChats(refresh);
+  }, []);
+
+  // The Tasks rail item carries the open count; the store is the one source.
+  useEffect(() => {
+    const refresh = () => setOpenTasks(listTasks().filter((task) => task.status === 'open').length);
+    refresh();
+    return subscribeToTasks(refresh);
   }, []);
 
   function startNewChat(): void {
@@ -388,6 +425,12 @@ export function Workspace({
         {railExpanded ? (
           <>
             <span className="relative">{item.label}</span>
+            {/* Tasks carries its open count, so assigned work pulls the eye. */}
+            {item.key === 'tasks' && openTasks > 0 ? (
+              <span className="relative rounded-full bg-[var(--accent-soft)] px-1.5 py-px text-[10px] font-semibold tabular-nums text-[var(--accent-text)]">
+                {openTasks}
+              </span>
+            ) : null}
             {/* Only the section you are on carries the chevron; the others stay quiet. */}
             <ChevronRight
               className={cn(
@@ -512,7 +555,7 @@ export function Workspace({
   const railSpring = { type: 'spring', stiffness: 300, damping: 32, mass: 0.9 } as const;
 
   return (
-    <div className="relative flex h-dvh overflow-hidden">
+    <div className="print-root relative flex h-dvh overflow-hidden">
       {/* The spacer keeps the content clear of the icon rail; the rail itself
           overlays when it expands on hover, so nothing ever reflows. */}
       <motion.div
@@ -594,32 +637,6 @@ export function Workspace({
           </motion.div>
 
           <nav aria-label="Sections">
-            {/* Home opens the priorities dialog; the old Today page is gone. */}
-            <motion.button
-              key="home"
-              onClick={() => setHomeOpen(true)}
-              variants={railItem}
-              className={cn(
-                'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:text-foreground',
-                !railExpanded && 'justify-center',
-              )}
-              whileTap={{ scale: 0.98 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-            >
-              <HomeIcon className="relative size-4 shrink-0" />
-              {railExpanded ? (
-                <>
-                  <span className="relative">Home</span>
-                  {/* Home carries the chevron only while its dialog is open. */}
-                  <ChevronRight
-                    className={cn(
-                      'relative ml-auto size-3.5 shrink-0 text-muted-foreground/60 transition-[opacity,transform] duration-200 ease-out',
-                      homeOpen ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0',
-                    )}
-                  />
-                </>
-              ) : null}
-            </motion.button>
             {/* Chat is a section: its conversations live inside it, so there is
                 only ever one place to look for "where am I". The row keeps the
                 section light (orange icon and name) while you are in chat. */}
@@ -744,77 +761,105 @@ export function Workspace({
       </motion.aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Top bar: no tabs here, navigation lives in the rail. */}
+        {/* Top bar: the bar names where you are and, inside Chat, carries the
+            Chat/Map switch. The sections themselves still live in the rail. */}
         <header
           className={cn(
             'shrink-0 overflow-hidden bg-background/80 transition-[height,opacity] duration-300 ease-out',
             '[box-shadow:var(--header-depth)]',
             mapFocus ? 'border-b-0' : 'border-b border-border',
           )}
-          style={{ height: mapFocus ? 0 : 48, opacity: mapFocus ? 0 : 1 }}
+          style={{ height: mapFocus ? 0 : 56, opacity: mapFocus ? 0 : 1 }}
           aria-hidden={mapFocus}
         >
-          <div className="flex h-12 items-center gap-2 px-4">
-            {/* The bar names what you are in. An open conversation names itself
-                and can be pinned, renamed or deleted from here. */}
-            {view === 'chat' && activeChat ? (
-              topRenaming ? (
-                <input
-                  autoFocus
-                  defaultValue={activeChat.title}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      renameChat(activeChat.id, event.currentTarget.value);
-                      setTopRenaming(false);
-                    }
-                    if (event.key === 'Escape') setTopRenaming(false);
-                  }}
-                  onBlur={() => setTopRenaming(false)}
-                  aria-label="Rename chat"
-                  className="h-8 w-72 rounded-md border border-[color:var(--accent-border)] bg-card px-2.5 text-[13px] font-semibold outline-none"
-                />
+          {/* Three tracks: the title left, the Chat/Map switch dead centre,
+              and the status cluster right. Both side tracks are minmax(0,1fr),
+              equal by construction, so the switch sits in the middle of the
+              bar at any width; a narrow bar truncates the title instead of
+              pushing the switch around. The bar is 56 tall to the switch's
+              36, so the switch keeps 10px of air inside the bar's top and
+              bottom edges, never touching either hairline. */}
+          <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-4">
+            <div className="flex min-w-0 items-center">
+              {/* The bar names what you are in. An open conversation names itself
+                  and can be pinned, renamed or deleted from here. */}
+              {view === 'chat' && activeChat ? (
+                topRenaming ? (
+                  <input
+                    autoFocus
+                    defaultValue={activeChat.title}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        renameChat(activeChat.id, event.currentTarget.value);
+                        setTopRenaming(false);
+                      }
+                      if (event.key === 'Escape') setTopRenaming(false);
+                    }}
+                    onBlur={() => setTopRenaming(false)}
+                    aria-label="Rename chat"
+                    className="h-8 w-72 rounded-md border border-[color:var(--accent-border)] bg-card px-2.5 text-[13px] font-semibold outline-none"
+                  />
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+                        <span className="truncate">{activeChat.title}</span>
+                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
+                      <DropdownMenuItem onSelect={() => togglePin(activeChat)}>
+                        {activeChat.pinned ? <PinOff /> : <Pin />}
+                        {activeChat.pinned ? 'Unpin' : 'Pin'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setTopRenaming(true)}>
+                        <Pencil />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => deleteChat(activeChat)}
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        <Trash2 />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )
               ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
-                      <span className="truncate">{activeChat.title}</span>
-                      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
-                    <DropdownMenuItem onSelect={() => togglePin(activeChat)}>
-                      {activeChat.pinned ? <PinOff /> : <Pin />}
-                      {activeChat.pinned ? 'Unpin' : 'Pin'}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setTopRenaming(true)}>
-                      <Pencil />
-                      Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() => deleteChat(activeChat)}
-                      className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                    >
-                      <Trash2 />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )
-            ) : (
-              <span className="px-2 text-[13px] font-semibold text-foreground">
-                {view === 'chat'
-                  ? 'Chat'
-                  : [...PRIMARY_NAV, ...SECONDARY_NAV].find((item) => item.key === view)?.label ?? 'Workspace'}
-              </span>
-            )}
-            <div className="ml-auto flex items-center gap-3">
-              {/* What used to be the bottom status bar lives up here now. */}
-              <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+                <span className="truncate px-2 text-[13px] font-semibold text-foreground">{VIEW_LABELS[view]}</span>
+              )}
+            </div>
+
+            {/* Chat and Map are one feature with two faces, so while either is
+                open the switch that moves between them stays centred here. */}
+            <div className="flex items-center justify-center">
+              {view === 'chat' || view === 'map' ? (
+                <ViewSwitcher view={view} onChange={(next) => setView(next)} />
+              ) : null}
+            </div>
+
+            <div className="flex min-w-0 items-center justify-end gap-3">
+              {/* What used to be the bottom status bar lives up here now. The
+                  cluster yields below lg, so the centred switch always has
+                  room and the two side tracks stay even. */}
+              <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground lg:flex">
                 <span className="size-1.5 rounded-full bg-positive" />
                 {practiceCount} practices connected
               </span>
-              <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:block">{latestMonth}</span>
+              <span className="hidden text-[11px] tabular-nums text-muted-foreground lg:block">{latestMonth}</span>
+              {/* The way back to the briefing after its once-per-session popup. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setHomeOpen(true)}
+                aria-label="What needs attention today"
+                title="What needs attention today"
+              >
+                <Bell />
+              </Button>
               <ThemeToggle />
             </div>
           </div>
@@ -835,6 +880,7 @@ export function Workspace({
             <ChatView
               onShowMap={showOnMap}
               onOpenBrain={openBrainDocument}
+              onCompareOnMap={openCompareOnMap}
               pendingQuestion={pendingQuestion}
               onPendingHandled={() => setPendingQuestion(null)}
               sessionId={chatSessionId}
@@ -847,7 +893,6 @@ export function Workspace({
               model={mapModel}
               highlighted={highlighted}
               onHighlightChange={setHighlighted}
-              onAsk={askFromMap}
               intent={mapIntent}
               onIntentHandled={() => setMapIntent(null)}
               focus={mapFocus}
@@ -866,14 +911,20 @@ export function Workspace({
           ) : null}
 
           {view === 'automations' ? (
-            <PlaceholderPage
-              title="Automations"
-              description="Recurring checks that prepare work for a human to review. Weekly practice reviews and a daily claims follow up are the two workflows the group asked for."
-              items={[
-                { title: 'Weekly practice reviews', note: 'Mondays at 8am. Practices with revenue down more than 6 percent get a review draft for their mentor.' },
-                { title: 'Daily claims follow up', note: 'Every morning. Claims older than 30 days get a follow up draft for Finance Support.' },
-                { title: 'Nothing is sent automatically', note: 'Outputs land in a review inbox. A person approves them.' },
-              ]}
+            <AutomationsView
+              today={today}
+              onAskAbout={askFromAutomations}
+              onOpenPractice={openPracticeDetails}
+              onOpenRegion={openRegionOnMap}
+            />
+          ) : null}
+
+          {view === 'tasks' ? (
+            <TasksView
+              onOpenSource={(source) => {
+                if (source.practiceId) openPracticeDetails(source.practiceId);
+                else if (source.region) openRegionOnMap(source.region);
+              }}
             />
           ) : null}
 

@@ -70,6 +70,8 @@ export function readPalette(): Palette {
     hubRing: color('--muted-foreground', '0.57 0.02 278'),
     label: color('--muted-foreground', '0.57 0.02 278'),
     labelStrong: color('--foreground', '0.26 0.04 264'),
-    dimOpacity: 0.14,
+    // Softened from 0.14: on the dark canvas a deeper veil made the graph read
+    // as broken rather than as focus. Dimmed nodes and edges stay visible.
+    dimOpacity: 0.3,
   };
 }

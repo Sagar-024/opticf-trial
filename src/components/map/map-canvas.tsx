@@ -13,7 +13,7 @@ import {
   type LayoutNode,
   type MapLevel,
 } from '@/map/layout';
-import type { Lens } from '@/map/lenses';
+import type { Lens, PaletteKey } from '@/map/lenses';
 import { tooltipLines } from '@/map/lenses';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -40,6 +40,23 @@ export interface MapCanvasProps {
   onReset: () => void;
   /** Practice ids to label without hovering (the current focus list). */
   emphasised?: string[];
+  /**
+   * Pairs to join with a dashed thread, drawn under the discs. Used by the
+   * comparison, so the two practices read as one piece of work.
+   */
+  links?: Array<[string, string]>;
+  /**
+   * Whether a highlight dims everything else. True by default; the compare
+   * picker turns it off while a practice is still waiting for its partner, so
+   * the graph never fades out with nothing to look at yet.
+   */
+  veil?: boolean;
+  /**
+   * Comparison rings: four arcs per practice, one per metric, drawn around the
+   * disc. This is how the graph itself compares two practices: the shape of the
+   * ring says who is closer to target on what, before a single number is read.
+   */
+  rings?: Array<{ id: string; arcs: Array<{ fraction: number; colorKey: PaletteKey }> }>;
   /** Immersive mode toggle, shown in the zoom cluster. */
   focus?: boolean;
   onToggleFocus?: () => void;
@@ -86,6 +103,9 @@ export function MapCanvas({
   onDrillRegion,
   onReset,
   emphasised,
+  links,
+  rings,
+  veil = true,
   focus = false,
   onToggleFocus,
   className,
@@ -200,6 +220,9 @@ export function MapCanvas({
     });
 
     const highlightActive = highlightSet.size > 0;
+    // The veil is off while the compare picker still waits for a partner: there
+    // is nothing to compare yet, and a faded graph reads as broken, not focus.
+    const dimming = veil && highlightActive;
     const hubIds = new Set(layout.hubs.map((hub) => hub.id));
     const hubPoints = new Map(
       layout.hubs.map((hub) => [hub.id, screen(hub as unknown as LayoutNode)]),
@@ -223,7 +246,7 @@ export function MapCanvas({
         const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
         const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
         const spread = Math.max(...points.map((point) => Math.hypot(point.x - cx, point.y - cy) + point.r)) + 16;
-        context.globalAlpha = highlightActive ? 0.20 : 0.42;
+        context.globalAlpha = dimming ? 0.20 : 0.42;
         context.beginPath();
         context.arc(cx, cy, spread, 0, Math.PI * 2);
         context.fillStyle = palette.border;
@@ -247,7 +270,7 @@ export function MapCanvas({
       // than the border grey: faint enough to stay behind the nodes, clearly
       // visible without hovering.
       context.strokeStyle = palette.labelStrong;
-      context.globalAlpha = dimmedByFilter || (highlightActive && !touched) ? 0.06 : edge.kind === 'backbone' ? 0.6 : 0.38;
+      context.globalAlpha = dimmedByFilter || (dimming && !touched) ? 0.2 : edge.kind === 'backbone' ? 0.6 : 0.38;
       context.setLineDash(edge.kind === 'practice' ? [3, 4] : []);
       context.beginPath();
       context.moveTo(a.x, a.y);
@@ -262,6 +285,27 @@ export function MapCanvas({
     }
     context.setLineDash([]);
 
+    // ── Comparison links ──
+    // One thin dashed thread per compared pair, in the accent, drawn under the
+    // discs so it leaves each node rather than crossing its face.
+    if (links && links.length > 0) {
+      context.save();
+      context.strokeStyle = palette.colors.coral;
+      context.lineWidth = 2;
+      context.globalAlpha = 0.75;
+      context.setLineDash([5, 4]);
+      for (const [from, to] of links) {
+        const a = nodePoints.get(from);
+        const b = nodePoints.get(to);
+        if (!a || !b) continue;
+        context.beginPath();
+        context.moveTo(a.x, a.y);
+        context.lineTo(b.x, b.y);
+        context.stroke();
+      }
+      context.restore();
+    }
+
     // ── Practices ──
     const nodeBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
     for (const node of layout.nodes) {
@@ -271,7 +315,7 @@ export function MapCanvas({
       if (point.x < -60 || point.x > width + 60 || point.y < -60 || point.y > height + 60) continue;
 
       const visual = lens.visual(practice);
-      const inHighlight = !highlightActive || highlightSet.has(node.id);
+      const inHighlight = !dimming || highlightSet.has(node.id);
       const inFilter = matches(practice);
       const isSelected = selectedId === node.id;
       const isHovered = hovered === node.id;
@@ -319,6 +363,46 @@ export function MapCanvas({
         context.beginPath();
         context.arc(point.x, point.y, radius + (isSelected ? 4 : 3), 0, Math.PI * 2);
         context.stroke();
+      }
+    }
+
+    // ── Comparison rings ──
+    // Four arcs per compared practice, in the order the page reads them:
+    // revenue, conversion, contact lens, training. Each arc is drawn over a
+    // faint track, so a short arc still reads as a metric rather than a gap.
+    if (rings && rings.length > 0) {
+      const QUARTER = Math.PI / 2;
+      const GAP = 0.16;
+      for (const ring of rings) {
+        const practice = byId.get(ring.id);
+        const point = nodePoints.get(ring.id);
+        if (!practice || !point) continue;
+        const visual = lens.visual(practice);
+        const radius = Math.max(3.5, point.r * visual.sizeFactor) + 7;
+
+        context.save();
+        context.lineWidth = 4;
+        for (let index = 0; index < 4; index += 1) {
+          const start = -QUARTER + index * QUARTER + GAP / 2;
+          const end = -QUARTER + (index + 1) * QUARTER - GAP / 2;
+          // The track first: an unfilled quadrant still shows where to look.
+          context.globalAlpha = 0.18;
+          context.strokeStyle = palette.label;
+          context.beginPath();
+          context.arc(point.x, point.y, radius, start, end);
+          context.stroke();
+
+          const arc = ring.arcs[index];
+          if (!arc) continue;
+          const span = (end - start) * Math.min(1, Math.max(0, arc.fraction));
+          if (span <= 0.002) continue;
+          context.globalAlpha = 0.95;
+          context.strokeStyle = palette.colors[arc.colorKey];
+          context.beginPath();
+          context.arc(point.x, point.y, radius, start, start + span);
+          context.stroke();
+        }
+        context.restore();
       }
     }
 
@@ -451,7 +535,7 @@ export function MapCanvas({
     }
 
     context.globalAlpha = 1;
-  }, [byId, emphasised, highlightSet, hovered, layout, lens, matches, pan, selectedId, zoom]);
+  }, [byId, emphasised, highlightSet, hovered, layout, lens, links, matches, pan, rings, selectedId, veil, zoom]);
 
   const invalidate = useCallback(() => {
     // requestAnimationFrame is suspended while the page is hidden, so paint

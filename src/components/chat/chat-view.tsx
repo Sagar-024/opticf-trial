@@ -6,11 +6,13 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronRight,
   Copy,
   Eye,
   FileText,
   Map,
   MapPin,
+  PanelRight,
   RefreshCw,
   Sparkles,
   Square,
@@ -28,12 +30,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { DashboardPanel } from '@/components/chat/dashboard-panel';
 import { WaveText } from '@/components/wave-text';
 import { Logo } from '@/components/logo';
 import { forceVisibleIfStuck } from '@/lib/anim';
 import { getSession, migrateLegacy, newSessionId, setTurnFeedback, titleFromQuestion, upsertSession, type StoredTurn } from '@/lib/chat-store';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
+import { toolLabel } from '@/lib/tool-labels';
 
 /**
  * The four questions leadership actually opens with, shown as a tidy two by
@@ -105,22 +109,19 @@ function toTurn(stored: StoredTurn): Turn {
   };
 }
 
-/** Tool ids are for us; these phrases are for the person reading the answer. */
-const TOOL_LABELS: Record<string, string> = {
-  search_brain: 'searching the Brain',
-  query_metrics: 'reading the numbers',
-  compare: 'comparing periods',
-  training_status: 'checking training',
-  rank_attention: 'ranking attention',
-  today_priorities: 'reading the priorities',
-  get_practice: 'reading the practice',
-  below_cl_target: 'checking contact lens targets',
-  highlight_on_map: 'marking the map',
-  build_dashboard: 'building the dashboard',
-};
+/** Charts, tables and KPIs are the dashboard material of any answer. */
+function isCanvasWidget(widget: Widget): boolean {
+  return widget.type === 'chart' || widget.type === 'table' || widget.type === 'kpi';
+}
 
-function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
+function canvasWidgets(widgets: Widget[]): Widget[] {
+  return widgets.filter(isCanvasWidget);
+}
+
+/** The KPI card's title names the period; otherwise the first widget names it. */
+function canvasTitle(widgets: Widget[]): string {
+  const kpi = widgets.find((widget) => widget.type === 'kpi');
+  return kpi?.title ?? widgets[0]?.title ?? 'Dashboard';
 }
 
 /**
@@ -208,6 +209,7 @@ type StreamEvent =
 export function ChatView({
   onShowMap,
   onOpenBrain,
+  onCompareOnMap,
   pendingQuestion,
   onPendingHandled,
   sessionId,
@@ -215,6 +217,8 @@ export function ChatView({
 }: {
   onShowMap: (practiceIds: string[]) => void;
   onOpenBrain?: (documentTitle: string) => void;
+  /** Opens the two practices side by side on the map's compare dock. */
+  onCompareOnMap?: (practiceIds: string[]) => void;
   pendingQuestion?: string | null;
   onPendingHandled?: () => void;
   /** The conversation the rail has selected; null means a fresh, unsaved chat. */
@@ -232,6 +236,8 @@ export function ChatView({
   const [hydrated, setHydrated] = useState(false);
   /** The stored thread ends on a question whose answer never arrived. */
   const [dangling, setDangling] = useState(false);
+  /** The dashboard, open beside the chat, built by the build_dashboard tool. */
+  const [dashboard, setDashboard] = useState<{ title: string; widgets: Widget[]; sources: string[] } | null>(null);
 
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -270,6 +276,7 @@ export function ChatView({
       return;
     }
     abortRef.current?.abort();
+    setDashboard(null);
     if (!sessionId) {
       contextRef.current = null;
       setTurns([]);
@@ -397,6 +404,9 @@ export function ChatView({
             } else if (event.type === 'widgets') {
               draft.widgets = event.widgets;
               patch({ widgets: event.widgets, phase: 'working' });
+              // The BI goes up on the side as it is built; the chat keeps prose.
+              const canvas = canvasWidgets(event.widgets);
+              if (canvas.length > 0) setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: [] });
             } else if (event.type === 'done') {
               contextRef.current = event.context;
               patch({
@@ -411,6 +421,10 @@ export function ChatView({
                 withdrawn: event.withdrawn ?? false,
                 tools: draft.tools,
               });
+              // The answer settles: the side panel takes the final widgets and
+              // the sources that back them.
+              const canvas = canvasWidgets(event.widgets);
+              if (canvas.length > 0) setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: event.sources });
             } else if (event.type === 'error') {
               setError(event.message);
             }
@@ -551,7 +565,9 @@ export function ChatView({
   }, [pendingQuestion, hydrated]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 min-w-0">
+      {/* The chat keeps its column; a dashboard opens beside it. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-3xl px-6">
           {empty ? (
@@ -634,7 +650,7 @@ export function ChatView({
                       ) : null}
                     </div>
 
-                    {turn.text ? (
+                    {turn.text && !turn.widgets.some((widget) => widget.type === 'compare') ? (
                       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                         {/* While the answer streams, each arriving chunk settles in. */}
                         {turn.chunks && turn.chunks.length > 0
@@ -664,7 +680,37 @@ export function ChatView({
                     ) : null}
 
                     <ErrorBoundary>
-                      {turn.widgets.map((widget, widgetIndex) => (
+                      {/* The BI goes up on the side; the chat keeps one card that
+                          names it and brings it back. */}
+                      {canvasWidgets(turn.widgets).length > 0 ? (
+                        <motion.button
+                          data-anim
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.32, ease: EASE }}
+                          onClick={() => {
+                            const canvas = canvasWidgets(turn.widgets);
+                            setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: turn.sources });
+                          }}
+                          whileTap={{ scale: 0.99 }}
+                          className="lift flex w-full items-center gap-2.5 rounded-xl border border-[color:var(--line)] bg-card px-4 py-3 text-left [box-shadow:var(--hi),var(--shadow-raised)] hover:bg-accent"
+                        >
+                          <PanelRight className="size-4 shrink-0 text-[var(--accent-600)]" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium">
+                              {canvasTitle(canvasWidgets(turn.widgets))}
+                            </span>
+                            <span className="block text-[11px] text-muted-foreground">
+                              {loading && index === turns.length - 1 ? 'Building on the side…' : 'Open on the side'}
+                            </span>
+                          </span>
+                          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                        </motion.button>
+                      ) : null}
+
+                      {/* Compare cards read in place: they carry the prose and
+                          their own Explain toggle. */}
+                      {turn.widgets.filter((widget) => !isCanvasWidget(widget)).map((widget, widgetIndex) => (
                         <motion.div
                           key={widget.id}
                           data-anim
@@ -672,7 +718,13 @@ export function ChatView({
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.32, delay: Math.min(widgetIndex * 0.07, 0.28), ease: EASE }}
                         >
-                          <WidgetRenderer widget={widget} />
+                          <WidgetRenderer
+                            widget={widget}
+                            notes={widget.type === 'compare' && turn.text ? [cleanAnswer(turn.text)] : undefined}
+                            notesStreaming={widget.type === 'compare' && loading && index === turns.length - 1}
+                            onOpenBrain={onOpenBrain}
+                            onCompareOnMap={onCompareOnMap}
+                          />
                         </motion.div>
                       ))}
                     </ErrorBoundary>
@@ -911,6 +963,16 @@ export function ChatView({
           </p>
         </div>
       </div>
+      </div>
+
+      {dashboard ? (
+        <DashboardPanel
+          title={dashboard.title}
+          widgets={dashboard.widgets}
+          sources={dashboard.sources}
+          onClose={() => setDashboard(null)}
+        />
+      ) : null}
     </div>
   );
 }

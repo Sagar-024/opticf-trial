@@ -9,6 +9,8 @@ import {
 import type { Dataset, SeriesMetrics, MetricsBreakdownRow } from '../data/index';
 import { formatMoney, formatNumber, formatPercent } from '../lib/format';
 import { monthLabel } from '../lib/months';
+import { buildCompareView } from '../compare/model';
+import { buildMapModel, type MapPractice } from '../data/map-model';
 import { BRAIN_DOCUMENTS, type BrainDocument } from '../content/brain';
 import { extractNumbers } from './guard';
 import type { LlmToolDefinition } from './llm';
@@ -232,6 +234,64 @@ function runCompare(ds: Dataset, input: Record<string, unknown>): ToolOutput {
   });
 }
 
+/**
+ * Two or more named practices, one card. The view comes from the same pure
+ * builder the map uses, so the chat widget and the map page are one design and
+ * cannot disagree. The card carries every figure; the prose is a caption.
+ */
+function runComparePractices(ds: Dataset, input: Record<string, unknown>): ToolOutput {
+  const ids = (input.practice_ids as string[] | undefined) ?? [];
+  const month = input.month as string | undefined;
+  const model = buildMapModel(ds, month);
+
+  const chosen: MapPractice[] = [];
+  for (const value of ids) {
+    const needle = value.trim().toLowerCase();
+    const practice =
+      model.practices.find((row) => row.practiceId.toLowerCase() === needle) ??
+      model.practices.find((row) => row.name.toLowerCase() === needle);
+    if (practice && !chosen.includes(practice)) chosen.push(practice);
+  }
+
+  if (chosen.length < 2) {
+    const known = model.practices.slice(0, 5).map((practice) => `${practice.practiceId} (${practice.name})`).join(', ');
+    return withNumbers({
+      summary: `A comparison needs at least two known practices. Received: ${ids.join(', ') || 'none'}. Some practice ids: ${known}.`,
+      widgets: [],
+      sources: [`Monthly performance, ${model.monthLabel}`],
+      context: context({ metric: 'comparison', groupBy: 'practice', practiceIds: chosen.map((p) => p.practiceId), month: model.month }),
+    });
+  }
+
+  const view = buildCompareView(chosen, model.monthLabel, model.month);
+  const widget: Widget = {
+    type: 'compare',
+    id: `compare-${chosen.map((practice) => practice.practiceId).join('-')}`,
+    title: view.title,
+    view,
+  };
+  const evidence = view.watch.length > 0
+    ? `Evidence. ${view.watch.map((entry) => `${entry.name}: ${entry.lines.join(' ')}`).join(' ')}`
+    : '';
+  const summary = [
+    `${view.title}, ${view.monthLabel}.`,
+    ...view.summary,
+    evidence,
+  ].filter(Boolean).join(' ');
+
+  return withNumbers({
+    summary,
+    widgets: [widget],
+    sources: [`Monthly performance, ${view.monthLabel}`, 'Training records'],
+    context: context({
+      metric: 'comparison',
+      groupBy: 'practice',
+      practiceIds: chosen.map((practice) => practice.practiceId),
+      month: model.month,
+    }),
+  });
+}
+
 function runTrainingStatus(ds: Dataset, input: Record<string, unknown>): ToolOutput {
   const regions = input.regions as string[] | undefined;
   const practiceIds = input.practiceIds as string[] | undefined;
@@ -275,21 +335,20 @@ function runRankAttention(ds: Dataset, input: Record<string, unknown>): ToolOutp
   const table: TableWidget = {
     type: 'table',
     id: 'attention-table',
-    title: 'Practices ranked by attention',
-    columns: ['Practice', 'Region', 'Score', 'Why'],
+    title: 'Practices ranked by need',
+    columns: ['Practice', 'Region', 'Why'],
     rows: rows.map((row) => [
       row.name,
       row.region,
-      `${row.score}/100`,
       row.signals.map((s) => s.label).join('; '),
     ]),
   };
   const mapHighlight = rows.map((row) => row.practiceId);
   const top = rows[0];
   const summary = [
-    `Top ${rows.length} practices by attention score.`,
-    top ? `Highest: ${top.name} (${top.region}) score ${top.score}/100 - ${top.signals.map((s) => s.evidence).join(' ')}` : '',
-    'Scores combine revenue decline, conversion decline, being below target, contact-lens shortfall and training gaps.',
+    `Top ${rows.length} practices by need, in order.`,
+    top ? `Highest: ${top.name} (${top.region}) - ${top.signals.map((s) => s.evidence).join(' ')}` : '',
+    'The order weighs revenue decline, conversion decline, being below target, contact-lens shortfall and training gaps. Each row states the evidence behind it.',
   ].join(' ');
 
   return withNumbers({
@@ -651,6 +710,26 @@ export const TOOLS: Tool[] = [
   },
   {
     definition: {
+      name: 'compare_practices',
+      description:
+        'Compare two or more named practices head to head: revenue against target, conversion, contact lens against target, training, and revenue since last month. Use this whenever the question compares practices with each other (for example "compare Bath with Warwick" or "how do our five weakest stores stack up"). It draws a comparison card with one line per metric and a picker for which metrics are shown. The card carries every figure, so keep the written answer to one or two short sentences: what stands out and nothing more.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          practice_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'The practices to compare, at least two, by id (e.g. "P001") or by name (e.g. "Bath").',
+          },
+          month: { type: 'string', description: MONTH_DESC },
+        },
+        required: ['practice_ids'],
+      },
+    },
+    run: runComparePractices,
+  },
+  {
+    definition: {
       name: 'training_status',
       description: 'Training completion by practice, including missing and overdue modules. Use for "which practices haven\'t completed their training?".',
       input_schema: {
@@ -667,7 +746,7 @@ export const TOOLS: Tool[] = [
   {
     definition: {
       name: 'rank_attention',
-      description: 'Rank practices by how much attention they need, with the evidence behind each score. Use for "which practices need the most attention?".',
+      description: 'Rank practices by how much they need attention, with the evidence behind each position. Use for "which practices need the most attention?".',
       input_schema: {
         type: 'object',
         properties: {

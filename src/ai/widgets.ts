@@ -47,7 +47,42 @@ function isWidget(value: unknown): value is Widget {
     return (widget.rows as unknown[]).every((row) => isStringArray(row));
   }
 
+  // The comparison card renders whatever the builder produced, so the check is
+  // about shape: at least two named sides, rows with one bar per side, and
+  // readable strings.
+  if (widget.type === 'compare') {
+    const view = widget.view as Record<string, unknown> | undefined;
+    if (!view || typeof view !== 'object') return false;
+    if (typeof view.title !== 'string' || typeof view.monthLabel !== 'string') return false;
+    if (!Array.isArray(view.sides) || view.sides.length < 2 || !view.sides.every(isSide)) return false;
+    if (!Array.isArray(view.rows) || view.rows.length === 0) return false;
+    if (!isStringArray(view.summary)) return false;
+    const sideCount = view.sides.length;
+    return (view.rows as unknown[]).every((row) => isCompareRow(row, sideCount));
+  }
+
   return false;
+}
+
+function isSide(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const side = value as Record<string, unknown>;
+  return typeof side.practiceId === 'string' && typeof side.name === 'string' && typeof side.region === 'string';
+}
+
+function isBar(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const bar = value as Record<string, unknown>;
+  return typeof bar.fraction === 'number' && typeof bar.display === 'string' && typeof bar.origin === 'number';
+}
+
+function isCompareRow(value: unknown, sideCount: number): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string' || typeof row.label !== 'string') return false;
+  if (typeof row.lead !== 'number') return false;
+  if (!Array.isArray(row.bars) || row.bars.length !== sideCount) return false;
+  return (row.bars as unknown[]).every(isBar);
 }
 
 export function validateWidgets(widgets: Widget[]): { widgets: Widget[]; dropped: number } {

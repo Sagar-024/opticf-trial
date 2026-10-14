@@ -48,8 +48,7 @@ export interface MapPractice {
   trainingGaps: string[];
   trainingStatus: 'complete' | 'incomplete' | 'overdue';
 
-  attentionScore: number;
-  attentionBand: 'high' | 'medium' | 'low';
+  /** The evidence behind this practice's position on the map, plain sentences. */
   attentionSignals: string[];
 
   /** Revenue for the last six months, oldest first. Used by the inspector. */
@@ -131,8 +130,6 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
       trainingGaps: t?.gaps.map((gap) => gap.moduleName) ?? [],
       trainingStatus: t?.status ?? 'complete',
 
-      attentionScore: a?.score ?? 0,
-      attentionBand: a?.band ?? 'low',
       attentionSignals: a?.signals.map((signal) => signal.evidence) ?? [],
 
       revenueTrend: trend,
@@ -189,7 +186,8 @@ export interface MentorPortfolio {
   conversionChangePp: number;
   conversionChangeDisplay: string;
   practicesImproving: number;
-  attentionCount: number;
+  /** Practices trading under 95% of their revenue target this month. */
+  belowTargetCount: number;
   trainingGaps: number;
   practiceIds: string[];
 }
@@ -224,7 +222,7 @@ export function mentor_portfolios(model: MapModel): MentorPortfolio[] {
       conversionChangePp,
       conversionChangeDisplay: formatSignedPp(conversionChangePp),
       practicesImproving: practices.filter((practice) => practice.revenueMoMPct > 0).length,
-      attentionCount: practices.filter((practice) => practice.attentionBand === 'high').length,
+      belowTargetCount: practices.filter((practice) => practice.revenueAttainmentPct < 95).length,
       trainingGaps: practices.filter((practice) => practice.trainingCompletionPct < 100).length,
       practiceIds: practices.map((practice) => practice.practiceId),
     };

@@ -330,3 +330,64 @@
     .lift:hover { transform: none; }
   }
 }
+
+/*
+ * Dashboard export. Print shows the dashboard alone and lets it run as long as
+ * it needs to: the app shell is made print-neutral first (a fixed-height,
+ * overflow-hidden shell would clip the table at one page), then everything is
+ * hidden except the panel, which becomes a full-width flow at the page top.
+ * The export handler flips a dark theme to light, because paper is light.
+ */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* The shell must stop being a viewport-tall clipped box in print. */
+  .print-root {
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  .print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: auto !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  .print-scroll {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* The paper copy carries the dashboard, never the controls. */
+  .print-hide {
+    display: none !important;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}
