@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, LayoutGrid, List, Maximize2, Minimize2, Search, Sparkles, X } from 'lucide-react';
+import { LayoutGrid, List, Maximize2, Minimize2, Search, Sparkles, X } from 'lucide-react';
 import type { MapModel, MapPractice } from '@/data/map-model';
 import { mentor_portfolios } from '@/data/map-model';
 import { buildLenses, filterById, lensById, type LensId } from '@/map/lenses';
@@ -182,72 +182,9 @@ export function MapView({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      {/* Breadcrumb + counters. In focus mode only the essentials remain. */}
-      <motion.div
-        layout
-        transition={{ duration: 0.3, ease: EASE }}
-        className={cn(
-          'flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4',
-          focus ? 'border-transparent bg-transparent py-1.5' : 'py-2.5',
-        )}
-      >
-        {!focus ? (
-          <>
-            <button
-              onClick={() => {
-                setRegion(null);
-                onHighlightChange([]);
-              }}
-              className="text-xs font-semibold text-foreground"
-            >
-              Northstar Group
-            </button>
-            {region ? (
-              <>
-                <ChevronRight className="size-3.5 text-muted-foreground" />
-                <button onClick={() => onHighlightChange([])} className="text-xs text-muted-foreground">
-                  {region}
-                </button>
-              </>
-            ) : null}
-            <Badge variant="outline" className="ml-1 text-[10px]">
-              {model.monthLabel}
-            </Badge>
-          </>
-        ) : null}
-
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {matching.length} of {visible.length} matching
-        </span>
-        {highlighted.length > 0 ? (
-          <Badge className="gap-1 bg-[var(--accent-600)] text-white">
-            {highlighted.length} highlighted
-            <button onClick={() => onHighlightChange([])} aria-label="Clear highlight">
-              <X className="size-3" />
-            </button>
-          </Badge>
-        ) : null}
-
-        <div className="ml-auto flex items-center gap-1.5">
-          {!focus ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={showList ? 'secondary' : 'ghost'}
-                  size="icon"
-                  aria-label={showList ? 'Show map' : 'Show list view'}
-                  onClick={() => setShowList((value) => !value)}
-                >
-                  {showList ? <LayoutGrid /> : <List />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{showList ? 'Back to the map' : 'List view'}</TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      </motion.div>
-
-      {/* Toolbar */}
+      {/* Toolbar: the map's single chrome row. Counts, highlight state and the
+          list toggle live here too, so the canvas keeps every pixel the old
+          header row was eating. */}
       <AnimatePresence initial={false}>
         {!focus ? (
           <motion.div key="toolbar" {...SLIDE} className="shrink-0 overflow-hidden border-b border-border">
@@ -315,7 +252,19 @@ export function MapView({
                 </div>
               ) : null}
 
-              <div className="relative ml-auto w-[190px]">
+              <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                {matching.length} of {visible.length} matching
+              </span>
+              {highlighted.length > 0 ? (
+                <Badge className="gap-1 bg-[var(--accent-600)] text-white">
+                  {highlighted.length} highlighted
+                  <button onClick={() => onHighlightChange([])} aria-label="Clear highlight">
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              ) : null}
+
+              <div className="relative w-[190px]">
                 <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
@@ -325,6 +274,20 @@ export function MapView({
                   aria-label="Find a practice"
                 />
               </div>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={showList ? 'secondary' : 'ghost'}
+                    size="icon"
+                    aria-label={showList ? 'Show map' : 'Show list view'}
+                    onClick={() => setShowList((value) => !value)}
+                  >
+                    {showList ? <LayoutGrid /> : <List />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{showList ? 'Back to the map' : 'List view'}</TooltipContent>
+              </Tooltip>
 
               {/* Legend lives on the same band as the controls to give the graph more height. */}
               <div className="flex w-full flex-wrap items-center gap-3 pt-1">

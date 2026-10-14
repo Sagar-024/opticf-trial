@@ -107,53 +107,68 @@
   }
 
   .dark {
-    /* Same structure, swapped tokens: deep warm brown base, accent unchanged. */
-    --bg: #17120e;
-    --surface: #1f1914;
-    --surface-2: #1b1510;
-    --line: rgba(255, 235, 210, 0.08);
-    --line-strong: rgba(255, 235, 210, 0.14);
-    --ink-2: #b4a697;
-    --ink-3: #8a7c6e;
+    /* Same structure, swapped tokens: pure black base, borders carry the
+       depth, accent unchanged.
+       Warm fallback if asked to undo: bg #17120e, sidebar #1b1510,
+       line rgba(255, 235, 210, 0.08), strong rgba(255, 235, 210, 0.14). */
+    --bg: #000000;
+    --surface: #0a0a0a;
+    --surface-2: #0a0a0a;
+    --line: #262626;
+    --line-strong: #333333;
+    --ink-2: #a1a1a1;
+    --ink-3: #6b6b6b;
 
-    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -6px rgba(0, 0, 0, 0.35);
-    --shadow-floating: 0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 32px -10px rgba(0, 0, 0, 0.45);
-    --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 24px -8px rgba(0, 0, 0, 0.4);
+    /* The wash and the edges are translucent, and 12 percent orange vanishes
+       into black, so dark mode carries stronger strengths and a brighter
+       orange ink (accent-400) for text and icons. Text and icons move together
+       in every theme, so the active item never shows two different oranges. */
+    --accent-text: #ffa860;
+    --accent-soft: rgba(247, 139, 45, 0.18);
+    --accent-line: rgba(247, 139, 45, 0.32);
+    --accent-border: rgba(247, 139, 45, 0.5);
+    --accent-ring: rgba(247, 139, 45, 0.32);
+
+    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    /* On black, borders carry the depth: the elevation shadows are transparent
+       (still valid list entries, so the lit top edge in the same stack holds). */
+    --shadow-raised: 0 0 #0000;
+    --shadow-floating: 0 0 #0000;
+    --shadow-hover: 0 0 #0000;
     --well: inset 0 1px 2px rgba(0, 0, 0, 0.45);
     /* --accent-*, --good, --bad, --shadow-send and --send-gradient are kept. */
 
-    --background: 0.187 0.011 60.68;        /* --bg */
-    --foreground: 0.941 0.016 73.68;
-    --card: 0.219 0.013 61.84;              /* --surface */
-    --card-foreground: 0.941 0.016 73.68;
-    --popover: 0.219 0.013 61.84;
-    --popover-foreground: 0.941 0.016 73.68;
+    --background: 0 0 0;                    /* --bg #000000 */
+    --foreground: 0.946 0 0;                /* #ededed */
+    --card: 0.145 0 0;                      /* --surface #0a0a0a */
+    --card-foreground: 0.946 0 0;
+    --popover: 0.145 0 0;
+    --popover-foreground: 0.946 0 0;
 
-    --primary: 0.941 0.016 73.68;
-    --primary-foreground: 0.219 0.013 61.84;
-    --secondary: 0.234 0.017 58.68;
-    --secondary-foreground: 0.941 0.016 73.68;
-    --muted: 0.234 0.017 58.68;
-    --muted-foreground: 0.733 0.027 69.32;  /* --ink-2 */
-    --accent: 0.234 0.017 58.68;
-    --accent-foreground: 0.941 0.016 73.68;
+    --primary: 0.946 0 0;
+    --primary-foreground: 0.145 0 0;
+    --secondary: 0.178 0 0;                 /* #111111 */
+    --secondary-foreground: 0.946 0 0;
+    --muted: 0.178 0 0;
+    --muted-foreground: 0.709 0 0;          /* --ink-2 #a1a1a1 */
+    --accent: 0.178 0 0;
+    --accent-foreground: 0.946 0 0;
 
-    --ink: 0.941 0.016 73.68;
+    --ink: 0.946 0 0;
     --coral: 0.740 0.165 56.06;
     --coral-deep: 0.804 0.135 58.72;
     --coral-text: 0.740 0.165 56.06;
 
-    --border: 0.262 0.014 57.61;            /* --line over brown */
-    --input: 0.262 0.014 57.61;
+    --border: 0.269 0 0;                    /* --line #262626 */
+    --input: 0.269 0 0;
     --ring: 0.740 0.165 56.06;
     --destructive: 0.597 0.182 24.51;
-    --destructive-foreground: 0.187 0.011 60.68;
+    --destructive-foreground: 0.994 0 0;
     --positive: 0.624 0.126 158.97;
 
-    --rail: 0.201 0.014 61.72;              /* --surface-2 */
-    --rail-card: 0.219 0.013 61.84;
-    --rail-active: 0.234 0.017 58.68;
+    --rail: 0.145 0 0;                      /* --surface-2 #0a0a0a */
+    --rail-card: 0.145 0 0;
+    --rail-active: 0.178 0 0;
 
     --map-bg: 0.205 0 0;
     --map-fg: 0.985 0 0;

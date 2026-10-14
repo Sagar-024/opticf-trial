@@ -806,7 +806,9 @@ export function ChatView({
               send(input);
             }}
           >
-            <div className="flex items-end gap-2 rounded-full border border-[color:var(--line)] bg-card py-[7px] pl-5 pr-2 [box-shadow:var(--shadow-floating)] transition-[border-color,box-shadow] duration-[160ms] ease-out focus-within:border-[color:var(--accent-focus)] focus-within:[box-shadow:0_0_0_4px_var(--accent-ring),var(--shadow-floating)]">
+            {/* No focus highlight on purpose: the caret already shows where
+                you are typing, and the orange focus ring was too loud here. */}
+            <div className="flex items-end gap-2 rounded-full border border-[color:var(--line)] bg-card py-[7px] pl-5 pr-2 [box-shadow:var(--shadow-floating)]">
               <Textarea
                 ref={composerRef}
                 value={input}
@@ -822,9 +824,10 @@ export function ChatView({
                 className="max-h-[130px] min-h-[38px] flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-[15px] md:text-[15px] leading-[22px] caret-[var(--accent-600)] shadow-none placeholder:text-[color:var(--ink-3)] focus-visible:ring-0"
                 disabled={loading}
               />
-              {/* Empty input: the gradient dimmed to 35 percent and not
-                  clickable. With text: the full gradient. While answering, the
-                  same button is the stop control. */}
+              {/* Empty input: the gradient gives way to a soft wash with a
+                  visible orange arrow, still not clickable. With text: the
+                  full gradient. While answering, the same button is the stop
+                  control. */}
               <motion.button
                 type={loading ? 'button' : 'submit'}
                 onClick={loading ? stop : undefined}
@@ -832,7 +835,12 @@ export function ChatView({
                 aria-label={loading ? 'Stop generating' : 'Send question'}
                 whileTap={loading || hasText ? { scale: 0.96 } : undefined}
                 transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-                className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] transition-[opacity,filter] duration-[160ms] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:pointer-events-none disabled:opacity-[0.35] disabled:[box-shadow:none]"
+                className={cn(
+                  'inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-[color,filter,box-shadow] duration-[160ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:pointer-events-none',
+                  loading || hasText
+                    ? 'text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95'
+                    : 'bg-[var(--accent-soft)] text-[var(--accent-600)]',
+                )}
               >
                 {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
               </motion.button>

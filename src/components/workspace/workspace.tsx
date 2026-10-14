@@ -136,6 +136,11 @@ export function Workspace({
 }) {
   const [view, setView] = useState<View>('chat');
   const [railOpen, setRailOpen] = useState(true);
+  /** Hovering the collapsed icon rail expands it over the content. */
+  const [railHovered, setRailHovered] = useState(false);
+  /** Set right after a manual collapse: hover expansion stays off until the
+   * pointer leaves the rail, so the click collapses it even while hovered. */
+  const [railHoverSuppressed, setRailHoverSuppressed] = useState(false);
   const [mapFocus, setMapFocus] = useState(false);
   const [highlighted, setHighlighted] = useState<string[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
@@ -146,6 +151,8 @@ export function Workspace({
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   /** The chat being renamed inline, if any. */
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  /** The top bar title input, while the open conversation is being renamed. */
+  const [topRenaming, setTopRenaming] = useState(false);
   /** The last deleted chat, held for the undo line under the rail. */
   const [undoDelete, setUndoDelete] = useState<ChatSession | null>(null);
   /** Whether the conversation list under Chat is folded away. */
@@ -311,6 +318,19 @@ export function Workspace({
     }
   }, []);
 
+  // Leaving chat folds the conversation list, so Map, Brain and the rest of
+  // the rail always arrive clean; tapping Chat brings the list back.
+  useEffect(() => {
+    if (view === 'chat' || chatFolded) return;
+    setChatFolded(true);
+    try {
+      window.localStorage.setItem(CHAT_FOLD_KEY, '1');
+    } catch {
+      // Storage unavailable; the choice lasts this session only.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   // Focus mode hides the shell, so make sure the user can always leave it.
   useEffect(() => {
     if (!mapFocus) return;
@@ -341,6 +361,7 @@ export function Workspace({
         variants={railItem}
         className={cn(
           'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs',
+          !railExpanded && 'justify-center',
           active ? 'font-semibold text-[var(--accent-text)]' : 'text-muted-foreground hover:text-foreground',
         )}
         whileTap={{ scale: 0.98 }}
@@ -355,15 +376,19 @@ export function Workspace({
             transition={{ type: 'spring', stiffness: 420, damping: 34 }}
           />
         ) : null}
-        <Icon className={cn('relative size-4 shrink-0', active && 'text-[var(--accent-500)]')} />
-        <span className="relative">{item.label}</span>
-        {/* Only the section you are on carries the chevron; the others stay quiet. */}
-        <ChevronRight
-          className={cn(
-            'relative ml-auto size-3.5 shrink-0 transition-[opacity,transform] duration-200 ease-out',
-            active && !homeOpen ? 'translate-x-0 text-[var(--accent-500)] opacity-100' : '-translate-x-1 text-muted-foreground/60 opacity-0',
-          )}
-        />
+        <Icon className={cn('relative size-4 shrink-0', active && 'text-[var(--accent-text)]')} />
+        {railExpanded ? (
+          <>
+            <span className="relative">{item.label}</span>
+            {/* Only the section you are on carries the chevron; the others stay quiet. */}
+            <ChevronRight
+              className={cn(
+                'relative ml-auto size-3.5 shrink-0 transition-[opacity,transform] duration-200 ease-out',
+                active && !homeOpen ? 'translate-x-0 text-[var(--accent-text)] opacity-100' : '-translate-x-1 text-muted-foreground/60 opacity-0',
+              )}
+            />
+          </>
+        ) : null}
       </motion.button>
     );
   };
@@ -375,7 +400,7 @@ export function Workspace({
     // leaving the field cancels too.
     if (renamingId === session.id) {
       return (
-        <motion.div key={session.id} variants={railItem} className="flex w-full items-center">
+        <div key={session.id} className="flex w-full items-center">
           <input
             autoFocus
             defaultValue={session.title}
@@ -387,12 +412,14 @@ export function Workspace({
             aria-label="Rename chat"
             className="min-h-8 w-full rounded-md border border-[color:var(--accent-border)] bg-card px-2.5 py-0 text-xs outline-none"
           />
-        </motion.div>
+        </div>
       );
     }
 
+    // Deliberately not a motion variant: a conversation row must appear the
+    // instant the chat is created, not wait on the rail's entrance animation.
     return (
-      <motion.div key={session.id} variants={railItem} className="group relative flex w-full items-center">
+      <div key={session.id} className="group relative flex w-full items-center">
         <motion.button
           onClick={() => selectChat(session.id)}
           aria-current={active ? 'true' : undefined}
@@ -415,7 +442,7 @@ export function Workspace({
             className={cn(
               'relative size-3 shrink-0 transition-[opacity,transform] duration-200 ease-out',
               active
-                ? 'translate-x-0 text-[var(--accent-500)] opacity-100 group-hover:opacity-0'
+                ? 'translate-x-0 text-[var(--accent-text)] opacity-100 group-hover:opacity-0'
                 : '-translate-x-1 text-muted-foreground/60 opacity-0',
             )}
           />
@@ -452,11 +479,13 @@ export function Workspace({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </motion.div>
+      </div>
     );
   };
 
   const recentGroups = groupSessions(chatSessions);
+  /** The open conversation, for the top bar title and its menu. */
+  const activeChat = chatSessionId ? chatSessions.find((session) => session.id === chatSessionId) ?? null : null;
   // Chat is one section: `open` lights its icon while you are anywhere in
   // chat, `exact` marks the Chat row itself as "you are here" only when no
   // conversation is open. An open conversation takes the pill instead, so the
@@ -466,50 +495,94 @@ export function Workspace({
   // Folded, the conversation row is hidden, so the Chat row itself carries the
   // pill while you are in chat; unfolded, the exact-position rule above holds.
   const chatRowMarked = chatExact || (chatFolded && chatOpen);
+  // The rail: pinned open at 220, hovering a collapsed rail expands it to 220
+  // as an overlay, and at rest it is a 60px icon rail. The spacer next to the
+  // content only ever follows the pinned width, so nothing reflows on hover.
+  const railExpanded = !mapFocus && (railOpen || (railHovered && !railHoverSuppressed));
+  const railWidth = mapFocus ? 0 : railOpen || (railHovered && !railHoverSuppressed) ? 220 : 60;
+  const railSpacerWidth = mapFocus ? 0 : railOpen ? 220 : 60;
+  const railSpring = { type: 'spring', stiffness: 300, damping: 32, mass: 0.9 } as const;
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="relative flex h-dvh overflow-hidden">
+      {/* The spacer keeps the content clear of the icon rail; the rail itself
+          overlays when it expands on hover, so nothing ever reflows. */}
+      <motion.div
+        aria-hidden
+        initial={false}
+        animate={{ width: railSpacerWidth }}
+        transition={railSpring}
+        className="shrink-0"
+      />
       {/* Rail: the only navigation. Nothing decorative. */}
       <motion.aside
         initial={false}
-        animate={{ width: railOpen && !mapFocus ? 220 : 0, opacity: railOpen && !mapFocus ? 1 : 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 32, mass: 0.9 }}
+        animate={{ width: railWidth, opacity: mapFocus ? 0 : 1 }}
+        transition={railSpring}
+        onMouseEnter={() => setRailHovered(true)}
+        onMouseLeave={() => {
+          setRailHovered(false);
+          setRailHoverSuppressed(false);
+        }}
         className={cn(
-          'relative flex shrink-0 flex-col overflow-hidden bg-[var(--surface-2)]',
-          railOpen && !mapFocus ? 'border-r border-border' : 'border-r-0',
+          'absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-[var(--surface-2)]',
+          mapFocus ? 'border-r-0' : 'border-r border-border',
+          !mapFocus && !railOpen && railHovered && !railHoverSuppressed ? '[box-shadow:var(--shadow-floating)]' : null,
         )}
-        aria-hidden={!railOpen || mapFocus}
+        aria-hidden={mapFocus}
       >
-        <RailLeaves className="pointer-events-none absolute inset-0" />
+        {railExpanded ? <RailLeaves className="pointer-events-none absolute inset-0" /> : null}
         <motion.div
           className="relative flex h-full flex-col px-3 py-5"
           variants={railStagger}
           initial="hidden"
-          animate={railOpen && !mapFocus ? 'show' : 'hidden'}
+          animate={mapFocus ? 'hidden' : 'show'}
         >
-          <motion.div variants={railItem} className="mb-4 flex items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
-            <Logo className="size-6" /> Optific<span className="text-[var(--accent-600)]">+</span>
-            {/* The collapse control lives here, inside the rail it controls. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto size-7 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => setRailOpen(false)}
-              aria-label="Hide navigation"
-              aria-expanded={railOpen}
-            >
-              <PanelLeftClose />
-            </Button>
+          <motion.div variants={railItem} className="mb-3 flex h-9 items-center gap-2 px-2 text-[19px] font-bold tracking-tight">
+            <Logo className="size-6 shrink-0" />
+            {railExpanded ? (
+              <>
+                Optific<span className="text-[var(--accent-600)]">+</span>
+                {/* Pins the rail open, or drops it back to the icon rest state. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    if (railOpen) {
+                      setRailOpen(false);
+                      setRailHoverSuppressed(true);
+                    } else {
+                      setRailOpen(true);
+                    }
+                  }}
+                  aria-label={railOpen ? 'Collapse to icons' : 'Keep navigation open'}
+                  aria-expanded={railOpen}
+                >
+                  {railOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+                </Button>
+              </>
+            ) : null}
           </motion.div>
 
-          <motion.div variants={railItem} className="surface-card mb-4 flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-bold text-primary-foreground ring-1 ring-[color:var(--line-strong)]">N</span>
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold leading-tight">Northstar Group</p>
-              <p className="truncate text-[11px] leading-tight text-muted-foreground">{latestMonth}</p>
-            </div>
-            {/* Decorative for now; an org switcher would land here. */}
-            <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground/70" />
+          {/* Org switcher as a quiet row, same rhythm as the nav below it. */}
+          <motion.div
+            variants={railItem}
+            className={cn(
+              'mb-3 flex h-10 items-center gap-2.5 rounded-lg px-2 transition-colors hover:bg-accent',
+              !railExpanded && 'justify-center',
+            )}
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-[12px] font-bold text-primary-foreground ring-1 ring-[color:var(--line-strong)]">N</span>
+            {railExpanded ? (
+              <>
+                {/* One line, like the nav rows; the month lives in the status
+                    bar and the Home popup, so it is not repeated here. */}
+                <p className="min-w-0 truncate text-[13px] font-semibold">Northstar Group</p>
+                {/* Decorative for now; an org switcher would land here. */}
+                <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground/70" />
+              </>
+            ) : null}
           </motion.div>
 
           <nav aria-label="Sections">
@@ -518,31 +591,42 @@ export function Workspace({
               key="home"
               onClick={() => setHomeOpen(true)}
               variants={railItem}
-              className="relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:text-foreground"
+              className={cn(
+                'relative mb-0.5 flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:text-foreground',
+                !railExpanded && 'justify-center',
+              )}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 420, damping: 32 }}
             >
               <HomeIcon className="relative size-4 shrink-0" />
-              <span className="relative">Home</span>
-              {/* Home carries the chevron only while its dialog is open. */}
-              <ChevronRight
-                className={cn(
-                  'relative ml-auto size-3.5 shrink-0 text-muted-foreground/60 transition-[opacity,transform] duration-200 ease-out',
-                  homeOpen ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0',
-                )}
-              />
+              {railExpanded ? (
+                <>
+                  <span className="relative">Home</span>
+                  {/* Home carries the chevron only while its dialog is open. */}
+                  <ChevronRight
+                    className={cn(
+                      'relative ml-auto size-3.5 shrink-0 text-muted-foreground/60 transition-[opacity,transform] duration-200 ease-out',
+                      homeOpen ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0',
+                    )}
+                  />
+                </>
+              ) : null}
             </motion.button>
             {/* Chat is a section: its conversations live inside it, so there is
                 only ever one place to look for "where am I". The row keeps the
                 section light (orange icon and name) while you are in chat. */}
-            <motion.div variants={railItem} className="relative mb-0.5">
+            <motion.div variants={railItem} className="group relative mb-0.5">
               <motion.button
-                onClick={() => setView('chat')}
+                onClick={() => {
+                  setView('chat');
+                  toggleChatFold();
+                }}
                 aria-current={chatRowMarked ? 'page' : undefined}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: 'spring', stiffness: 420, damping: 32 }}
                 className={cn(
-                  'relative flex min-h-9 w-full items-center gap-2.5 rounded-md py-0 pl-2.5 pr-8 text-left text-xs',
+                  'relative flex min-h-9 w-full items-center gap-2.5 rounded-md py-0 pl-2.5 text-left text-xs',
+                  railExpanded ? 'pr-8' : 'pr-2.5 justify-center',
                   chatOpen
                     ? cn('text-[var(--accent-text)]', chatRowMarked && 'font-semibold')
                     : 'text-muted-foreground hover:text-foreground',
@@ -555,25 +639,32 @@ export function Workspace({
                     transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                   />
                 ) : null}
-                <MessageSquare className={cn('relative size-4 shrink-0', chatOpen && 'text-[var(--accent-500)]')} />
-                <span className="relative">Chat</span>
+                <MessageSquare className={cn('relative size-4 shrink-0', chatOpen && 'text-[var(--accent-text)]')} />
+                {railExpanded ? <span className="relative">Chat</span> : null}
               </motion.button>
               {/* The fold is a click, never a hover, so nothing opens under the
-                  pointer on the way to Map or Brain. */}
-              <button
-                onClick={toggleChatFold}
-                aria-expanded={!chatFolded}
-                aria-label={chatFolded ? 'Show chats' : 'Hide chats'}
-                className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-              >
-                <ChevronDown className={cn('size-3.5 transition-transform duration-200', chatFolded && '-rotate-90')} />
-              </button>
+                  pointer on the way to Map or Brain. It stays out of sight
+                  unless you are in chat or reaching for this row, so it can
+                  never read as a second active marker. */}
+              {railExpanded ? (
+                <button
+                  onClick={toggleChatFold}
+                  aria-expanded={!chatFolded}
+                  aria-label={chatFolded ? 'Show chats' : 'Hide chats'}
+                  className={cn(
+                    'absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 transition-[opacity,color] hover:text-foreground focus-visible:opacity-100',
+                    chatOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                  )}
+                >
+                  <ChevronDown className={cn('size-3.5 transition-transform duration-200', chatFolded && '-rotate-90')} />
+                </button>
+              ) : null}
             </motion.div>
 
             {/* The conversations, nested under Chat: New chat first, then the
                 day groups. The list caps with the window and scrolls on its
                 own, so a long history never pushes the rail around. */}
-            <motion.div variants={railItem} className="mb-0.5">
+            <motion.div variants={railItem} className={cn('mb-0.5', !railExpanded && 'hidden')}>
               <AnimatePresence initial={false}>
                 {!chatFolded ? (
                   <motion.div
@@ -621,18 +712,29 @@ export function Workspace({
 
           <nav aria-label="Workspace tools">{SECONDARY_NAV.map(navButton)}</nav>
 
-          <motion.div variants={railItem} className="surface-card mt-auto flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+          {/* Profile as a quiet row, matching the org switcher above. */}
+          <motion.div
+            variants={railItem}
+            className={cn(
+              'mt-auto flex h-10 items-center gap-2.5 rounded-lg px-2 transition-colors hover:bg-accent',
+              !railExpanded && 'justify-center',
+            )}
+          >
             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-rail-active text-[10px] font-semibold">SK</span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold leading-tight">Sara Kelly</p>
-              <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
-            </div>
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />
+            {railExpanded ? (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold leading-tight">Sara Kelly</p>
+                  <p className="truncate text-[10px] leading-tight text-muted-foreground">Group leadership</p>
+                </div>
+                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />
+              </>
+            ) : null}
           </motion.div>
 
           {/* Undo line: floats above the profile card, never shifts the rail. */}
           <AnimatePresence>
-            {undoDelete ? (
+            {undoDelete && railExpanded ? (
               <motion.div
                 key="undo-delete"
                 initial={{ opacity: 0, y: 8 }}
@@ -659,31 +761,70 @@ export function Workspace({
             'shrink-0 overflow-hidden bg-background/80 transition-[height,opacity] duration-300 ease-out',
             mapFocus ? 'border-b-0' : 'border-b border-border',
           )}
-          style={{ height: mapFocus ? 0 : 56, opacity: mapFocus ? 0 : 1 }}
+          style={{ height: mapFocus ? 0 : 48, opacity: mapFocus ? 0 : 1 }}
           aria-hidden={mapFocus}
         >
-          <div className="flex h-14 items-center gap-2 px-4">
-            {/* The collapse control lives in the rail; when the rail is
-                closed this is the way back in. */}
-            {railOpen ? null : (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setRailOpen(true)}
-                aria-label="Show navigation"
-                aria-expanded={railOpen}
-              >
-                <PanelLeftOpen />
-              </Button>
-            )}
-            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              <span className="truncate font-medium text-foreground">Northstar Group</span>
-              <span className="text-border">/</span>
-              <span className="truncate">
-                {[...PRIMARY_NAV, ...SECONDARY_NAV].find((item) => item.key === view)?.label ?? 'Workspace'}
+          <div className="flex h-12 items-center gap-2 px-4">
+            {/* The bar names what you are in. An open conversation names itself
+                and can be pinned, renamed or deleted from here. */}
+            {view === 'chat' && activeChat ? (
+              topRenaming ? (
+                <input
+                  autoFocus
+                  defaultValue={activeChat.title}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      renameChat(activeChat.id, event.currentTarget.value);
+                      setTopRenaming(false);
+                    }
+                    if (event.key === 'Escape') setTopRenaming(false);
+                  }}
+                  onBlur={() => setTopRenaming(false)}
+                  aria-label="Rename chat"
+                  className="h-8 w-72 rounded-md border border-[color:var(--accent-border)] bg-card px-2.5 text-[13px] font-semibold outline-none"
+                />
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+                      <span className="truncate">{activeChat.title}</span>
+                      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
+                    <DropdownMenuItem onSelect={() => togglePin(activeChat)}>
+                      {activeChat.pinned ? <PinOff /> : <Pin />}
+                      {activeChat.pinned ? 'Unpin' : 'Pin'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setTopRenaming(true)}>
+                      <Pencil />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => deleteChat(activeChat)}
+                      className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    >
+                      <Trash2 />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            ) : (
+              <span className="px-2 text-[13px] font-semibold text-foreground">
+                {view === 'chat'
+                  ? 'Chat'
+                  : [...PRIMARY_NAV, ...SECONDARY_NAV].find((item) => item.key === view)?.label ?? 'Workspace'}
               </span>
-            </div>
-            <div className="ml-auto flex items-center gap-1">
+            )}
+            <div className="ml-auto flex items-center gap-3">
+              {/* What used to be the bottom status bar lives up here now. */}
+              <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+                <span className="size-1.5 rounded-full bg-positive" />
+                {practiceCount} practices connected
+              </span>
+              <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:block">{latestMonth}</span>
               <ThemeToggle />
             </div>
           </div>
@@ -758,21 +899,6 @@ export function Workspace({
             />
           ) : null}
           </motion.div>
-        </div>
-
-        {/* Status bar */}
-        <div
-          className={cn(
-            'shrink-0 overflow-hidden transition-[height,opacity] duration-300 ease-out',
-            mapFocus ? 'border-t-0' : 'border-t border-border',
-          )}
-          style={{ height: mapFocus ? 0 : 36, opacity: mapFocus ? 0 : 1 }}
-          aria-hidden={mapFocus}
-        >
-          <div className="flex h-9 items-center gap-4 px-6 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-positive" /> {practiceCount} practices connected</span>
-            <span>{latestMonth}</span>
-          </div>
         </div>
       </main>
 

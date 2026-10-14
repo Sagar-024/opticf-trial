@@ -1,18 +1,11 @@
 /**
- * Rail decoration from the reference: a soft glow in the top corner and large
- * flowing peach waves along the bottom. Purely decorative, clipped by the rail,
- * kept at low opacity so controls always read on top. Tune the opacities here.
+ * Rail decoration from the reference: large flowing peach waves along the
+ * bottom. Purely decorative, clipped by the rail, kept at low opacity so
+ * controls always read on top. Tune the opacities here.
  */
 export function RailLeaves({ className }: { className?: string }) {
   return (
     <div className={className} aria-hidden="true">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(120% 80% at 0% 0%, oklch(var(--coral) / 0.08), transparent 55%)',
-        }}
-      />
       <svg
         viewBox="0 0 240 300"
         fill="none"
