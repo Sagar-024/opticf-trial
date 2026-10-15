@@ -8,6 +8,7 @@
 
 import { defaultSkills } from '@/automations/catalog';
 import type { ActivityEvent, AutomationTask, Skill, StoredRun } from '@/automations/types';
+import { plainDashes } from './text';
 
 export interface AutomationsState {
   skills: Skill[];
@@ -25,6 +26,11 @@ const MAX_ACTIVITY = 40;
 
 const EMPTY: AutomationsState = { skills: [], runs: [], tasks: [], activity: [] };
 
+/** Stored text can predate the no-dashes rule; clean it on the way out. */
+function plainRun(run: StoredRun): StoredRun {
+  return { ...run, skillName: plainDashes(run.skillName) };
+}
+
 export function readState(): AutomationsState {
   if (typeof window === 'undefined') return EMPTY;
   try {
@@ -32,10 +38,16 @@ export function readState(): AutomationsState {
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as Partial<AutomationsState>;
     return {
-      skills: Array.isArray(parsed.skills) ? parsed.skills : [],
-      runs: Array.isArray(parsed.runs) ? parsed.runs : [],
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-      activity: Array.isArray(parsed.activity) ? parsed.activity : [],
+      skills: Array.isArray(parsed.skills)
+        ? parsed.skills.map((skill) => ({ ...skill, name: plainDashes(skill.name) }))
+        : [],
+      runs: Array.isArray(parsed.runs) ? parsed.runs.map(plainRun) : [],
+      tasks: Array.isArray(parsed.tasks)
+        ? parsed.tasks.map((task) => ({ ...task, title: plainDashes(task.title) }))
+        : [],
+      activity: Array.isArray(parsed.activity)
+        ? parsed.activity.map((line) => ({ ...line, text: plainDashes(line.text) }))
+        : [],
     };
   } catch {
     return EMPTY;

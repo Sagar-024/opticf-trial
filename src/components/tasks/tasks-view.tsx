@@ -80,7 +80,7 @@ function TaskRow({ task, onOpenSource }: { task: Task; onOpenSource: (source: Ta
 
       <div className="min-w-0 flex-1">
         <p className={cn('text-sm font-medium', isDone && 'text-muted-foreground line-through')}>{task.title}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{task.assignee}</span>
           <span>{task.assigneeRole}</span>
           {due ? (
@@ -94,7 +94,8 @@ function TaskRow({ task, onOpenSource }: { task: Task; onOpenSource: (source: Ta
               <span aria-hidden>·</span>
               <button
                 onClick={() => onOpenSource(source)}
-                className="inline-flex items-center gap-0.5 rounded-full border border-border px-2 py-0.5 transition-colors hover:bg-accent hover:text-foreground"
+                title={`Open ${source.label}`}
+                className="inline-flex items-center gap-0.5 rounded-full border border-border px-1.5 py-0.5 text-[11px] transition-colors hover:bg-accent hover:text-foreground"
               >
                 {source.label}
                 <ChevronRight className="size-3" />
@@ -102,6 +103,12 @@ function TaskRow({ task, onOpenSource }: { task: Task; onOpenSource: (source: Ta
             </>
           ) : null}
         </div>
+
+        {/* The why, in the numbers it came from. */}
+        {source?.finding ? (
+          <p className="mt-1.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">{source.finding}</p>
+        ) : null}
+
         {task.note ? <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{task.note}</p> : null}
 
         {/* The record: what changed when it was closed. */}
@@ -129,7 +136,7 @@ function TaskRow({ task, onOpenSource }: { task: Task; onOpenSource: (source: Ta
               }}
               placeholder="What changed? (optional)"
               aria-label="What changed"
-              className="h-8 min-w-0 flex-1 rounded-md border border-[color:var(--line)] bg-secondary px-2.5 text-xs text-foreground placeholder:text-[color:var(--ink-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+              className="h-8 min-w-0 flex-1 rounded-md border border-[color:var(--line)] bg-secondary px-2.5 text-xs text-foreground placeholder:text-[color:var(--ink-3)] focus-visible:outline-none focus-visible:border-[color:var(--line-strong)]"
             />
             <button
               onClick={confirmClose}
@@ -187,7 +194,7 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
               <button
                 onClick={() => setShowDone((value) => !value)}
                 aria-pressed={showDone}
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 {showDone ? 'Hide done' : 'Show done'}
               </button>
@@ -196,7 +203,7 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
                 written here and given the same owner, date and record. */}
             <button
               onClick={() => setNewOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-border)] bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-text)] transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-border)] bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent-text)] transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
             >
               <ListPlus className="size-3" />
               New task

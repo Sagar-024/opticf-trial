@@ -7,6 +7,8 @@
  * same way.
  */
 
+import { plainDashes } from './text';
+
 export interface TaskSource {
   /** What the task came from, e.g. "Chorlton" or "North West". */
   label: string;
@@ -40,13 +42,32 @@ export interface Task {
 const TASKS_KEY = 'opticf-tasks-v1';
 const listeners = new Set<() => void>();
 
+/** Stored text can predate the no-dashes rule; clean it on the way out. */
+function plainTask(task: Task): Task {
+  return {
+    ...task,
+    title: plainDashes(task.title),
+    ...(task.note !== undefined ? { note: plainDashes(task.note) } : {}),
+    ...(task.outcome !== undefined ? { outcome: plainDashes(task.outcome) } : {}),
+    ...(task.source
+      ? {
+          source: {
+            ...task.source,
+            label: plainDashes(task.source.label),
+            ...(task.source.finding !== undefined ? { finding: plainDashes(task.source.finding) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 export function listTasks(): Task[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(TASKS_KEY);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
     if (!Array.isArray(parsed)) return [];
-    return (parsed as Task[]).slice().sort((a, b) => b.createdAt - a.createdAt);
+    return (parsed as Task[]).map(plainTask).slice().sort((a, b) => b.createdAt - a.createdAt);
   } catch {
     return [];
   }

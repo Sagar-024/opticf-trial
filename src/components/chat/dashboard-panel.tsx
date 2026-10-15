@@ -238,7 +238,7 @@ export function DashboardPanel({
       {/* Send: the finding, its sources and the date, put in a person's hands.
           The queue is real; the pipe connects when the platform has accounts. */}
       <Dialog open={sendOpen} onOpenChange={setSendOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Send this report</DialogTitle>
             <DialogDescription>
@@ -246,9 +246,9 @@ export function DashboardPanel({
               {sources.length > 0 ? ` · From: ${sources.join(' · ')}` : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="label-caps mb-1.5 block">Send to</label>
+              <label className="label-caps mb-2 block">Send to</label>
               <Select value={recipient} onValueChange={setRecipient}>
                 <SelectTrigger className="text-sm" aria-label="Send to">
                   <SelectValue />

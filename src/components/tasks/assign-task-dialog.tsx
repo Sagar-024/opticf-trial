@@ -77,7 +77,7 @@ export function AssignTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Assign a task</DialogTitle>
           {source ? (
@@ -88,9 +88,9 @@ export function AssignTaskDialog({
           ) : null}
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
-            <label className="label-caps mb-1.5 block" htmlFor="task-title">
+            <label className="label-caps mb-2 block" htmlFor="task-title">
               Task
             </label>
             <Input
@@ -102,9 +102,9 @@ export function AssignTaskDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
             <div>
-              <label className="label-caps mb-1.5 block">Assign to</label>
+              <label className="label-caps mb-2 block">Assign to</label>
               <Select value={assigneeName} onValueChange={setAssigneeName}>
                 <SelectTrigger className="text-sm" aria-label="Assign to">
                   <SelectValue />
@@ -119,7 +119,7 @@ export function AssignTaskDialog({
               </Select>
             </div>
             <div>
-              <label className="label-caps mb-1.5 block" htmlFor="task-due">
+              <label className="label-caps mb-2 block" htmlFor="task-due">
                 Due
               </label>
               <Input
@@ -133,7 +133,7 @@ export function AssignTaskDialog({
           </div>
 
           <div>
-            <label className="label-caps mb-1.5 block" htmlFor="task-note">
+            <label className="label-caps mb-2 block" htmlFor="task-note">
               Note
             </label>
             <Textarea
