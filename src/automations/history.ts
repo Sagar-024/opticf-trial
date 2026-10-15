@@ -45,6 +45,11 @@ function isoAfter(at: number, days: number): string {
   return new Date(at + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** "19 Oct" for the ledger, the way the live flows write dates. */
+function shortDate(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
 export interface SeededHistory {
   runs: StoredRun[];
   tasks: Task[];
@@ -86,11 +91,11 @@ export function buildSeededHistory(input: {
     };
     runs.push(run);
     activity.push(
-      { id: nextId('evt'), at, text: `${briefSkill.name} ran — ${items.length} priorities in review` },
+      { id: nextId('evt'), at, text: `${briefSkill.name} ran, ${items.length} priorities` },
       {
         id: nextId('evt'),
         at: at + 3_600_000,
-        text: `${briefSkill.name} approved — queued for ${run.recipientNames.join(', ')}`,
+        text: `${briefSkill.name} approved, queued for ${run.recipientNames.join(', ')}`,
       },
     );
   }
@@ -108,7 +113,7 @@ export function buildSeededHistory(input: {
       const dueAt = isoAfter(at, 7);
       const task: Task = {
         id: nextId('task'),
-        title: `${jobDef('watch-cl').taskLabel} — ${first.name}`,
+        title: `${jobDef('watch-cl').taskLabel} - ${first.name}`,
         assignee: owner,
         assigneeRole: ownerRole,
         due: dueAt,
@@ -139,20 +144,41 @@ export function buildSeededHistory(input: {
         recipientNames: recipientsOf(clSkill),
       });
       activity.push(
-        { id: nextId('evt'), at, text: `${clSkill.name} ran — ${clHits.length} to review` },
-        { id: nextId('evt'), at: at + 30_000, text: `Task for ${owner}: ${task.title}, due ${dueAt}` },
+        { id: nextId('evt'), at, text: `${clSkill.name} ran, ${clHits.length} flagged` },
+        { id: nextId('evt'), at: at + 30_000, text: `Task for ${owner}: ${task.title}, due ${shortDate(dueAt)}` },
       );
     }
   }
 
-  // Midweek: the training watch ran; one hit still waits for a decision, so
-  // the inbox opens with work in it.
+  // Midweek: the training watch ran; the flagged practice got a task and the
+  // rest were dismissed.
   const trSkill = byJob('watch-training');
   const trHits = input.hitsByJob['watch-training'];
   if (trSkill && trHits && trHits.length > 0) {
     const at = daysAgoAt(3, 9, 15, now);
     const [first, ...rest] = trHits;
     if (first) {
+      const owner = first.owner?.name ?? first.manager;
+      const ownerRole = first.owner?.role ?? 'Practice manager';
+      const dueAt = isoAfter(at, 7);
+      const task: Task = {
+        id: nextId('task'),
+        title: `${jobDef('watch-training').taskLabel} - ${first.name}`,
+        assignee: owner,
+        assigneeRole: ownerRole,
+        due: dueAt,
+        status: 'open',
+        createdAt: at,
+        createdBy: 'Sara Kelly',
+        source: {
+          label: first.name,
+          practiceId: first.practiceId,
+          region: first.region,
+          finding: first.evidence,
+          automationJob: 'watch-training',
+        },
+      };
+      tasks.push(task);
       runs.push({
         id: nextId('run'),
         kind: 'watch',
@@ -161,12 +187,15 @@ export function buildSeededHistory(input: {
         job: 'watch-training',
         at,
         hits: [
-          { ...first, status: 'review' as const },
+          { ...first, status: 'task' as const, taskId: task.id },
           ...rest.map((hit) => ({ ...hit, status: 'discarded' as const })),
         ],
         recipientNames: recipientsOf(trSkill),
       });
-      activity.push({ id: nextId('evt'), at, text: `${trSkill.name} ran — ${trHits.length} to review` });
+      activity.push(
+        { id: nextId('evt'), at, text: `${trSkill.name} ran, ${trHits.length} flagged` },
+        { id: nextId('evt'), at: at + 45_000, text: `Task for ${owner}: ${task.title}, due ${shortDate(dueAt)}` },
+      );
     }
   }
 
@@ -186,7 +215,7 @@ export function buildSeededHistory(input: {
       recipientNames: recipientsOf(rfSkill),
     });
     activity.push(
-      { id: nextId('evt'), at, text: `${rfSkill.name} ran — ${rfHits.length} to review` },
+      { id: nextId('evt'), at, text: `${rfSkill.name} ran, ${rfHits.length} flagged` },
       { id: nextId('evt'), at: at + 120_000, text: `${rfSkill.name} run dismissed` },
     );
   }

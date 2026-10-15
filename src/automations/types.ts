@@ -8,6 +8,8 @@
 
 export type WatchJobKey = 'watch-cl' | 'watch-conversion' | 'watch-revenue' | 'watch-refunds' | 'watch-training';
 export type JobKey = 'brief' | WatchJobKey;
+/** A skill is one of the shipped checks, or a question the reader sets. */
+export type SkillJob = JobKey | 'question';
 
 /** Which recipient groups a skill delivers to. Resolved to real people at run time. */
 export interface RecipientSet {
@@ -19,11 +21,20 @@ export interface RecipientSet {
   mentors: boolean;
 }
 
+/** When a custom question skill runs, in the reader's terms. */
+export interface SkillSchedule {
+  cadence: 'daily' | 'weekly' | 'monthly';
+  /** HH:MM, 24 hour. */
+  time: string;
+  /** For weekly cadences; a weekday name. */
+  weekday?: string;
+}
+
 /** A skill: one piece of recurring work, switchable, with a real trigger. */
 export interface Skill {
   id: string;
   name: string;
-  job: JobKey;
+  job: SkillJob;
   /** Empty means the whole group (all regions). */
   regions: string[];
   recipients: RecipientSet;
@@ -31,6 +42,12 @@ export interface Skill {
   /** The three seeded skills; custom skills carry `undefined`. */
   seeded?: boolean;
   createdAt: number;
+  /** For a custom skill: the question the assistant answers, in the reader's
+      own words. Present only when `job` is 'question'. */
+  question?: string;
+  /** For a custom skill: the clock the reader set. The scheduler honours it
+      when the platform lands; until then it runs when the tab is open. */
+  schedule?: SkillSchedule;
 }
 
 /** A person a run would reach, resolved from the seed directory. */
@@ -103,7 +120,24 @@ export interface StoredWatchRun {
   recipientNames: string[];
 }
 
-export type StoredRun = StoredBriefRun | StoredWatchRun;
+/** A custom skill's run: the assistant's answer, waiting for review. */
+export interface StoredQuestionRun {
+  id: string;
+  kind: 'question';
+  skillId: string;
+  skillName: string;
+  /** The question the skill asked, in the reader's words. */
+  question: string;
+  at: number;
+  status: 'review' | 'approved';
+  /** The answer, exactly as the assistant wrote it. */
+  answer: string;
+  /** Where the figures in the answer came from. */
+  sources: string[];
+  recipientNames: string[];
+}
+
+export type StoredRun = StoredBriefRun | StoredWatchRun | StoredQuestionRun;
 
 /** A commitment: one action, one owner, one review date. */
 export interface AutomationTask {

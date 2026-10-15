@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ListChecks, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,10 +12,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { automationId } from '@/lib/automations-store';
 import { ALL_REGIONS, JOBS, resolveRecipients } from '@/automations/catalog';
 import { cn } from '@/lib/utils';
-import type { JobKey, RecipientSet, Skill } from '@/automations/types';
+import type { JobKey, RecipientSet, Skill, SkillJob } from '@/automations/types';
 
 /**
  * The skill builder: what it watches, where, and who it goes to.
@@ -57,6 +58,28 @@ function namesLabel(names: string[]): string {
   return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
 }
 
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+const CADENCES = ['daily', 'weekly', 'monthly'] as const;
+
+/** "Weekly · Mondays 08:00" for the card. */
+export function scheduleLabel(cadence: 'daily' | 'weekly' | 'monthly', weekday: string, time: string): string {
+  if (cadence === 'daily') return `Daily · ${time}`;
+  if (cadence === 'monthly') return `Monthly · 1st at ${time}`;
+  return `Weekly · ${weekday}s ${time}`;
+}
+
+/** "Every Monday at 08:00" for the one-sentence summary. */
+function scheduleSentence(cadence: 'daily' | 'weekly' | 'monthly', weekday: string, time: string): string {
+  if (cadence === 'daily') return `Every day at ${time}`;
+  if (cadence === 'monthly') return `On the 1st of each month at ${time}`;
+  return `Every ${weekday} at ${time}`;
+}
+
+const CHIP =
+  'rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]';
+const CHIP_ON = 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]';
+const CHIP_OFF = 'border-border text-muted-foreground hover:text-foreground';
+
 function CheckRow({
   checked,
   onToggle,
@@ -75,7 +98,7 @@ function CheckRow({
       aria-checked={checked}
       onClick={onToggle}
       className={cn(
-        'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+        'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]',
         checked
           ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)]'
           : 'border-border hover:bg-accent',
@@ -106,7 +129,12 @@ export function SkillDialog({
   onOpenChange: (open: boolean) => void;
   onCreate: (skill: Skill) => void;
 }) {
-  const [job, setJob] = useState<JobKey>('brief');
+  const [mode, setMode] = useState<'check' | 'question' | null>(null);
+  const [job, setJob] = useState<JobKey | null>(null);
+  const [question, setQuestion] = useState('');
+  const [cadence, setCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [weekday, setWeekday] = useState<string>('Monday');
+  const [time, setTime] = useState('08:00');
   const [name, setName] = useState('');
   const [regions, setRegions] = useState<string[]>([]);
   const [recipients, setRecipients] = useState<RecipientSet>({
@@ -115,23 +143,48 @@ export function SkillDialog({
     mentors: false,
   });
 
-  // Every open starts clean, with the brief as the default job.
+  // Every open starts clean: nothing chosen yet, so nothing wears the accent.
   useEffect(() => {
     if (!open) return;
-    setJob('brief');
+    setMode(null);
+    setJob(null);
+    setQuestion('');
+    setCadence('weekly');
+    setWeekday('Monday');
+    setTime('08:00');
     setName('');
     setRegions([]);
     setRecipients({ group: true, regionLeads: false, mentors: false });
   }, [open]);
 
-  const selectedJob = JOBS.find((def) => def.key === job)!;
-  const scopeable = selectedJob.scopeable;
+  const isQuestion = mode === 'question';
+  const selectedJob = mode === 'check' && job ? JOBS.find((def) => def.key === job)! : null;
+  const scopeable = selectedJob?.scopeable ?? false;
   const hasRecipient = recipients.group || recipients.regionLeads || recipients.mentors;
-  const canCreate = hasRecipient;
+  const canCreate = isQuestion
+    ? question.trim().length > 0 && hasRecipient
+    : Boolean(selectedJob) && hasRecipient;
+  const defaultNames = new Set(JOBS.map((def) => def.name));
+  const recipientNames = namesLabel(resolveRecipients(recipients, regions).map((person) => person.name));
+  const scopeLabel =
+    regions.length === 0 ? 'all five regions' : regions.length === 1 ? regions[0] : `${regions.length} regions`;
+  const recipe = isQuestion
+    ? `${scheduleSentence(cadence, weekday, time)}: ask ${question.trim() ? `"${question.trim()}"` : 'your question'} and queue the answer for ${recipientNames}.`
+    : selectedJob
+      ? job === 'brief'
+        ? `Every Monday at 07:30: compose the five priorities for the whole group, then queue them for ${recipientNames}.`
+        : `Whenever the data changes: check ${scopeLabel} and queue anything it finds for ${recipientNames}.`
+      : '';
 
   function chooseJob(next: JobKey): void {
     const def = JOBS.find((entry) => entry.key === next)!;
+    setMode('check');
     setJob(next);
+    setQuestion('');
+    // The name follows the recipe until the reader types their own.
+    setName((current) =>
+      current.trim() === '' || defaultNames.has(current.trim()) ? def.name : current,
+    );
     // Recipients follow the job's defaults until the user changes them.
     setRecipients(def.defaultRecipients);
     if (!def.scopeable) setRegions([]);
@@ -145,10 +198,27 @@ export function SkillDialog({
 
   function create(): void {
     if (!canCreate) return;
+    if (isQuestion) {
+      const fallback = question.trim().split(/\s+/).slice(0, 6).join(' ') || 'Custom question';
+      onCreate({
+        id: automationId('skill'),
+        name: name.trim() || fallback,
+        job: 'question',
+        question: question.trim(),
+        schedule: { cadence, time, ...(cadence === 'weekly' ? { weekday } : {}) },
+        regions: [],
+        recipients,
+        enabled: true,
+        createdAt: Date.now(),
+      });
+      onOpenChange(false);
+      return;
+    }
+    if (!selectedJob) return;
     onCreate({
       id: automationId('skill'),
       name: name.trim() || selectedJob.name,
-      job,
+      job: selectedJob.key,
       regions: scopeable ? regions : [],
       recipients,
       enabled: true,
@@ -159,20 +229,58 @@ export function SkillDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
+      <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
         <DialogHeader className="relative border-b border-border px-5 pb-4 pr-14 pt-5 text-left">
           <DialogTitle className="text-lg font-semibold tracking-tight">New skill</DialogTitle>
           <DialogDescription className="pt-1">
-            Choose what it watches, where, and who it goes to. Every run lands in review before
-            anything moves.
+            Start from a proven check, or write your own question.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-4">
-          {/* What it does */}
+        <div className="max-h-[62vh] space-y-4 overflow-y-auto px-5 py-4">
+          {/* Two doors, chosen first: a proven check, or your own question. */}
           <section>
-            <p className="label-caps pb-2">What it does</p>
-            <div role="radiogroup" aria-label="What the skill does" className="space-y-1.5">
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <button
+                type="button"
+                aria-pressed={mode === 'check'}
+                onClick={() => setMode('check')}
+                className={cn(
+                  'rounded-lg border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]',
+                  mode === 'check' ? 'border-[color:var(--accent-line)] bg-[var(--accent-soft)]' : 'border-border hover:bg-accent',
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                  <ListChecks className="size-3.5 text-[var(--accent-600)]" />
+                  A proven check
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  Six tested checks over the real data.
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={isQuestion}
+                onClick={() => setMode('question')}
+                className={cn(
+                  'rounded-lg border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]',
+                  isQuestion ? 'border-[color:var(--accent-line)] bg-[var(--accent-soft)]' : 'border-border hover:bg-accent',
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                  <Sparkles className="size-3.5 text-[var(--accent-600)]" />
+                  Your own question
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  Answered by the assistant, into review.
+                </span>
+              </button>
+            </div>
+          </section>
+
+          {mode === 'check' ? (
+            <section>
+              <div role="radiogroup" aria-label="Which check" className="space-y-1.5">
               {JOBS.map((def) => {
                 const selected = def.key === job;
                 return (
@@ -183,7 +291,7 @@ export function SkillDialog({
                     aria-checked={selected}
                     onClick={() => chooseJob(def.key)}
                     className={cn(
-                      'w-full rounded-lg border px-3.5 py-2.5 text-left transition-colors',
+                      'w-full rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]',
                       selected
                         ? 'border-[color:var(--accent-line)] bg-[var(--accent-soft)]'
                         : 'border-border hover:bg-accent',
@@ -201,7 +309,74 @@ export function SkillDialog({
               })}
             </div>
           </section>
+          ) : null}
 
+          {isQuestion ? (
+            <section>
+              <label className="label-caps block pb-2" htmlFor="skill-question">
+                The question
+              </label>
+              <Textarea
+                id="skill-question"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="e.g. Which practices missed their contact lens target this month, and by how much?"
+                rows={3}
+                className="text-sm"
+              />
+            </section>
+          ) : null}
+          {isQuestion ? (
+            <section>
+              <p className="label-caps pb-2">When it runs</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {CADENCES.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    aria-pressed={cadence === option}
+                    onClick={() => setCadence(option)}
+                    className={cn(CHIP, cadence === option ? CHIP_ON : CHIP_OFF)}
+                  >
+                    {option[0].toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {cadence === 'weekly' ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {WEEKDAYS.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      aria-pressed={weekday === day}
+                      onClick={() => setWeekday(day)}
+                      className={cn(CHIP, weekday === day ? CHIP_ON : CHIP_OFF)}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-2.5 flex items-center gap-2">
+                <label htmlFor="skill-time" className="text-xs text-muted-foreground">
+                  At
+                </label>
+                <input
+                  id="skill-time"
+                  type="time"
+                  value={time}
+                  onChange={(event) => setTime(event.target.value)}
+                  className="h-8 rounded-md border border-input bg-transparent px-2 text-xs tabular-nums text-foreground focus-visible:outline-none focus-visible:border-[color:var(--line-strong)]"
+                />
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                Until the platform has a scheduler, it runs when this tab is open.
+              </p>
+            </section>
+          ) : null}
+
+          {selectedJob || isQuestion ? (
+            <>
           {/* Name */}
           <section>
             <label className="label-caps block pb-2" htmlFor="skill-name">
@@ -211,7 +386,7 @@ export function SkillDialog({
               id="skill-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder={selectedJob.name}
+              placeholder={selectedJob?.name ?? 'Name it'}
               autoComplete="off"
             />
           </section>
@@ -230,7 +405,7 @@ export function SkillDialog({
                       aria-pressed={selected}
                       onClick={() => toggleRegion(region)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                        'rounded-full border px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--line-strong)]',
                         selected
                           ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]'
                           : 'border-border text-muted-foreground hover:text-foreground',
@@ -245,11 +420,12 @@ export function SkillDialog({
                 {regions.length === 0 ? 'No region selected checks all five.' : 'Only the selected regions are checked.'}
               </p>
             </section>
-          ) : (
+          ) : isQuestion ? null : (
             <section>
               <p className="label-caps pb-2">Where</p>
-              <p className="text-[11px] text-muted-foreground">
-                The brief always covers the whole group; that is what makes it five priorities.
+              <p className="rounded-lg border border-border px-3.5 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                Whole group, always. The brief exists to compare the regions against each other, so
+                its scope is fixed.
               </p>
             </section>
           )}
@@ -271,12 +447,23 @@ export function SkillDialog({
               ))}
             </div>
           </section>
+
+          {/* The payoff: the skill as one sentence, updating as choices change. */}
+          <p className="rounded-lg border border-[color:var(--accent-line)] bg-[var(--accent-soft)] px-3.5 py-2.5 text-xs leading-relaxed text-foreground/90">
+            {recipe}
+          </p>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Pick a check, or write your own question, then make it yours.
+            </p>
+          )}
         </div>
 
         <DialogFooter className="border-t border-border px-5 py-3.5 sm:justify-between">
-          <p className="max-w-[260px] text-[11px] leading-relaxed text-muted-foreground">
-            Nothing is sent automatically. Approving a run queues it; sending connects when the
-            backend lands.
+          <p className="max-w-[320px] text-[11px] leading-relaxed text-muted-foreground">
+            Sending connects when the backend lands. Until then, every result queues and is
+            labelled.
           </p>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>

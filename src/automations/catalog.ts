@@ -42,7 +42,7 @@ export const JOBS: JobDef[] = [
     kind: 'schedule',
     name: 'Monday brief',
     sentence:
-      'Compose the five priorities for the group from the live practice data and put them up for review.',
+      'Compose the five priorities for the group from the live practice data.',
     cadence: 'Weekly · Mondays 07:30',
     taskLabel: 'Priority review',
     scopeable: false,

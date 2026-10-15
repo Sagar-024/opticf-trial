@@ -1,37 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Banknote,
   Check,
   Glasses,
   GraduationCap,
   Mail,
-  MapPin,
-  MoreHorizontal,
   Plus,
   Receipt,
   Sparkles,
   Trash2,
   TrendingDown,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { SkillDialog } from '@/components/automations/skill-dialog';
+import { SkillDialog, scheduleLabel } from '@/components/automations/skill-dialog';
 import { buildSeededHistory } from '@/automations/history';
 import {
   atLabel,
-  dueDateAfter,
-  dueLabel,
   jobDef,
   nextMondayLabel,
   recipientSummary,
@@ -51,7 +38,6 @@ import {
 import {
   closeTask,
   deleteTask,
-  dueLabel as taskDueLabel,
   importTasks,
   isOverdue,
   listTasks,
@@ -65,9 +51,8 @@ import type {
   AutomationTask,
   JobKey,
   Skill,
-  StoredBriefRun,
-  StoredWatchHit,
-  StoredWatchRun,
+  SkillJob,
+  StoredQuestionRun,
   WatchHit,
   WatchJobKey,
 } from '@/automations/types';
@@ -87,18 +72,17 @@ import { cn } from '@/lib/utils';
  * map uses. No number here is computed on the client.
  */
 
-const EASE = [0.22, 1, 0.36, 1] as const;
-
 const EMPTY_STATE: AutomationsState = { skills: [], runs: [], tasks: [], activity: [] };
 
 /** One recognisable mark per job, so a card is scannable before it is read. */
-const JOB_ICONS: Record<JobKey, LucideIcon> = {
+const JOB_ICONS: Record<SkillJob, LucideIcon> = {
   brief: Mail,
   'watch-cl': Glasses,
   'watch-conversion': TrendingDown,
   'watch-revenue': Banknote,
   'watch-refunds': Receipt,
   'watch-training': GraduationCap,
+  question: Sparkles,
 };
 
 /** An automations task from before the one board, moved across on first open. */
@@ -185,24 +169,6 @@ function IconAction({
   );
 }
 
-/** Signed figures in evidence keep the data red for falls, everything else quiet. */
-function EvidenceText({ text }: { text: string }) {
-  const parts = text.split(/([+-]£[\d,]+(?:\.\d+)?|[+-]\d+(?:\.\d+)?(?:pp|%))/g);
-  return (
-    <>
-      {parts.map((part, index) =>
-        part.startsWith('-') ? (
-          <span key={index} className="font-medium text-[var(--bad)]">
-            {part}
-          </span>
-        ) : (
-          <span key={index}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 function namesLine(names: string[]): string {
   if (names.length === 0) return 'the recipients';
   if (names.length <= 2) return names.join(', ');
@@ -239,6 +205,9 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: () =
 function liveStatus(skill: Skill, check: CheckState | undefined): { text: string; tone: 'quiet' | 'warm' | 'bad' } {
   if (!skill.enabled) return { text: 'Paused', tone: 'quiet' };
   if (skill.job === 'brief') return { text: `Next run ${nextMondayLabel()}`, tone: 'quiet' };
+  if (skill.job === 'question') {
+    return { text: 'Runs when this tab is open, until the scheduler lands', tone: 'quiet' };
+  }
   if (!check || check.status === 'checking') return { text: 'Checking now…', tone: 'quiet' };
   if (check.status === 'error') return { text: 'Check unavailable just now', tone: 'bad' };
   if (check.hits.length === 0) return { text: 'Nothing matching right now', tone: 'quiet' };
@@ -258,13 +227,15 @@ function SkillCard({
   onToggle: (skill: Skill) => void;
   onRemove: (skill: Skill) => void;
 }) {
-  const def = jobDef(skill.job);
+  const def = skill.job === 'question' ? null : jobDef(skill.job);
   const JobIcon = JOB_ICONS[skill.job];
-  const isWatch = skill.job !== 'brief';
+  const isWatch = skill.job !== 'brief' && skill.job !== 'question';
+  const scoped = skill.job !== 'brief';
   const status = liveStatus(skill, check);
 
   return (
     <article
+      data-skill-id={skill.id}
       className={cn(
         'surface-3d flex flex-col rounded-xl border border-[color:var(--line-strong)] bg-card p-5 transition-opacity',
         !skill.enabled && 'opacity-70',
@@ -278,8 +249,15 @@ function SkillCard({
           </div>
           {/* Only a clock schedule needs saying. A watch is always watching,
               and the live count below is what proves it. */}
-          {skill.job === 'brief' ? (
+          {skill.job === 'brief' && def ? (
             <p className="mt-0.5 pl-[22px] text-xs text-muted-foreground">{def.cadence}</p>
+          ) : null}
+          {skill.job === 'question' ? (
+            <p className="mt-0.5 pl-[22px] text-xs text-muted-foreground">
+              {skill.schedule
+                ? scheduleLabel(skill.schedule.cadence, skill.schedule.weekday ?? 'Monday', skill.schedule.time)
+                : 'Weekly'}
+            </p>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -296,12 +274,14 @@ function SkillCard({
         </div>
       </div>
 
-      <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-foreground/75">{def.sentence}</p>
+      <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-foreground/75">
+        {def ? def.sentence : skill.question}
+      </p>
 
       <dl className="mt-4 space-y-2 text-[13px]">
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-muted-foreground">Where</dt>
-          <dd className="truncate text-foreground">{isWatch ? scopeLabel(skill.regions) : 'Whole group'}</dd>
+          <dd className="truncate text-foreground">{scoped ? scopeLabel(skill.regions) : 'Whole group'}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-muted-foreground">Goes to</dt>
@@ -331,349 +311,6 @@ function SkillCard({
         </div>
       </div>
     </article>
-  );
-}
-
-/* ── Inbox: brief run ────────────────────────────────────────────────────── */
-
-function BriefRunCard({
-  run,
-  onApprove,
-  onDiscard,
-  onAsk,
-  onOpenPractice,
-  onOpenRegion,
-}: {
-  run: StoredBriefRun;
-  onApprove: (run: StoredBriefRun) => void;
-  onDiscard: (run: StoredBriefRun) => void;
-  onAsk: (question: string) => void;
-  onOpenPractice: (practiceId: string) => void;
-  onOpenRegion: (region: string) => void;
-}) {
-  const reduce = useReducedMotion();
-  const [open, setOpen] = useState(run.status === 'review');
-
-  return (
-    <motion.article
-      data-anim
-      layout="position"
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE } }}
-      exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, transition: { duration: 0.18, ease: EASE } }}
-      className="surface-3d overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card"
-    >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-5 py-3">
-        <span className="text-xs font-semibold">{run.skillName}</span>
-        <span className="text-xs text-muted-foreground">ran {atLabel(run.at)}</span>
-        {run.status === 'approved' ? <Pill tone="done">Approved</Pill> : <Pill tone="accent">In review</Pill>}
-        <div className="ml-auto flex items-center gap-1.5">
-          {run.status === 'review' ? (
-            <>
-              <Button size="sm" onClick={() => onApprove(run)}>
-                Approve
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => onDiscard(run)}>
-                Discard
-              </Button>
-            </>
-          ) : (
-            <button
-              onClick={() => setOpen((value) => !value)}
-              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {open ? 'Hide' : 'View'}
-            </button>
-          )}
-        </div>
-      </header>
-
-      {open ? (
-        <div className="border-t border-border">
-          <ol className="divide-y divide-border">
-            {run.items.map((item, index) => (
-              <li key={item.id} className="flex items-center gap-4 px-5 py-3">
-                <span className="w-3.5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{item.title}</p>
-                  <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
-                    <EvidenceText text={item.summary} />
-                  </p>
-                </div>
-                <div className="hidden w-[128px] shrink-0 text-right sm:block">
-                  <p className="text-sm font-semibold tabular-nums">{item.metricValue}</p>
-                  <p className="truncate text-xs text-muted-foreground">{item.metricComparison}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <IconAction label={`Ask about ${item.title}`} onClick={() => onAsk(item.question)}>
-                    <Sparkles className="size-3.5" />
-                  </IconAction>
-                  {item.practiceId || item.region ? (
-                    <IconAction
-                      label={`Show on the map`}
-                      onClick={() => {
-                        if (item.practiceId) onOpenPractice(item.practiceId);
-                        else if (item.region) onOpenRegion(item.region);
-                      }}
-                    >
-                      <MapPin className="size-3.5" />
-                    </IconAction>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-          {run.status === 'approved' ? (
-            <p className="border-t border-border px-5 py-2 text-xs text-muted-foreground">
-              Queued for {namesLine(run.recipientNames)}. Sending connects when the backend lands.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </motion.article>
-  );
-}
-
-/* ── Inbox: watch run ────────────────────────────────────────────────────── */
-
-function ReviewHitRow({
-  hit,
-  taskOpen,
-  onApprove,
-  onDismiss,
-  onAsk,
-  onShowMap,
-}: {
-  hit: StoredWatchHit;
-  taskOpen: boolean;
-  onApprove: (hit: StoredWatchHit) => void;
-  onDismiss: (hit: StoredWatchHit) => void;
-  onAsk: (hit: StoredWatchHit) => void;
-  onShowMap: (hit: StoredWatchHit) => void;
-}) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.li
-      data-anim
-      layout="position"
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } }}
-      exit={reduce ? { opacity: 0 } : { opacity: 0, x: 24, transition: { duration: 0.18, ease: EASE } }}
-      className="flex items-center gap-4 px-5 py-3"
-    >
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium">
-          {hit.name}
-          <span className="font-normal text-muted-foreground"> · {hit.region}</span>
-        </p>
-        <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
-          <EvidenceText text={hit.evidence} />
-        </p>
-      </div>
-      <div className="hidden w-[96px] shrink-0 text-right sm:block">
-        <p className="text-sm font-semibold tabular-nums">{hit.headline}</p>
-        <p className="truncate text-xs text-muted-foreground">{hit.caption}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {taskOpen ? (
-          <span className="text-xs text-muted-foreground">Task open</span>
-        ) : (
-          <Button size="sm" onClick={() => onApprove(hit)}>
-            Approve
-          </Button>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 text-muted-foreground"
-              aria-label={`Options for ${hit.name}`}
-            >
-              <MoreHorizontal className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
-            <DropdownMenuItem onSelect={() => onAsk(hit)}>
-              <Sparkles />
-              Ask about this
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onShowMap(hit)}>
-              <MapPin />
-              Show on map
-            </DropdownMenuItem>
-            {!taskOpen ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => onDismiss(hit)}
-                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                >
-                  <X />
-                  Dismiss
-                </DropdownMenuItem>
-              </>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </motion.li>
-  );
-}
-
-function TaskedHitRow({ hit, task }: { hit: StoredWatchHit; task: Task | undefined }) {
-  return (
-    <motion.li
-      data-anim
-      layout="position"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1, transition: { duration: 0.22, ease: EASE } }}
-      className="flex items-center gap-4 px-5 py-3"
-    >
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium">
-          {hit.name}
-          <span className="font-normal text-muted-foreground"> · {hit.region}</span>
-        </p>
-        <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
-          <EvidenceText text={hit.evidence} />
-        </p>
-      </div>
-      <p className="shrink-0 text-xs text-muted-foreground">
-        Task for {hit.owner?.name ?? hit.manager} ·{' '}
-        {task ? (task.status === 'done' ? 'done' : (taskDueLabel(task) ?? 'created')) : 'created'}
-      </p>
-    </motion.li>
-  );
-}
-
-function WatchRunCard({
-  run,
-  tasks,
-  hasOpenTask,
-  onApproveHit,
-  onDismissHit,
-  onApproveAll,
-  onDiscardAll,
-  onAsk,
-  onShowMap,
-}: {
-  run: StoredWatchRun;
-  tasks: Task[];
-  hasOpenTask: (job: StoredWatchRun['job'], practiceId: string) => boolean;
-  onApproveHit: (run: StoredWatchRun, hit: StoredWatchHit) => void;
-  onDismissHit: (run: StoredWatchRun, hit: StoredWatchHit) => void;
-  onApproveAll: (run: StoredWatchRun) => void;
-  onDiscardAll: (run: StoredWatchRun) => void;
-  onAsk: (hit: StoredWatchHit) => void;
-  onShowMap: (hit: StoredWatchHit) => void;
-}) {
-  const reduce = useReducedMotion();
-  const reviewHits = run.hits.filter((hit) => hit.status === 'review');
-  const taskedHits = run.hits.filter((hit) => hit.status === 'task');
-  const visibleHits = run.hits.filter((hit) => hit.status !== 'discarded');
-  const [open, setOpen] = useState(reviewHits.length > 0);
-  const handled = reviewHits.length === 0;
-
-  return (
-    <motion.article
-      data-anim
-      layout="position"
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE } }}
-      exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, transition: { duration: 0.18, ease: EASE } }}
-      className="surface-3d overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card"
-    >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-5 py-3">
-        <span className="text-xs font-semibold">{run.skillName}</span>
-        <span className="text-xs text-muted-foreground">ran {atLabel(run.at)}</span>
-        {handled ? (
-          <Pill tone="done">
-            {taskedHits.length > 0 ? `${taskedHits.length} task${taskedHits.length === 1 ? '' : 's'}` : 'Dismissed'}
-          </Pill>
-        ) : (
-          <Pill tone="accent">{reviewHits.length} to review</Pill>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {!handled ? (
-            <>
-              <Button size="sm" onClick={() => onApproveAll(run)}>
-                Approve all
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 text-muted-foreground"
-                    aria-label={`Options for the ${run.skillName} run`}
-                  >
-                    <MoreHorizontal className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
-                  <DropdownMenuItem
-                    onSelect={() => onDiscardAll(run)}
-                    className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                  >
-                    <X />
-                    Dismiss the rest
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          ) : (
-            <button
-              onClick={() => setOpen((value) => !value)}
-              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {open ? 'Hide' : 'View'}
-            </button>
-          )}
-        </div>
-      </header>
-
-      {open ? (
-        <div className="border-t border-border">
-          {visibleHits.length === 0 ? (
-            <p className="px-5 py-3 text-xs text-muted-foreground">
-              Every hit was dismissed. Nothing was kept from this run.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              <AnimatePresence initial={false}>
-                {visibleHits.map((hit) =>
-                  hit.status === 'review' ? (
-                    <ReviewHitRow
-                      key={hit.practiceId}
-                      hit={hit}
-                      taskOpen={hasOpenTask(run.job, hit.practiceId)}
-                      onApprove={(entry) => onApproveHit(run, entry)}
-                      onDismiss={(entry) => onDismissHit(run, entry)}
-                      onAsk={onAsk}
-                      onShowMap={onShowMap}
-                    />
-                  ) : (
-                    <TaskedHitRow
-                      key={hit.practiceId}
-                      hit={hit}
-                      task={hit.taskId ? tasks.find((task) => task.id === hit.taskId) : undefined}
-                    />
-                  ),
-                )}
-              </AnimatePresence>
-            </ul>
-          )}
-          {taskedHits.length > 0 ? (
-            <p className="border-t border-border px-5 py-2 text-xs text-muted-foreground">
-              Notifications to {namesLine(run.recipientNames)} queue when sending connects.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </motion.article>
   );
 }
 
@@ -763,6 +400,68 @@ export function AutomationsView({
     }
   }
 
+  /**
+   * A custom skill: the assistant answers the saved question through the same
+   * pipeline the Chat tab uses, and the answer queues for the skill's people.
+   * This is a real run; only the schedule waits for the platform.
+   */
+  async function runQuestion(skill: Skill): Promise<void> {
+    if (!skill.question || inFlight.current.has(skill.id)) return;
+    inFlight.current.add(skill.id);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: skill.question }] }),
+      });
+      if (!response.ok || !response.body) return;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let done: { text?: string; sources?: string[] } | null = null;
+      while (true) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const payload = JSON.parse(line) as { type?: string; text?: string; sources?: string[] };
+            if (payload.type === 'done') done = payload;
+          } catch {
+            // A partial line; the next chunk completes it.
+          }
+        }
+      }
+      if (!done?.text) return;
+      const run: StoredQuestionRun = {
+        id: automationId('run'),
+        kind: 'question',
+        skillId: skill.id,
+        skillName: skill.name,
+        question: skill.question,
+        at: Date.now(),
+        // The answer is delivered: it queues for the skill's people the moment
+        // it lands, and the ledger keeps the line.
+        status: 'approved',
+        answer: done.text,
+        sources: done.sources ?? [],
+        recipientNames: resolveRecipients(skill.recipients, skill.regions).map((person) => person.name),
+      };
+      mutateState((current) => ({
+        ...current,
+        runs: [run, ...current.runs],
+        activity: [event(`${skill.name} answered, queued for ${namesLine(run.recipientNames)}`), ...current.activity],
+      }));
+    } catch {
+      // The run simply does not land; the card stays as it was.
+    } finally {
+      inFlight.current.delete(skill.id);
+    }
+  }
+
   const skillsKey = state.skills.map((skill) => `${skill.id}:${skill.enabled ? 1 : 0}:${skill.regions.join('|')}`).join(',');
 
   /**
@@ -794,7 +493,7 @@ export function AutomationsView({
   async function seedHistory(skills: Skill[]): Promise<void> {
     const hitsByJob: Partial<Record<WatchJobKey, WatchHit[]>> = {};
     for (const skill of skills) {
-      if (skill.job === 'brief') continue;
+      if (skill.job === 'brief' || skill.job === 'question') continue;
       const hits = await fetchHits(skill.job, skill.regions);
       if (hits) hitsByJob[skill.job] = hits;
     }
@@ -808,9 +507,15 @@ export function AutomationsView({
   }
 
   // Check every enabled watch once, when the tab opens or the roster changes.
+  // A question skill that has never run gets its first answer the same way.
   useEffect(() => {
     for (const skill of state.skills) {
       if (skill.job === 'brief' || !skill.enabled) continue;
+      if (skill.job === 'question') {
+        const answered = readState().runs.some((run) => run.kind === 'question' && run.skillId === skill.id);
+        if (!answered && !inFlight.current.has(skill.id)) void runQuestion(skill);
+        continue;
+      }
       if (checksRef.current[skill.id]) continue;
       if (inFlight.current.has(skill.id)) continue;
       void checkSkill(skill);
@@ -859,146 +564,23 @@ export function AutomationsView({
   function createSkill(skill: Skill): void {
     mutateState((current) => ({
       ...current,
-      skills: [...current.skills, skill],
+      // Newest first: the skill you just made is the one you look for.
+      skills: [skill, ...current.skills],
       activity: [event(`Skill created: ${skill.name}`), ...current.activity],
     }));
+    // A question skill answers once straight away, so its first result is real
+    // and visible; the weekly schedule is what the platform adds later.
+    if (skill.job === 'question') void runQuestion(skill);
+    // The new skill is the thing to look at: bring it into view.
+    window.setTimeout(() => {
+      document.querySelector(`[data-skill-id="${skill.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
   }
 
   function resetDemo(): void {
     resetAutomations();
     const skills = readState().skills;
     if (skills.length > 0) void seedHistory(skills);
-  }
-
-  /* ── Review actions ────────────────────────────────────────────────────── */
-
-  function approveBrief(run: StoredBriefRun): void {
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.map((entry) =>
-        entry.id === run.id && entry.kind === 'brief' ? { ...entry, status: 'approved' as const } : entry,
-      ),
-      activity: [event(`${run.skillName} approved — queued for ${namesLine(run.recipientNames)}`), ...current.activity],
-    }));
-  }
-
-  function discardBrief(run: StoredBriefRun): void {
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.filter((entry) => entry.id !== run.id),
-      activity: [event(`${run.skillName} discarded`), ...current.activity],
-    }));
-  }
-
-  function hasOpenTask(job: StoredWatchRun['job'], practiceId: string): boolean {
-    return boardTasks.some(
-      (task) =>
-        task.status === 'open' &&
-        task.source?.automationJob === job &&
-        task.source.practiceId === practiceId,
-    );
-  }
-
-  function taskFor(run: StoredWatchRun, hit: StoredWatchHit): Task {
-    const owner = hit.owner?.name ?? hit.manager;
-    return {
-      id: automationId('task'),
-      title: `${jobDef(run.job).taskLabel} — ${hit.name}`,
-      assignee: owner,
-      assigneeRole: hit.owner?.role ?? 'Practice manager',
-      due: dueDateAfter(7),
-      status: 'open',
-      createdAt: Date.now(),
-      createdBy: 'Sara Kelly',
-      source: {
-        label: hit.name,
-        practiceId: hit.practiceId,
-        region: hit.region,
-        finding: hit.evidence,
-        automationJob: run.job,
-      },
-    };
-  }
-
-  function approveHit(run: StoredWatchRun, hit: StoredWatchHit): void {
-    const task = taskFor(run, hit);
-    importTasks([task]);
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.map((entry) =>
-        entry.id === run.id && entry.kind === 'watch'
-          ? {
-              ...entry,
-              hits: entry.hits.map((h) =>
-                h.practiceId === hit.practiceId && h.status === 'review'
-                  ? { ...h, status: 'task' as const, taskId: task.id }
-                  : h,
-              ),
-            }
-          : entry,
-      ),
-      activity: [
-        event(`Task for ${task.assignee}: ${task.title}, ${taskDueLabel(task) ?? 'no date'}`),
-        ...current.activity,
-      ],
-    }));
-  }
-
-  function dismissHit(run: StoredWatchRun, hit: StoredWatchHit): void {
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.map((entry) =>
-        entry.id === run.id && entry.kind === 'watch'
-          ? {
-              ...entry,
-              hits: entry.hits.map((h) =>
-                h.practiceId === hit.practiceId && h.status === 'review'
-                  ? { ...h, status: 'discarded' as const }
-                  : h,
-              ),
-            }
-          : entry,
-      ),
-      activity: [event(`${hit.name} dismissed from ${run.skillName}`), ...current.activity],
-    }));
-  }
-
-  function approveAll(run: StoredWatchRun): void {
-    const candidates = run.hits.filter((hit) => hit.status === 'review' && !hasOpenTask(run.job, hit.practiceId));
-    if (candidates.length === 0) return;
-    const tasks = candidates.map((hit) => taskFor(run, hit));
-    importTasks(tasks);
-    const taskByPractice = new Map(tasks.map((task) => [task.source?.practiceId, task]));
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.map((entry) =>
-        entry.id === run.id && entry.kind === 'watch'
-          ? {
-              ...entry,
-              hits: entry.hits.map((h) => {
-                const task = taskByPractice.get(h.practiceId);
-                return h.status === 'review' && task ? { ...h, status: 'task' as const, taskId: task.id } : h;
-              }),
-            }
-          : entry,
-      ),
-      activity: [
-        event(`${tasks.length} task${tasks.length === 1 ? '' : 's'} created from ${run.skillName}`),
-        ...current.activity,
-      ],
-    }));
-  }
-
-  function discardAll(run: StoredWatchRun): void {
-    mutateState((current) => ({
-      ...current,
-      runs: current.runs.map((entry) =>
-        entry.id === run.id && entry.kind === 'watch'
-          ? { ...entry, hits: entry.hits.map((h) => (h.status === 'review' ? { ...h, status: 'discarded' as const } : h)) }
-          : entry,
-      ),
-      activity: [event(`${run.skillName} run dismissed`), ...current.activity],
-    }));
   }
 
   /* ── Task actions ──────────────────────────────────────────────────────── */
@@ -1023,15 +605,6 @@ export function AutomationsView({
 
   /* ── Derived ───────────────────────────────────────────────────────────── */
 
-  const awaitingReview = useMemo(
-    () =>
-      state.runs.reduce((count, run) => {
-        if (run.kind === 'brief') return count + (run.status === 'review' ? 1 : 0);
-        return count + run.hits.filter((hit) => hit.status === 'review').length;
-      }, 0),
-    [state.runs],
-  );
-
   const lastRunBySkill = useMemo(() => {
     const map = new Map<string, number>();
     for (const run of state.runs) {
@@ -1041,7 +614,12 @@ export function AutomationsView({
     return map;
   }, [state.runs]);
 
-  const enabledCount = state.skills.filter((skill) => skill.enabled).length;
+  const shippedSkills = state.skills.filter((skill) => skill.seeded);
+  const customSkills = state.skills
+    .filter((skill) => !skill.seeded)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const enabledCount = shippedSkills.filter((skill) => skill.enabled).length;
+  const customOn = customSkills.filter((skill) => skill.enabled).length;
   /** Tasks that came from a skill: they live on the one board, shown here too. */
   const automationTasks = boardTasks.filter((task) => Boolean(task.source?.automationJob));
   const openTaskCount = automationTasks.filter((task) => task.status === 'open').length;
@@ -1065,8 +643,8 @@ export function AutomationsView({
           <div>
             <h1 className="text-lg font-semibold">Automations</h1>
             <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-              Skills that watch the real data and prepare the work. Nothing is sent automatically;
-              every run lands in review, and every approval is on the record.
+              Skills that watch the real data and prepare the work. Results queue for the right
+              people, and every run is on the record.
             </p>
           </div>
           <Button size="sm" onClick={() => setDialogOpen(true)}>
@@ -1080,7 +658,7 @@ export function AutomationsView({
           aside={
             <>
               <Pill tone="neutral">
-                {enabledCount} of {state.skills.length} on
+                {enabledCount} of {shippedSkills.length} on
               </Pill>
               {/* Shipped skills pause; custom ones have their own bin. Reset
                   restores the demo state: the shipped four, on, with the
@@ -1095,13 +673,13 @@ export function AutomationsView({
             </>
           }
         >
-          {state.skills.length === 0 ? (
+          {shippedSkills.length === 0 ? (
             <EmptyNote>
-              No skills. Reset brings the four shipped ones back, or build your own with New skill.
+              No shipped checks right now. Reset brings the four back.
             </EmptyNote>
           ) : (
             <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
-              {state.skills.map((skill) => (
+              {shippedSkills.map((skill) => (
                 <SkillCard
                   key={skill.id}
                   skill={skill}
@@ -1115,45 +693,35 @@ export function AutomationsView({
           )}
         </Section>
 
+        {/* Your own skills, apart from the shipped ones: what you asked for,
+            on the clock you set. */}
         <Section
-          title="Review inbox"
-          aside={awaitingReview > 0 ? <Pill tone="accent">{awaitingReview} awaiting review</Pill> : null}
+          title="Your skills"
+          aside={
+            customSkills.length > 0 ? (
+              <Pill tone="neutral">
+                {customOn} of {customSkills.length} on
+              </Pill>
+            ) : undefined
+          }
         >
-          {state.runs.length === 0 ? (
+          {customSkills.length === 0 ? (
             <EmptyNote>
-              Nothing waiting. Run a skill and its output lands here with the real figures, for a
-              person to approve.
+              Nothing of your own yet. New skill lets you write a question in your own words, or
+              start from a check.
             </EmptyNote>
           ) : (
-            <div className="space-y-3">
-              <AnimatePresence initial={false}>
-                {state.runs.map((run) =>
-                  run.kind === 'brief' ? (
-                    <BriefRunCard
-                      key={run.id}
-                      run={run}
-                      onApprove={approveBrief}
-                      onDiscard={discardBrief}
-                      onAsk={ask}
-                      onOpenPractice={openPractice}
-                      onOpenRegion={openRegion}
-                    />
-                  ) : (
-                    <WatchRunCard
-                      key={run.id}
-                      run={run}
-                      tasks={automationTasks}
-                      hasOpenTask={hasOpenTask}
-                      onApproveHit={approveHit}
-                      onDismissHit={dismissHit}
-                      onApproveAll={approveAll}
-                      onDiscardAll={discardAll}
-                      onAsk={(hit) => ask(`Why is ${hit.name} flagged for ${jobDef(run.job).taskLabel.toLowerCase()}? What should I look at first?`)}
-                      onShowMap={(hit) => openPractice(hit.practiceId)}
-                    />
-                  ),
-                )}
-              </AnimatePresence>
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
+              {customSkills.map((skill) => (
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  check={checks[skill.id]}
+                  lastRunAt={lastRunBySkill.get(skill.id) ?? null}
+                  onToggle={toggleSkill}
+                  onRemove={removeSkill}
+                />
+              ))}
             </div>
           )}
         </Section>

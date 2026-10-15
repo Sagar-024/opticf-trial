@@ -55,12 +55,18 @@ describe('seeded history', () => {
     }
   });
 
-  it('leaves work in the inbox: one training hit waits for a decision', () => {
+  it('gives the training watch its task too, so nothing waits for approval', () => {
     const run = seeded.runs.find((entry) => entry.kind === 'watch' && entry.job === 'watch-training');
     expect(run?.kind).toBe('watch');
     if (run?.kind === 'watch') {
-      expect(run.hits.filter((hit) => hit.status === 'review')).toHaveLength(1);
+      const tasked = run.hits.filter((hit) => hit.status === 'task');
+      expect(tasked).toHaveLength(1);
       expect(run.hits.some((hit) => hit.status === 'discarded')).toBe(true);
+      expect(seeded.tasks.some((task) => task.source?.automationJob === 'watch-training')).toBe(true);
+    }
+    // Nothing in the seeded history waits for a person any more.
+    for (const entry of seeded.runs) {
+      if (entry.kind === 'watch') expect(entry.hits.every((hit) => hit.status !== 'review')).toBe(true);
     }
   });
 
