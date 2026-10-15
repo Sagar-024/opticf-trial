@@ -9,6 +9,7 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/chat': ['./data/**/*.csv'],
+    '/api/automations/run': ['./data/**/*.csv'],
     '/': ['./data/**/*.csv'],
   },
 };
