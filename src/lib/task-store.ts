@@ -14,6 +14,8 @@ export interface TaskSource {
   region?: string;
   /** The line that was on screen, e.g. "Revenue -3.1% vs £80,510". */
   finding?: string;
+  /** Set when a skill created this task, e.g. "watch-cl". */
+  automationJob?: string;
 }
 
 export interface Task {
@@ -71,6 +73,24 @@ export function addTask(task: Omit<Task, 'id' | 'createdAt' | 'status'>): Task {
 }
 
 /**
+ * Insert tasks that already carry their ids: the seeded history, and the
+ * one-time migration of tasks that used to live in the automations store.
+ * Existing ids are skipped, so this is safe to call more than once.
+ */
+export function importTasks(tasks: Task[]): void {
+  if (tasks.length === 0) return;
+  const existing = new Set(listTasks().map((task) => task.id));
+  const fresh: Task[] = [];
+  for (const task of tasks) {
+    if (existing.has(task.id)) continue;
+    existing.add(task.id);
+    fresh.push(task);
+  }
+  if (fresh.length === 0) return;
+  write([...fresh, ...listTasks()]);
+}
+
+/**
  * Close a task with the outcome: what changed. The outcome is optional, but
  * it is the point of the record: a done tick says the work stopped, the
  * outcome says whether the problem did.
@@ -96,6 +116,11 @@ export function reopenTask(id: string): void {
       task.id === id ? { ...task, status: 'open' as const, closedAt: undefined } : task,
     ),
   );
+}
+
+/** Move a task's review date; an empty value clears it. */
+export function setTaskDue(id: string, due?: string): void {
+  write(listTasks().map((task) => (task.id === id ? { ...task, due: due || undefined } : task)));
 }
 
 export function deleteTask(id: string): void {

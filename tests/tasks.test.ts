@@ -4,9 +4,11 @@ import {
   closeTask,
   deleteTask,
   dueLabel,
+  importTasks,
   isOverdue,
   listTasks,
   reopenTask,
+  setTaskDue,
   subscribeToTasks,
   today,
 } from '../src/lib/task-store';
@@ -93,6 +95,26 @@ describe('task store', () => {
     const task = addTask(draft);
     deleteTask(task.id);
     expect(listTasks()).toEqual([]);
+  });
+
+  it('imports tasks with their ids and skips ones already there', () => {
+    const seeded = {
+      ...addTask(draft),
+      id: 'task-seeded-1',
+      source: { label: 'Chorlton', practiceId: 'P001', automationJob: 'watch-cl' },
+    };
+    importTasks([seeded, seeded]);
+    expect(listTasks().filter((task) => task.id === 'task-seeded-1')).toHaveLength(1);
+    importTasks([seeded]);
+    expect(listTasks().filter((task) => task.id === 'task-seeded-1')).toHaveLength(1);
+  });
+
+  it('moves a review date, and clears it on an empty value', () => {
+    const task = addTask(draft);
+    setTaskDue(task.id, '2026-10-22');
+    expect(listTasks()[0]?.due).toBe('2026-10-22');
+    setTaskDue(task.id, '');
+    expect(listTasks()[0]?.due).toBeUndefined();
   });
 
   it('notifies subscribers on every write', () => {
