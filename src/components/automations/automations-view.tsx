@@ -2,7 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Check, MapPin, MoreHorizontal, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import {
+  Banknote,
+  Check,
+  Glasses,
+  GraduationCap,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  Plus,
+  Receipt,
+  Sparkles,
+  Trash2,
+  TrendingDown,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,9 +27,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SkillDialog } from '@/components/automations/skill-dialog';
+import { buildSeededHistory } from '@/automations/history';
 import {
   atLabel,
-  composeBrief,
   dueDateAfter,
   dueLabel,
   jobDef,
@@ -33,14 +48,28 @@ import {
   subscribeToAutomations,
   type AutomationsState,
 } from '@/lib/automations-store';
+import {
+  closeTask,
+  deleteTask,
+  dueLabel as taskDueLabel,
+  importTasks,
+  isOverdue,
+  listTasks,
+  reopenTask,
+  setTaskDue,
+  subscribeToTasks,
+  type Task,
+} from '@/lib/task-store';
 import type { TodayPriorities } from '@/data';
 import type {
   AutomationTask,
+  JobKey,
   Skill,
   StoredBriefRun,
   StoredWatchHit,
   StoredWatchRun,
   WatchHit,
+  WatchJobKey,
 } from '@/automations/types';
 import { cn } from '@/lib/utils';
 
@@ -62,6 +91,36 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 
 const EMPTY_STATE: AutomationsState = { skills: [], runs: [], tasks: [], activity: [] };
 
+/** One recognisable mark per job, so a card is scannable before it is read. */
+const JOB_ICONS: Record<JobKey, LucideIcon> = {
+  brief: Mail,
+  'watch-cl': Glasses,
+  'watch-conversion': TrendingDown,
+  'watch-revenue': Banknote,
+  'watch-refunds': Receipt,
+  'watch-training': GraduationCap,
+};
+
+/** An automations task from before the one board, moved across on first open. */
+function migratedTask(task: AutomationTask): Task {
+  return {
+    id: task.id,
+    title: task.title,
+    assignee: task.owner,
+    assigneeRole: task.ownerRole,
+    due: task.dueAt,
+    status: task.done ? 'done' : 'open',
+    createdAt: task.createdAt,
+    createdBy: 'Sara Kelly',
+    source: {
+      label: task.practiceName,
+      practiceId: task.practiceId,
+      region: task.region,
+      automationJob: task.job,
+    },
+  };
+}
+
 type CheckState =
   | { status: 'checking' }
   | { status: 'ok'; hits: WatchHit[]; at: number }
@@ -73,7 +132,7 @@ function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neu
   return (
     <span
       className={cn(
-        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        'rounded-full px-2 py-0.5 text-xs font-medium',
         tone === 'accent' && 'bg-[var(--accent-soft)] text-[var(--accent-text)]',
         tone === 'done' && 'border border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-text)]',
         tone === 'neutral' && 'border border-border text-muted-foreground',
@@ -86,7 +145,7 @@ function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neu
 
 function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="mt-8">
+    <section className="mt-10">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">{title}</h2>
         {aside}
@@ -98,7 +157,7 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
 
 function EmptyNote({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-xl border border-border px-4 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+    <p className="py-1 text-xs leading-relaxed text-muted-foreground">
       {children}
     </p>
   );
@@ -190,35 +249,38 @@ function SkillCard({
   skill,
   check,
   lastRunAt,
-  busy,
   onToggle,
-  onRun,
   onRemove,
 }: {
   skill: Skill;
   check: CheckState | undefined;
   lastRunAt: number | null;
-  busy: boolean;
   onToggle: (skill: Skill) => void;
-  onRun: (skill: Skill) => void;
   onRemove: (skill: Skill) => void;
 }) {
   const def = jobDef(skill.job);
+  const JobIcon = JOB_ICONS[skill.job];
   const isWatch = skill.job !== 'brief';
   const status = liveStatus(skill, check);
-  const runDisabled = !skill.enabled || busy || (isWatch && check?.status === 'checking');
 
   return (
     <article
       className={cn(
-        'flex flex-col rounded-xl border border-border bg-card p-4 transition-opacity',
+        'surface-3d flex flex-col rounded-xl border border-[color:var(--line-strong)] bg-card p-5 transition-opacity',
         !skill.enabled && 'opacity-70',
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold">{skill.name}</h3>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{def.cadence}</p>
+          <div className="flex items-center gap-2">
+            <JobIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <h3 className="truncate text-[15px] font-semibold">{skill.name}</h3>
+          </div>
+          {/* Only a clock schedule needs saying. A watch is always watching,
+              and the live count below is what proves it. */}
+          {skill.job === 'brief' ? (
+            <p className="mt-0.5 pl-[22px] text-xs text-muted-foreground">{def.cadence}</p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {/* Every skill can go, shipped or custom. Reset brings the shipped
@@ -234,30 +296,30 @@ function SkillCard({
         </div>
       </div>
 
-      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{def.sentence}</p>
+      <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-foreground/75">{def.sentence}</p>
 
-      <dl className="mt-3 space-y-1.5 text-[11px]">
+      <dl className="mt-4 space-y-2 text-[13px]">
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-muted-foreground">Where</dt>
-          <dd className="truncate text-foreground/80">{isWatch ? scopeLabel(skill.regions) : 'Whole group'}</dd>
+          <dd className="truncate text-foreground">{isWatch ? scopeLabel(skill.regions) : 'Whole group'}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-muted-foreground">Goes to</dt>
-          <dd className="truncate text-foreground/80" title={resolveRecipients(skill.recipients, skill.regions).map((p) => `${p.name} · ${p.role}`).join('\n')}>
+          <dd className="truncate text-foreground" title={resolveRecipients(skill.recipients, skill.regions).map((p) => `${p.name} · ${p.role}`).join('\n')}>
             {recipientSummary(skill.recipients, skill.regions)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-muted-foreground">Last run</dt>
-          <dd className="truncate tabular-nums text-foreground/80">{lastRunAt ? atLabel(lastRunAt) : 'Never'}</dd>
+          <dd className="truncate tabular-nums text-foreground">{lastRunAt ? atLabel(lastRunAt) : 'Never'}</dd>
         </div>
       </dl>
 
-      <div className="mt-auto pt-3">
-        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+      <div className="mt-auto pt-4">
+        <div className="border-t border-border pt-3">
           <span
             className={cn(
-              'inline-flex items-center gap-1.5 text-[11px]',
+              'inline-flex items-center gap-1.5 text-[13px]',
               status.tone === 'quiet' && 'text-muted-foreground',
               status.tone === 'warm' && 'font-medium text-[var(--accent-text)]',
               status.tone === 'bad' && 'text-[var(--bad)]',
@@ -266,9 +328,6 @@ function SkillCard({
             {status.tone === 'warm' ? <span className="size-1.5 rounded-full bg-[var(--accent-600)]" /> : null}
             {status.text}
           </span>
-          <Button variant="outline" size="sm" onClick={() => onRun(skill)} disabled={runDisabled}>
-            {busy ? 'Running…' : 'Run now'}
-          </Button>
         </div>
       </div>
     </article>
@@ -302,11 +361,11 @@ function BriefRunCard({
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE } }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, transition: { duration: 0.18, ease: EASE } }}
-      className="overflow-hidden rounded-xl border border-border bg-card"
+      className="surface-3d overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card"
     >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2.5">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-5 py-3">
         <span className="text-xs font-semibold">{run.skillName}</span>
-        <span className="text-[11px] text-muted-foreground">ran {atLabel(run.at)}</span>
+        <span className="text-xs text-muted-foreground">ran {atLabel(run.at)}</span>
         {run.status === 'approved' ? <Pill tone="done">Approved</Pill> : <Pill tone="accent">In review</Pill>}
         <div className="ml-auto flex items-center gap-1.5">
           {run.status === 'review' ? (
@@ -321,7 +380,7 @@ function BriefRunCard({
           ) : (
             <button
               onClick={() => setOpen((value) => !value)}
-              className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               {open ? 'Hide' : 'View'}
             </button>
@@ -333,19 +392,19 @@ function BriefRunCard({
         <div className="border-t border-border">
           <ol className="divide-y divide-border">
             {run.items.map((item, index) => (
-              <li key={item.id} className="flex items-center gap-4 px-4 py-2.5">
-                <span className="w-3.5 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+              <li key={item.id} className="flex items-center gap-4 px-5 py-3">
+                <span className="w-3.5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                   {index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{item.title}</p>
-                  <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">
+                  <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
                     <EvidenceText text={item.summary} />
                   </p>
                 </div>
                 <div className="hidden w-[128px] shrink-0 text-right sm:block">
                   <p className="text-sm font-semibold tabular-nums">{item.metricValue}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{item.metricComparison}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.metricComparison}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
                   <IconAction label={`Ask about ${item.title}`} onClick={() => onAsk(item.question)}>
@@ -367,7 +426,7 @@ function BriefRunCard({
             ))}
           </ol>
           {run.status === 'approved' ? (
-            <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+            <p className="border-t border-border px-5 py-2 text-xs text-muted-foreground">
               Queued for {namesLine(run.recipientNames)}. Sending connects when the backend lands.
             </p>
           ) : null}
@@ -402,24 +461,24 @@ function ReviewHitRow({
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, x: 24, transition: { duration: 0.18, ease: EASE } }}
-      className="flex items-center gap-4 px-4 py-2.5"
+      className="flex items-center gap-4 px-5 py-3"
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium">
           {hit.name}
           <span className="font-normal text-muted-foreground"> · {hit.region}</span>
         </p>
-        <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
           <EvidenceText text={hit.evidence} />
         </p>
       </div>
       <div className="hidden w-[96px] shrink-0 text-right sm:block">
         <p className="text-sm font-semibold tabular-nums">{hit.headline}</p>
-        <p className="truncate text-[11px] text-muted-foreground">{hit.caption}</p>
+        <p className="truncate text-xs text-muted-foreground">{hit.caption}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {taskOpen ? (
-          <span className="text-[11px] text-muted-foreground">Task open</span>
+          <span className="text-xs text-muted-foreground">Task open</span>
         ) : (
           <Button size="sm" onClick={() => onApprove(hit)}>
             Approve
@@ -464,26 +523,27 @@ function ReviewHitRow({
   );
 }
 
-function TaskedHitRow({ hit, task }: { hit: StoredWatchHit; task: AutomationTask | undefined }) {
+function TaskedHitRow({ hit, task }: { hit: StoredWatchHit; task: Task | undefined }) {
   return (
     <motion.li
       data-anim
       layout="position"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1, transition: { duration: 0.22, ease: EASE } }}
-      className="flex items-center gap-4 px-4 py-2.5"
+      className="flex items-center gap-4 px-5 py-3"
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium">
           {hit.name}
           <span className="font-normal text-muted-foreground"> · {hit.region}</span>
         </p>
-        <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground">
           <EvidenceText text={hit.evidence} />
         </p>
       </div>
-      <p className="shrink-0 text-[11px] text-muted-foreground">
-        Task for {hit.owner?.name ?? hit.manager} · {task?.done ? 'done' : task ? `due ${dueLabel(task.dueAt)}` : 'created'}
+      <p className="shrink-0 text-xs text-muted-foreground">
+        Task for {hit.owner?.name ?? hit.manager} ·{' '}
+        {task ? (task.status === 'done' ? 'done' : (taskDueLabel(task) ?? 'created')) : 'created'}
       </p>
     </motion.li>
   );
@@ -501,7 +561,7 @@ function WatchRunCard({
   onShowMap,
 }: {
   run: StoredWatchRun;
-  tasks: AutomationTask[];
+  tasks: Task[];
   hasOpenTask: (job: StoredWatchRun['job'], practiceId: string) => boolean;
   onApproveHit: (run: StoredWatchRun, hit: StoredWatchHit) => void;
   onDismissHit: (run: StoredWatchRun, hit: StoredWatchHit) => void;
@@ -524,11 +584,11 @@ function WatchRunCard({
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE } }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, transition: { duration: 0.18, ease: EASE } }}
-      className="overflow-hidden rounded-xl border border-border bg-card"
+      className="surface-3d overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card"
     >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2.5">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-5 py-3">
         <span className="text-xs font-semibold">{run.skillName}</span>
-        <span className="text-[11px] text-muted-foreground">ran {atLabel(run.at)}</span>
+        <span className="text-xs text-muted-foreground">ran {atLabel(run.at)}</span>
         {handled ? (
           <Pill tone="done">
             {taskedHits.length > 0 ? `${taskedHits.length} task${taskedHits.length === 1 ? '' : 's'}` : 'Dismissed'}
@@ -567,7 +627,7 @@ function WatchRunCard({
           ) : (
             <button
               onClick={() => setOpen((value) => !value)}
-              className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               {open ? 'Hide' : 'View'}
             </button>
@@ -578,7 +638,7 @@ function WatchRunCard({
       {open ? (
         <div className="border-t border-border">
           {visibleHits.length === 0 ? (
-            <p className="px-4 py-3 text-[11px] text-muted-foreground">
+            <p className="px-5 py-3 text-xs text-muted-foreground">
               Every hit was dismissed. Nothing was kept from this run.
             </p>
           ) : (
@@ -607,7 +667,7 @@ function WatchRunCard({
             </ul>
           )}
           {taskedHits.length > 0 ? (
-            <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+            <p className="border-t border-border px-5 py-2 text-xs text-muted-foreground">
               Notifications to {namesLine(run.recipientNames)} queue when sending connects.
             </p>
           ) : null}
@@ -632,10 +692,13 @@ export function AutomationsView({
 }) {
   const [state, setState] = useState<AutomationsState>(EMPTY_STATE);
   const [checks, setChecks] = useState<Record<string, CheckState>>({});
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  /** The one task board: every task, including the ones a skill created. */
+  const [boardTasks, setBoardTasks] = useState<Task[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const inFlight = useRef(new Set<string>());
   const checksRef = useRef(checks);
+  /** The seeded history is attempted once per mount, never twice. */
+  const seededRef = useRef(false);
 
   useEffect(() => {
     checksRef.current = checks;
@@ -644,8 +707,30 @@ export function AutomationsView({
   // Hydrate from this browser, then follow every change (including other tabs).
   useEffect(() => {
     ensureSeeded();
-    setState(readState());
-    return subscribeToAutomations(() => setState(readState()));
+    const initial = readState();
+    setState(initial);
+    setBoardTasks(listTasks());
+
+    // One-time migration: tasks that used to live in the automations store
+    // move to the one task board, then leave the old store.
+    if (initial.tasks.length > 0) {
+      importTasks(initial.tasks.map(migratedTask));
+      mutateState((current) => ({ ...current, tasks: [] }));
+    }
+
+    // A fresh browser wakes up with the history a running system would have.
+    if (!seededRef.current && initial.runs.length === 0 && initial.skills.length > 0) {
+      seededRef.current = true;
+      void seedHistory(initial.skills);
+    }
+
+    const unsubAutomations = subscribeToAutomations(() => setState(readState()));
+    const unsubTasks = subscribeToTasks(() => setBoardTasks(listTasks()));
+    return () => {
+      unsubAutomations();
+      unsubTasks();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const ask = onAskAbout ?? (() => undefined);
@@ -679,6 +764,48 @@ export function AutomationsView({
   }
 
   const skillsKey = state.skills.map((skill) => `${skill.id}:${skill.enabled ? 1 : 0}:${skill.regions.join('|')}`).join(',');
+
+  /**
+   * One watch evaluation from the engine route, used only by the seed. It
+   * deliberately does not share the live-check in-flight set: a seed that
+   * waited on the checks would miss whatever they were already fetching.
+   */
+  async function fetchHits(job: WatchJobKey, regions: string[]): Promise<WatchHit[] | null> {
+    try {
+      const response = await fetch('/api/automations/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job, regions }),
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as { hits?: unknown };
+      return Array.isArray(data.hits) ? (data.hits as WatchHit[]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * First open: fill the tab with the history a running system would have.
+   * The runs come from the same live data every real run uses (the brief from
+   * the priorities the page already has, the watches from the engine route),
+   * stamped into the recent past, so nothing here can disagree with the app.
+   */
+  async function seedHistory(skills: Skill[]): Promise<void> {
+    const hitsByJob: Partial<Record<WatchJobKey, WatchHit[]>> = {};
+    for (const skill of skills) {
+      if (skill.job === 'brief') continue;
+      const hits = await fetchHits(skill.job, skill.regions);
+      if (hits) hitsByJob[skill.job] = hits;
+    }
+    const seeded = buildSeededHistory({ skills, today, hitsByJob });
+    importTasks(seeded.tasks);
+    mutateState((current) =>
+      current.runs.length > 0
+        ? current
+        : { ...current, runs: seeded.runs, activity: seeded.activity },
+    );
+  }
 
   // Check every enabled watch once, when the tab opens or the roster changes.
   useEffect(() => {
@@ -737,69 +864,10 @@ export function AutomationsView({
     }));
   }
 
-  function runBrief(skill: Skill): void {
-    const items = composeBrief(today);
-    const run: StoredBriefRun = {
-      id: automationId('run'),
-      kind: 'brief',
-      skillId: skill.id,
-      skillName: skill.name,
-      at: Date.now(),
-      status: 'review',
-      items,
-      recipientNames: resolveRecipients(skill.recipients, skill.regions).map((person) => person.name),
-    };
-    mutateState((current) => ({
-      ...current,
-      runs: [run, ...current.runs],
-      activity: [event(`${skill.name} ran — ${items.length} priorities in review`), ...current.activity],
-    }));
-  }
-
-  async function runWatch(skill: Skill): Promise<void> {
-    if (busy[skill.id]) return;
-    setBusy((current) => ({ ...current, [skill.id]: true }));
-    try {
-      const cached = checksRef.current[skill.id];
-      const fresh = cached && cached.status === 'ok' && Date.now() - cached.at < 60_000;
-      const hits = fresh && cached.status === 'ok' ? cached.hits : await checkSkill(skill);
-      if (!hits) return;
-
-      if (hits.length === 0) {
-        mutateState((current) => ({
-          ...current,
-          activity: [event(`${skill.name} checked — nothing flagged`), ...current.activity],
-        }));
-        return;
-      }
-
-      const run: StoredWatchRun = {
-        id: automationId('run'),
-        kind: 'watch',
-        skillId: skill.id,
-        skillName: skill.name,
-        job: skill.job === 'brief' ? 'watch-cl' : skill.job,
-        at: Date.now(),
-        hits: hits.map((hit) => ({ ...hit, status: 'review' as const })),
-        recipientNames: resolveRecipients(skill.recipients, skill.regions).map((person) => person.name),
-      };
-      mutateState((current) => ({
-        ...current,
-        runs: [run, ...current.runs],
-        activity: [event(`${skill.name} ran — ${hits.length} to review`), ...current.activity],
-      }));
-    } finally {
-      setBusy((current) => {
-        const next = { ...current };
-        delete next[skill.id];
-        return next;
-      });
-    }
-  }
-
-  function runSkill(skill: Skill): void {
-    if (skill.job === 'brief') runBrief(skill);
-    else void runWatch(skill);
+  function resetDemo(): void {
+    resetAutomations();
+    const skills = readState().skills;
+    if (skills.length > 0) void seedHistory(skills);
   }
 
   /* ── Review actions ────────────────────────────────────────────────────── */
@@ -823,27 +891,38 @@ export function AutomationsView({
   }
 
   function hasOpenTask(job: StoredWatchRun['job'], practiceId: string): boolean {
-    return state.tasks.some((task) => !task.done && task.job === job && task.practiceId === practiceId);
+    return boardTasks.some(
+      (task) =>
+        task.status === 'open' &&
+        task.source?.automationJob === job &&
+        task.source.practiceId === practiceId,
+    );
   }
 
-  function taskFor(run: StoredWatchRun, hit: StoredWatchHit): AutomationTask {
+  function taskFor(run: StoredWatchRun, hit: StoredWatchHit): Task {
+    const owner = hit.owner?.name ?? hit.manager;
     return {
       id: automationId('task'),
       title: `${jobDef(run.job).taskLabel} — ${hit.name}`,
-      practiceId: hit.practiceId,
-      practiceName: hit.name,
-      region: hit.region,
-      job: run.job,
-      owner: hit.owner?.name ?? hit.manager,
-      ownerRole: hit.owner?.role ?? 'Practice manager',
-      dueAt: dueDateAfter(7),
+      assignee: owner,
+      assigneeRole: hit.owner?.role ?? 'Practice manager',
+      due: dueDateAfter(7),
+      status: 'open',
       createdAt: Date.now(),
-      done: false,
+      createdBy: 'Sara Kelly',
+      source: {
+        label: hit.name,
+        practiceId: hit.practiceId,
+        region: hit.region,
+        finding: hit.evidence,
+        automationJob: run.job,
+      },
     };
   }
 
   function approveHit(run: StoredWatchRun, hit: StoredWatchHit): void {
     const task = taskFor(run, hit);
+    importTasks([task]);
     mutateState((current) => ({
       ...current,
       runs: current.runs.map((entry) =>
@@ -858,9 +937,8 @@ export function AutomationsView({
             }
           : entry,
       ),
-      tasks: [task, ...current.tasks],
       activity: [
-        event(`Task for ${task.owner}: ${task.title}, due ${dueLabel(task.dueAt)}`),
+        event(`Task for ${task.assignee}: ${task.title}, ${taskDueLabel(task) ?? 'no date'}`),
         ...current.activity,
       ],
     }));
@@ -889,7 +967,8 @@ export function AutomationsView({
     const candidates = run.hits.filter((hit) => hit.status === 'review' && !hasOpenTask(run.job, hit.practiceId));
     if (candidates.length === 0) return;
     const tasks = candidates.map((hit) => taskFor(run, hit));
-    const taskByPractice = new Map(tasks.map((task) => [task.practiceId, task]));
+    importTasks(tasks);
+    const taskByPractice = new Map(tasks.map((task) => [task.source?.practiceId, task]));
     mutateState((current) => ({
       ...current,
       runs: current.runs.map((entry) =>
@@ -903,7 +982,6 @@ export function AutomationsView({
             }
           : entry,
       ),
-      tasks: [...tasks, ...current.tasks],
       activity: [
         event(`${tasks.length} task${tasks.length === 1 ? '' : 's'} created from ${run.skillName}`),
         ...current.activity,
@@ -925,26 +1003,20 @@ export function AutomationsView({
 
   /* ── Task actions ──────────────────────────────────────────────────────── */
 
-  function toggleTask(task: AutomationTask): void {
+  function toggleTask(task: Task): void {
+    const done = task.status === 'done';
+    if (done) reopenTask(task.id);
+    else closeTask(task.id);
     mutateState((current) => ({
       ...current,
-      tasks: current.tasks.map((entry) => (entry.id === task.id ? { ...entry, done: !entry.done } : entry)),
-      activity: [event(task.done ? `Reopened: ${task.title}` : `Done: ${task.title}`), ...current.activity],
+      activity: [event(done ? `Reopened: ${task.title}` : `Done: ${task.title}`), ...current.activity],
     }));
   }
 
-  function setTaskDue(task: AutomationTask, dueAt: string): void {
-    if (!dueAt) return;
+  function removeTask(task: Task): void {
+    deleteTask(task.id);
     mutateState((current) => ({
       ...current,
-      tasks: current.tasks.map((entry) => (entry.id === task.id ? { ...entry, dueAt } : entry)),
-    }));
-  }
-
-  function removeTask(task: AutomationTask): void {
-    mutateState((current) => ({
-      ...current,
-      tasks: current.tasks.filter((entry) => entry.id !== task.id),
       activity: [event(`Task removed: ${task.title}`), ...current.activity],
     }));
   }
@@ -970,20 +1042,25 @@ export function AutomationsView({
   }, [state.runs]);
 
   const enabledCount = state.skills.filter((skill) => skill.enabled).length;
-  const openTaskCount = state.tasks.filter((task) => !task.done).length;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  /** Tasks that came from a skill: they live on the one board, shown here too. */
+  const automationTasks = boardTasks.filter((task) => Boolean(task.source?.automationJob));
+  const openTaskCount = automationTasks.filter((task) => task.status === 'open').length;
   const sortedTasks = useMemo(
     () =>
-      [...state.tasks].sort(
-        (a, b) => Number(a.done) - Number(b.done) || a.dueAt.localeCompare(b.dueAt) || b.createdAt - a.createdAt,
+      [...automationTasks].sort(
+        (a, b) =>
+          Number(a.status === 'done') - Number(b.status === 'done') ||
+          (a.due ?? '9999').localeCompare(b.due ?? '9999') ||
+          b.createdAt - a.createdAt,
       ),
-    [state.tasks],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boardTasks],
   );
 
   return (
     <div className="h-full overflow-y-auto">
       <SkillDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreate={createSkill} />
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-10">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold">Automations</h1>
@@ -1006,11 +1083,12 @@ export function AutomationsView({
                 {enabledCount} of {state.skills.length} on
               </Pill>
               {/* Shipped skills pause; custom ones have their own bin. Reset
-                  is the clean slate: the shipped four, on, empty inbox. */}
+                  restores the demo state: the shipped four, on, with the
+                  recent run history a running system would show. */}
               <button
-                onClick={resetAutomations}
-                title="Back to the four shipped skills, all on, with an empty inbox, tasks and ledger"
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                onClick={resetDemo}
+                title="Back to the demo state: the four shipped skills, all on, with recent run history"
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 Reset
               </button>
@@ -1022,16 +1100,14 @@ export function AutomationsView({
               No skills. Reset brings the four shipped ones back, or build your own with New skill.
             </EmptyNote>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
               {state.skills.map((skill) => (
                 <SkillCard
                   key={skill.id}
                   skill={skill}
                   check={checks[skill.id]}
                   lastRunAt={lastRunBySkill.get(skill.id) ?? null}
-                  busy={Boolean(busy[skill.id])}
                   onToggle={toggleSkill}
-                  onRun={runSkill}
                   onRemove={removeSkill}
                 />
               ))}
@@ -1066,7 +1142,7 @@ export function AutomationsView({
                     <WatchRunCard
                       key={run.id}
                       run={run}
-                      tasks={state.tasks}
+                      tasks={automationTasks}
                       hasOpenTask={hasOpenTask}
                       onApproveHit={approveHit}
                       onDismissHit={dismissHit}
@@ -1083,53 +1159,55 @@ export function AutomationsView({
         </Section>
 
         <Section title="Tasks" aside={openTaskCount > 0 ? <Pill tone="accent">{openTaskCount} open</Pill> : null}>
-          {state.tasks.length === 0 ? (
+          {automationTasks.length === 0 ? (
             <EmptyNote>
               No tasks yet. Approving a hit creates one with the right owner (the practice manager,
               or the regional lead when the guidance requires it) and a review date.
             </EmptyNote>
           ) : (
-            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            <ul className="surface-3d divide-y divide-border overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card">
               {sortedTasks.map((task) => {
-                const overdue = !task.done && task.dueAt < todayIso;
+                const done = task.status === 'done';
+                const overdue = isOverdue(task);
                 return (
-                  <li key={task.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <li key={task.id} className="flex items-center gap-3 px-5 py-2.5">
                     <button
                       type="button"
                       role="checkbox"
-                      aria-checked={task.done}
-                      aria-label={`Mark ${task.title} ${task.done ? 'not done' : 'done'}`}
+                      aria-checked={done}
+                      aria-label={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
                       onClick={() => toggleTask(task)}
                       className={cn(
                         'grid size-4 shrink-0 place-items-center rounded-full border transition-colors',
-                        task.done
+                        done
                           ? 'border-[color:var(--accent-600)] bg-[var(--accent-600)] text-white'
                           : 'border-border hover:border-[color:var(--accent-border)]',
                       )}
                     >
-                      {task.done ? <Check className="size-2.5" /> : null}
+                      {done ? <Check className="size-2.5" /> : null}
                     </button>
                     <div className="min-w-0 flex-1">
                       <p
                         className={cn(
                           'truncate text-xs font-medium',
-                          task.done && 'text-muted-foreground line-through',
+                          done && 'text-muted-foreground line-through',
                         )}
                       >
                         {task.title}
                       </p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {task.owner} · {task.ownerRole} · {task.region}
+                      <p className="truncate text-xs text-muted-foreground">
+                        {task.assignee} · {task.assigneeRole}
+                        {task.source?.region ? ` · ${task.source.region}` : ''}
                       </p>
                     </div>
                     <input
                       type="date"
-                      value={task.dueAt}
-                      onChange={(event) => setTaskDue(task, event.target.value)}
-                      disabled={task.done}
+                      value={task.due ?? ''}
+                      onChange={(event) => setTaskDue(task.id, event.target.value)}
+                      disabled={done}
                       aria-label={`Review date for ${task.title}`}
                       className={cn(
-                        'h-7 shrink-0 rounded-md bg-transparent px-1 text-[11px] tabular-nums outline-none transition-colors hover:bg-accent focus:bg-accent disabled:opacity-50',
+                        'h-7 shrink-0 rounded-md bg-transparent px-1 text-xs tabular-nums outline-none transition-colors hover:bg-accent focus:bg-accent disabled:opacity-50',
                         overdue ? 'font-medium text-[var(--bad)]' : 'text-muted-foreground',
                       )}
                     />
@@ -1154,7 +1232,7 @@ export function AutomationsView({
             state.activity.length > 0 ? (
               <button
                 onClick={clearActivity}
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 Clear
               </button>
@@ -1164,10 +1242,10 @@ export function AutomationsView({
           {state.activity.length === 0 ? (
             <EmptyNote>Runs, approvals and tasks are logged here as they happen.</EmptyNote>
           ) : (
-            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            <ul className="surface-3d divide-y divide-border overflow-hidden rounded-xl border border-[color:var(--line-strong)] bg-card">
               {state.activity.slice(0, 10).map((entry) => (
-                <li key={entry.id} className="flex items-baseline gap-3 px-4 py-2 text-xs">
-                  <span className="w-[92px] shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                <li key={entry.id} className="flex items-baseline gap-3 px-5 py-2.5 text-xs">
+                  <span className="w-[92px] shrink-0 text-xs tabular-nums text-muted-foreground">
                     {atLabel(entry.at)}
                   </span>
                   <span className="min-w-0 flex-1 text-foreground/80">{entry.text}</span>

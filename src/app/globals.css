@@ -179,7 +179,7 @@
     --accent-border: rgba(247, 139, 45, 0.5);
     --accent-ring: rgba(247, 139, 45, 0.32);
 
-    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
     /* On black, borders carry the depth: the elevation shadows are transparent
        (still valid list entries, so the lit top edge in the same stack holds). */
     --shadow-raised: 0 0 #0000;
@@ -208,7 +208,7 @@
     --thumb-depth: inset 0 1px 0 rgba(255, 255, 255, 0.07);
     /* On black the lit edge is the whole depth cue: a whisper of light on top,
        a deeper shade under the bottom edge. */
-    --plate-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.65);
+    --plate-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 -1px 0 rgba(0, 0, 0, 0.65);
     --bar-bevel: inset 0 1.5px 0 rgba(255, 255, 255, 0.34);
     --track: rgba(255, 255, 255, 0.08);
     --track-mark: rgba(255, 255, 255, 0.35);
