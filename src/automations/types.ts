@@ -6,7 +6,7 @@
  * every figure is a pre-formatted string produced by the data layer.
  */
 
-export type WatchJobKey = 'watch-cl' | 'watch-conversion' | 'watch-revenue' | 'watch-training';
+export type WatchJobKey = 'watch-cl' | 'watch-conversion' | 'watch-revenue' | 'watch-refunds' | 'watch-training';
 export type JobKey = 'brief' | WatchJobKey;
 
 /** Which recipient groups a skill delivers to. Resolved to real people at run time. */
@@ -47,6 +47,12 @@ export interface WatchHit {
   region: string;
   /** The practice manager: the person who owns the fix. */
   manager: string;
+  /**
+   * Who owns the fix when it is not the practice manager, e.g. a gesture above
+   * the authority line escalates to the regional lead. Optional so stored runs
+   * from before routing existed still load; the UI falls back to the manager.
+   */
+  owner?: { name: string; role: string };
   /** The evidence sentence from the data layer, already formatted. */
   evidence: string;
   /** The headline figure for this condition, already formatted. */

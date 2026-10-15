@@ -35,11 +35,13 @@ Our version of ChatGPT skills. A **skill** is a saved piece of recurring work:
 
 **job + trigger + scope + recipients + on/off switch + visible run history.**
 
-- **Jobs are real.** Five ship in the catalogue, each wired to a tested
-  engine: the Monday brief (scheduled, from `today_priorities`), and four
+- **Jobs are real.** Six ship in the catalogue, each wired to a tested
+  engine: the Monday brief (scheduled, from `today_priorities`), and five
   watches (triggered, from `rank_attention` signals): contact lens below 90%
   of target, conversion down 2pp month on month, revenue down 3% month on
-  month, required training overdue.
+  month, refunds out of the ordinary (a spike against the practice's own
+  level, a rate past 1% of revenue, or goodwill across the authority line),
+  and required training overdue.
 - **Scope is real.** Watches can be narrowed to any set of the five regions;
   an empty scope means the whole group.
 - **Recipients are real people.** Resolved from the seed directory: group
@@ -83,9 +85,9 @@ free, which is also why runs work with no LLM key configured.
 
 ## Acceptance (two minutes)
 
-1. Open **Automations** on a clean browser. Three skills, all on. Contact
-   lens watch reads **8 matching right now**, training **4** — the planted
-   stories, live.
+1. Open **Automations** on a clean browser. Four skills, all on. Contact
+   lens watch reads **8 matching right now**, training **4**, refunds **3** —
+   the planted stories, live.
 2. **Run now** on the Monday brief. The inbox shows five priorities with real
    figures. Approve: it reads Approved, "Queued for Sara Kelly". Reload: it
    is still there.
@@ -93,13 +95,19 @@ free, which is also why runs work with no LLM key configured.
    Chorlton: a task appears — owner Rachel Doyle, due a week out — the hit row
    reads "Task for Rachel Doyle", Tasks shows 1 open, the ledger has the line.
    Mark it done.
-4. **New skill** → Revenue watch → Where: North West → Create. The card shows
+4. **Run now** on the Refund watch. Three hits: Chorlton (refunds well above
+   its usual level), Plymouth (gestures under the £50 line) and Liverpool
+   (a gesture above it with no regional lead recorded). Approve Liverpool: the
+   task owner is **Emma Lawson, North West lead**, not the practice manager —
+   the guidance decides the owner. Approve Chorlton: Rachel Doyle.
+5. **New skill** → Revenue watch → Where: North West → Create. The card shows
    its own live count scoped to the region, and Goes to Emma Lawson.
-5. Toggle any watch off: Paused, no runs. On again: it checks.
-6. **All 177 tests pass** (`npm test`), including `tests/automations.test.ts`:
+6. Toggle any watch off: Paused, no runs. On again: it checks.
+7. **All 202 tests pass** (`npm test`), including `tests/automations.test.ts`:
    the brief is the Today list verbatim, contact lens finds exactly 8,
-   training overdue exactly 4, region scoping holds, and the route sanitiser
-   rejects the brief, unknown jobs and malformed scopes.
+   training overdue exactly 4, the refund watch finds exactly 3 and routes
+   Liverpool's hit to the regional lead, region scoping holds, and the route
+   sanitiser rejects the brief, unknown jobs and malformed scopes.
 
 ## Where this goes next, in order
 

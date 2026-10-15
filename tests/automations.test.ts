@@ -14,14 +14,14 @@ const dataset = generateDataset();
 const today = today_priorities(dataset);
 
 describe('automation catalogue', () => {
-  it('seeds three skills, every one backed by a real job', () => {
+  it('seeds four skills, every one backed by a real job', () => {
     const skills = defaultSkills();
-    expect(skills).toHaveLength(3);
+    expect(skills).toHaveLength(4);
     for (const skill of skills) {
       expect(JOBS.some((job) => job.key === skill.job)).toBe(true);
       expect(skill.enabled).toBe(true);
     }
-    expect(skills.map((skill) => skill.job)).toEqual(['brief', 'watch-cl', 'watch-training']);
+    expect(skills.map((skill) => skill.job)).toEqual(['brief', 'watch-cl', 'watch-training', 'watch-refunds']);
   });
 
   it('every job carries a sentence, a cadence and recipients', () => {
@@ -98,6 +98,28 @@ describe('watch evaluation', () => {
       expect(hit.headline).toMatch(/^[+-]/);
     }
   });
+
+  it('the refund watch catches the three stories and routes by reason', () => {
+    const hits = evaluateWatch(dataset, 'watch-refunds', []);
+    expect(hits).toHaveLength(3);
+
+    const chorlton = hits.find((hit) => hit.practiceId === 'P001')!;
+    expect(chorlton.evidence).toContain('Refunds');
+    expect(chorlton.headline).toMatch(/£/);
+    expect(chorlton.caption).toContain('of revenue');
+    expect(chorlton.owner).toBeUndefined(); // stays with the practice manager
+
+    const liverpool = hits.find((hit) => hit.practiceId === 'P008')!;
+    expect(liverpool.owner?.name).toBe('Emma Lawson');
+    expect(liverpool.owner?.role).toBe('North West lead');
+    expect(liverpool.evidence).toContain('regional lead');
+  });
+
+  it('scopes the refund watch to a region', () => {
+    const hits = evaluateWatch(dataset, 'watch-refunds', ['South West']);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].practiceId).toBe('P024');
+  });
 });
 
 describe('run request sanitising', () => {
@@ -105,6 +127,7 @@ describe('run request sanitising', () => {
 
   it('accepts a valid request and drops unknown regions', () => {
     expect(sanitizeRunRequest({ job: 'watch-cl' }, regions)).toEqual({ job: 'watch-cl', regions: [] });
+    expect(sanitizeRunRequest({ job: 'watch-refunds' }, regions)).toEqual({ job: 'watch-refunds', regions: [] });
     expect(sanitizeRunRequest({ job: 'watch-cl', regions: ['North West', 'Atlantis'] }, regions)).toEqual({
       job: 'watch-cl',
       regions: ['North West'],

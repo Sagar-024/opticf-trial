@@ -25,9 +25,11 @@ import {
 } from '@/automations/catalog';
 import {
   automationId,
+  clearActivity,
   ensureSeeded,
   mutateState,
   readState,
+  resetAutomations,
   subscribeToAutomations,
   type AutomationsState,
 } from '@/lib/automations-store';
@@ -219,11 +221,11 @@ function SkillCard({
           <p className="mt-0.5 text-[11px] text-muted-foreground">{def.cadence}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {!skill.seeded ? (
-            <IconAction label={`Remove ${skill.name}`} onClick={() => onRemove(skill)}>
-              <Trash2 className="size-3.5" />
-            </IconAction>
-          ) : null}
+          {/* Every skill can go, shipped or custom. Reset brings the shipped
+              four back, so deleting one is never a dead end. */}
+          <IconAction label={`Remove ${skill.name}`} onClick={() => onRemove(skill)}>
+            <Trash2 className="size-3.5" />
+          </IconAction>
           <Switch
             checked={skill.enabled}
             onChange={() => onToggle(skill)}
@@ -481,7 +483,7 @@ function TaskedHitRow({ hit, task }: { hit: StoredWatchHit; task: AutomationTask
         </p>
       </div>
       <p className="shrink-0 text-[11px] text-muted-foreground">
-        Task for {hit.manager} · {task?.done ? 'done' : task ? `due ${dueLabel(task.dueAt)}` : 'created'}
+        Task for {hit.owner?.name ?? hit.manager} · {task?.done ? 'done' : task ? `due ${dueLabel(task.dueAt)}` : 'created'}
       </p>
     </motion.li>
   );
@@ -697,12 +699,13 @@ export function AutomationsView({
 
   function toggleSkill(skill: Skill): void {
     const enabling = !skill.enabled;
+    // Toggling is not work. The ledger keeps runs, approvals and tasks only,
+    // so it reads as a record of what happened, not a log of UI fiddling.
     mutateState((current) => ({
       ...current,
       skills: current.skills.map((entry) =>
         entry.id === skill.id ? { ...entry, enabled: enabling } : entry,
       ),
-      activity: [event(`${skill.name} turned ${enabling ? 'on' : 'off'}`), ...current.activity],
     }));
     if (enabling) {
       setChecks((current) => {
@@ -714,10 +717,10 @@ export function AutomationsView({
   }
 
   function removeSkill(skill: Skill): void {
+    // Removing is admin, not work; it stays out of the ledger too.
     mutateState((current) => ({
       ...current,
       skills: current.skills.filter((entry) => entry.id !== skill.id),
-      activity: [event(`${skill.name} removed`), ...current.activity],
     }));
     setChecks((current) => {
       const next = { ...current };
@@ -831,8 +834,8 @@ export function AutomationsView({
       practiceName: hit.name,
       region: hit.region,
       job: run.job,
-      owner: hit.manager,
-      ownerRole: 'Practice manager',
+      owner: hit.owner?.name ?? hit.manager,
+      ownerRole: hit.owner?.role ?? 'Practice manager',
       dueAt: dueDateAfter(7),
       createdAt: Date.now(),
       done: false,
@@ -998,25 +1001,42 @@ export function AutomationsView({
         <Section
           title="Skills"
           aside={
-            <Pill tone="neutral">
-              {enabledCount} of {state.skills.length} on
-            </Pill>
+            <>
+              <Pill tone="neutral">
+                {enabledCount} of {state.skills.length} on
+              </Pill>
+              {/* Shipped skills pause; custom ones have their own bin. Reset
+                  is the clean slate: the shipped four, on, empty inbox. */}
+              <button
+                onClick={resetAutomations}
+                title="Back to the four shipped skills, all on, with an empty inbox, tasks and ledger"
+                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Reset
+              </button>
+            </>
           }
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            {state.skills.map((skill) => (
-              <SkillCard
-                key={skill.id}
-                skill={skill}
-                check={checks[skill.id]}
-                lastRunAt={lastRunBySkill.get(skill.id) ?? null}
-                busy={Boolean(busy[skill.id])}
-                onToggle={toggleSkill}
-                onRun={runSkill}
-                onRemove={removeSkill}
-              />
-            ))}
-          </div>
+          {state.skills.length === 0 ? (
+            <EmptyNote>
+              No skills. Reset brings the four shipped ones back, or build your own with New skill.
+            </EmptyNote>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {state.skills.map((skill) => (
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  check={checks[skill.id]}
+                  lastRunAt={lastRunBySkill.get(skill.id) ?? null}
+                  busy={Boolean(busy[skill.id])}
+                  onToggle={toggleSkill}
+                  onRun={runSkill}
+                  onRemove={removeSkill}
+                />
+              ))}
+            </div>
+          )}
         </Section>
 
         <Section
@@ -1065,8 +1085,8 @@ export function AutomationsView({
         <Section title="Tasks" aside={openTaskCount > 0 ? <Pill tone="accent">{openTaskCount} open</Pill> : null}>
           {state.tasks.length === 0 ? (
             <EmptyNote>
-              No tasks yet. Approving a hit creates one with the practice manager as owner and a
-              review date.
+              No tasks yet. Approving a hit creates one with the right owner (the practice manager,
+              or the regional lead when the guidance requires it) and a review date.
             </EmptyNote>
           ) : (
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
@@ -1128,7 +1148,19 @@ export function AutomationsView({
           )}
         </Section>
 
-        <Section title="Activity">
+        <Section
+          title="Activity"
+          aside={
+            state.activity.length > 0 ? (
+              <button
+                onClick={clearActivity}
+                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Clear
+              </button>
+            ) : undefined
+          }
+        >
           {state.activity.length === 0 ? (
             <EmptyNote>Runs, approvals and tasks are logged here as they happen.</EmptyNote>
           ) : (

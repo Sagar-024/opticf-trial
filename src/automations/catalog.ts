@@ -81,6 +81,17 @@ export const JOBS: JobDef[] = [
     defaultRecipients: { group: false, regionLeads: true, mentors: false },
   },
   {
+    key: 'watch-refunds',
+    kind: 'watch',
+    name: 'Refund watch',
+    sentence:
+      'Flag any practice whose refunds jump above its usual level, whose refund rate passes 1% of revenue, or whose goodwill crosses the authority line without the regional lead recorded.',
+    cadence: 'When it happens',
+    taskLabel: 'Unusual refunds',
+    scopeable: true,
+    defaultRecipients: { group: false, regionLeads: true, mentors: false },
+  },
+  {
     key: 'watch-training',
     kind: 'watch',
     name: 'Training watch',
@@ -163,7 +174,7 @@ export function scopeLabel(regions: string[]): string {
   return `${regions[0]} + ${regions.length - 1} more`;
 }
 
-/** The three skills the tab starts with, so the page is alive on first open. */
+/** The four skills the tab starts with, so the page is alive on first open. */
 export function defaultSkills(): Skill[] {
   return [
     {
@@ -196,6 +207,16 @@ export function defaultSkills(): Skill[] {
       seeded: true,
       createdAt: 3,
     },
+    {
+      id: 'skill-watch-refunds',
+      name: 'Refund watch',
+      job: 'watch-refunds',
+      regions: [],
+      recipients: { group: false, regionLeads: true, mentors: false },
+      enabled: true,
+      seeded: true,
+      createdAt: 4,
+    },
   ];
 }
 
@@ -203,6 +224,7 @@ export function defaultSkills(): Skill[] {
 const ISSUE_PHRASE: Record<TodayPriorities['items'][number]['issue'], string> = {
   'region-underperformance': 'region underperformance',
   'sales-decline': 'sales decline',
+  refunds: 'unusual refunds',
   'cl-below-target': 'contact lens below target',
   training: 'training incomplete',
 };

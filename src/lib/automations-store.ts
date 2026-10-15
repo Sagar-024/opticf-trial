@@ -91,6 +91,19 @@ export function subscribeToAutomations(onChange: () => void): () => void {
   };
 }
 
+/** Wipe the activity ledger; skills, runs and tasks stay. */
+export function clearActivity(): void {
+  mutateState((state) => ({ ...state, activity: [] }));
+}
+
+/**
+ * Back to a clean slate: the shipped skills, all on, and nothing in the
+ * review inbox, the tasks or the ledger. For a fresh demo run.
+ */
+export function resetAutomations(): void {
+  mutateState(() => ({ ...EMPTY, skills: defaultSkills() }));
+}
+
 export function automationId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
