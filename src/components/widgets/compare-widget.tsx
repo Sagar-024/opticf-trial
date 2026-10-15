@@ -29,7 +29,7 @@ export function CompareWidget({
 
   return (
     <div className="space-y-2">
-      <Card>
+      <Card className="surface-3d">
         <CardContent className="p-4">
           <p className="label-caps">Compare practices</p>
           <PracticeCompare view={widget.view} className="mt-3" />

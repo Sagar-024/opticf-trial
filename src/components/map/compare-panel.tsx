@@ -60,6 +60,7 @@ export function ComparePanel({
   onRemove,
   onClose,
   onOpenBrain,
+  onAsk,
 }: {
   view: CompareView;
   /** Drop a practice from the comparison; under two the page closes. */
@@ -67,6 +68,8 @@ export function ComparePanel({
   /** Back to the map, with the set still lit. */
   onClose: () => void;
   onOpenBrain?: (documentTitle: string) => void;
+  /** Hands the set to the assistant for the written explanation. */
+  onAsk?: (practiceIds: string[]) => void;
 }) {
   const panelRef = useRef<HTMLElement | null>(null);
   const [explainOpen, setExplainOpen] = useState(false);
@@ -115,7 +118,7 @@ export function ComparePanel({
           <motion.div
             variants={fadeUp}
             data-anim
-            className="surface-card mt-5 rounded-xl border border-border bg-card p-5"
+            className="surface-3d mt-5 rounded-xl border border-border bg-card p-5"
           >
             <PracticeCompare view={view} onRemove={onRemove} />
           </motion.div>
@@ -127,6 +130,7 @@ export function ComparePanel({
               open={explainOpen}
               onToggle={() => setExplainOpen((value) => !value)}
               onOpenBrain={onOpenBrain}
+              onAsk={onAsk}
             />
           </motion.div>
 

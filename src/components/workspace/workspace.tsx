@@ -209,11 +209,24 @@ export function Workspace({
     setView('map');
   }
 
-  /** A chat comparison hands its two practices to the map's compare dock. */
+  /** A chat comparison hands its practices to the map's compare picker. */
   function openCompareOnMap(practiceIds: string[]): void {
     setHighlighted([]);
-    setMapIntent({ compare: practiceIds.slice(0, 2), nonce: Date.now() });
+    setMapIntent({ compare: practiceIds.slice(0, 8), nonce: Date.now() });
     setView('map');
+  }
+
+  /**
+   * The map's comparison hands its practices to the assistant: the chat opens
+   * with the question already asked, so the written explanation arrives with
+   * the same card and its prose behind Explain.
+   */
+  function askAboutPractices(practiceIds: string[]): void {
+    const names = practiceIds.map(
+      (id) => mapModel.practices.find((practice) => practice.practiceId === id)?.name ?? id,
+    );
+    setPendingQuestion(`Compare ${names.join(', ')} and explain what stands out.`);
+    setView('chat');
   }
 
   /** Clicking a Brain source in chat opens that document. */
@@ -898,6 +911,7 @@ export function Workspace({
               focus={mapFocus}
               onToggleFocus={() => setMapFocus((value) => !value)}
               onOpenBrain={openBrainDocument}
+              onAsk={askAboutPractices}
             />
           ) : null}
 

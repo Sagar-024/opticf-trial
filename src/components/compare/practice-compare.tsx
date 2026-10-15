@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronDown, FileText, MapPin, X } from 'lucide-react';
+import { Check, ChevronDown, FileText, MapPin, Sparkles, X } from 'lucide-react';
 import { COMPARE_METRIC_IDS, type CompareBar, type CompareRow, type CompareRowId, type CompareSide, type CompareView } from '@/compare/model';
 import { BRAIN_DOCUMENTS } from '@/content/brain';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 /**
@@ -87,17 +88,20 @@ function Bar({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="relative h-[6px] min-w-0 flex-1 rounded-full bg-secondary/70">
+      <div
+        className="track-well relative h-[10px] min-w-0 flex-1 rounded-full"
+        style={{ background: 'var(--track)' }}
+      >
         {bar.targetAt !== undefined ? (
           <span
             aria-hidden
-            className="absolute inset-y-[-3px] w-px bg-[color:var(--line-strong)]"
-            style={{ left: `${bar.targetAt * 100}%` }}
+            className="absolute inset-y-0 w-px rounded-full"
+            style={{ left: `${bar.targetAt * 100}%`, background: 'var(--track-mark)' }}
           />
         ) : null}
         <motion.span
           aria-hidden
-          className="absolute inset-y-0 left-0 rounded-full"
+          className="bar-3d absolute inset-y-0 left-0 rounded-full"
           style={{ background: ink(token) }}
           initial={{ width: 0 }}
           animate={{ width: `${Math.max(bar.fraction * 100, 1)}%` }}
@@ -126,7 +130,7 @@ function MetricRow({ row, index }: { row: CompareRow; index: number }) {
           {row.lead < 0 ? 'level' : `${row.gap} apart`}
         </span>
       </div>
-      <div className="mt-1.5 space-y-[3px]">
+      <div className="mt-2 space-y-[5px]">
         {row.bars.map((bar, barIndex) => (
           <Bar
             key={barIndex}
@@ -172,33 +176,39 @@ export function PracticeCompare({
         {view.sides.map((side, index) => (
           <SideChip key={side.practiceId} side={side} index={index} onRemove={onRemove} />
         ))}
+        {/* Which metrics are under the lens: one quiet pill, not a row of
+            chips repeating the labels below. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="ml-auto inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]">
+              Metrics
+              <ChevronDown className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={4} className="min-w-[200px]">
+            {metricRows.map((row) => {
+              const on = metricIds.includes(row.id);
+              return (
+                <DropdownMenuItem
+                  key={row.id}
+                  onSelect={(event) => {
+                    // Keep the menu open: several metrics are usually switched.
+                    event.preventDefault();
+                    toggleMetric(row.id);
+                  }}
+                >
+                  <Check className={cn('size-4', on ? 'text-[var(--accent-600)]' : 'opacity-0')} />
+                  {row.label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <p className="mt-1.5 text-[11px] text-muted-foreground">
         {verdict(view)} · {view.monthLabel}
       </p>
-
-      {/* Which metrics are under the lens. */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {metricRows.map((row) => {
-          const on = metricIds.includes(row.id);
-          return (
-            <button
-              key={row.id}
-              onClick={() => toggleMetric(row.id)}
-              aria-pressed={on}
-              className={cn(
-                'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
-                on
-                  ? 'border-[color:var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
-                  : 'border-border text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {row.label}
-            </button>
-          );
-        })}
-      </div>
 
       {shown.length === 0 ? (
         <p className="mt-3.5 border-t border-border pt-3.5 text-xs text-muted-foreground">
@@ -262,6 +272,7 @@ export function CompareExplain({
   streaming,
   onOpenBrain,
   onCompareOnMap,
+  onAsk,
   className,
 }: {
   view: CompareView;
@@ -273,6 +284,8 @@ export function CompareExplain({
   streaming?: boolean;
   onOpenBrain?: (documentTitle: string) => void;
   onCompareOnMap?: (practiceIds: string[]) => void;
+  /** Hands the set to the assistant, for the written explanation. */
+  onAsk?: (practiceIds: string[]) => void;
   className?: string;
 }) {
   const blockRef = useRef<HTMLDivElement | null>(null);
@@ -296,32 +309,28 @@ export function CompareExplain({
 
   return (
     <div className={cn(className)}>
-      {/* The section heading, with a hairline running to a balanced oval
-          control on the right. The block below is its own div. */}
-      <div className="flex items-center gap-3">
-        <h3 className="label-caps">Explain</h3>
-        <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
-        <button
-          onClick={onToggle}
-          aria-expanded={open}
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
-        >
-          {streaming ? (
-            <span aria-hidden className="flex items-center gap-[3px]">
-              {[0, 1, 2].map((dot) => (
-                <motion.span
-                  key={dot}
-                  className="size-1 rounded-full bg-[var(--accent-500)]"
-                  animate={{ opacity: [0.25, 1, 0.25] }}
-                  transition={{ duration: 1.1, repeat: Infinity, delay: dot * 0.16, ease: 'easeInOut' }}
-                />
-              ))}
-            </span>
-          ) : null}
-          {open ? 'Hide' : 'Show'}
-          <ChevronDown className={cn('size-3.5 transition-transform duration-200', open && 'rotate-180')} />
-        </button>
-      </div>
+      {/* One compact control: the label and the dropdown live in the same
+          pill, and the block below is its own div. */}
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+      >
+        {streaming ? (
+          <span aria-hidden className="flex items-center gap-[3px]">
+            {[0, 1, 2].map((dot) => (
+              <motion.span
+                key={dot}
+                className="size-1 rounded-full bg-[var(--accent-500)]"
+                animate={{ opacity: [0.25, 1, 0.25] }}
+                transition={{ duration: 1.1, repeat: Infinity, delay: dot * 0.16, ease: 'easeInOut' }}
+              />
+            ))}
+          </span>
+        ) : null}
+        Explain
+        <ChevronDown className={cn('size-4 transition-transform duration-200', open && 'rotate-180')} />
+      </button>
 
       {open ? (
         <motion.div
@@ -330,7 +339,7 @@ export function CompareExplain({
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.26, ease: EASE }}
-          className="mt-3 space-y-3.5 rounded-xl border border-border bg-card p-5"
+          className="surface-3d mt-3 space-y-3.5 rounded-xl border border-border bg-card p-5"
         >
           {notes && notes.length > 0 ? (
             <div className="space-y-2.5">
@@ -430,15 +439,26 @@ export function CompareExplain({
             Hairlines mark each practice&rsquo;s own target, so they can sit in different places on the track.
           </p>
 
-          {onCompareOnMap ? (
-            <button
-              onClick={() => onCompareOnMap(view.sides.map((side) => side.practiceId))}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-accent"
-            >
-              <MapPin className="size-3.5 text-[var(--accent-600)]" />
-              Compare on the map
-            </button>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {onCompareOnMap ? (
+              <button
+                onClick={() => onCompareOnMap(view.sides.map((side) => side.practiceId))}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-accent"
+              >
+                <MapPin className="size-3.5 text-[var(--accent-600)]" />
+                Compare on the map
+              </button>
+            ) : null}
+            {onAsk ? (
+              <button
+                onClick={() => onAsk(view.sides.map((side) => side.practiceId))}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-accent"
+              >
+                <Sparkles className="size-3.5 text-[var(--accent-600)]" />
+                Ask the assistant about these
+              </button>
+            ) : null}
+          </div>
         </motion.div>
       ) : null}
     </div>

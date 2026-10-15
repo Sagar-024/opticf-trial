@@ -769,7 +769,16 @@ export function MapCanvas({
     <div ref={wrapRef} className={cn('relative h-full w-full min-w-0 overflow-hidden', className)}>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '100%', maxWidth: '100%' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          maxWidth: '100%',
+          // The graph dissolves at the bottom edge instead of being cut: a
+          // practice link that runs along the boundary must not read as a
+          // stray dashed line sitting on the focus strip's hairline.
+          maskImage: 'linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%)',
+        }}
         role="img"
         aria-label={`Interactive organisation map. ${label}.`}
         tabIndex={0}

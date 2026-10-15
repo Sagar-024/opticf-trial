@@ -385,7 +385,7 @@ export function PracticePanel({
           </motion.div>
 
           {/* The numbers, at a glance. */}
-          <motion.div variants={fadeUp} data-anim className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <motion.div variants={fadeUp} data-anim className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-6">
             <Metric label="Revenue" value={practice.revenueDisplay} sub={`${practice.revenueAttainmentDisplay} of ${practice.revenueTargetDisplay}`} />
             <Metric label="Revenue change" value={practice.revenueMoMDisplay} sub="vs last month" />
             <Metric label="Conversion" value={practice.conversionDisplay} sub={practice.conversionMoMDisplay} />
@@ -399,6 +399,15 @@ export function PracticePanel({
                   : practice.trainingGaps.length > 0
                     ? `${practice.trainingGaps.length} module${practice.trainingGaps.length === 1 ? '' : 's'} missing`
                     : 'all complete'
+              }
+            />
+            <Metric
+              label="Refunds"
+              value={practice.refundLatestDisplay}
+              sub={
+                practice.refundFlags.length > 0
+                  ? `${practice.refundRateDisplay} of revenue, flagged`
+                  : `${practice.refundRateDisplay} of revenue`
               }
             />
           </motion.div>

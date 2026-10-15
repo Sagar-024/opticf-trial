@@ -59,6 +59,8 @@ export interface MapViewProps {
   onToggleFocus?: () => void;
   /** Opens a linked Brain document from the practice panel. */
   onOpenBrain?: (documentTitle: string) => void;
+  /** Hands a compared set to the assistant, for the written explanation. */
+  onAsk?: (practiceIds: string[]) => void;
 }
 
 function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId {
@@ -84,6 +86,7 @@ export function MapView({
   focus = false,
   onToggleFocus,
   onOpenBrain,
+  onAsk,
 }: MapViewProps) {
   const [lensId, setLensId] = useState<LensId>('region');
   const [region, setRegion] = useState<string | null>(null);
@@ -306,6 +309,7 @@ export function MapView({
           }}
           onClose={() => setCompareOpen(false)}
           onOpenBrain={onOpenBrain}
+          onAsk={onAsk}
         />
       ) : pageOpen && selected ? (
         /* The practice page: the whole area, like a popup. No graph here; the
@@ -627,17 +631,20 @@ export function MapView({
               transition={{ duration: 0.22, ease: EASE }}
               className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4"
             >
-              <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-full border border-border bg-card/95 py-1.5 pl-4 pr-1.5 [box-shadow:var(--shadow-floating)] backdrop-blur">
-                <span className="text-xs font-medium">
+              <div className="pointer-events-auto flex max-w-full items-center gap-3 rounded-full border border-[color:var(--line)] bg-card/95 py-1 pl-3.5 pr-1 [box-shadow:var(--hi),var(--shadow-floating)] backdrop-blur">
+                <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                  <GitCompare className="size-3.5 shrink-0 text-[var(--accent-600)]" />
                   {highlighted.length === 0 ? 'Tap practices to compare' : `${highlighted.length} selected`}
                 </span>
                 {compareNames ? (
-                  <span className="hidden max-w-[360px] truncate text-[11px] text-muted-foreground md:block">
+                  <span className="hidden max-w-[340px] truncate text-[11px] text-foreground/80 md:block">
                     {compareNames}
                   </span>
                 ) : null}
                 {highlighted.length >= COMPARE_MAX ? (
-                  <span className="text-[10px] text-muted-foreground">{COMPARE_MAX} is the most at once</span>
+                  <span className="hidden text-[10px] text-muted-foreground sm:block">
+                    {COMPARE_MAX} is the most at once
+                  </span>
                 ) : null}
                 {highlighted.length > 0 ? (
                   <button
@@ -647,14 +654,20 @@ export function MapView({
                     Clear
                   </button>
                 ) : null}
-                <Button
-                  size="sm"
-                  className="h-7 shrink-0"
+                {/* Disabled is a quiet well, enabled is the app's primary ink:
+                    the shadcn grey never touches this bar. */}
+                <button
                   disabled={highlighted.length < 2}
                   onClick={() => setCompareOpen(true)}
+                  className={cn(
+                    'inline-flex h-7 shrink-0 items-center rounded-full px-3 text-[11px] font-medium transition-[background,color,filter] duration-[160ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]',
+                    highlighted.length < 2
+                      ? 'surface-well bg-secondary text-muted-foreground/70'
+                      : 'bg-primary text-primary-foreground hover:brightness-110',
+                  )}
                 >
                   Compare
-                </Button>
+                </button>
               </div>
             </motion.div>
           ) : null}

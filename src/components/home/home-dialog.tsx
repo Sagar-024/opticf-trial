@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowDown, ArrowUp, ArrowUpRight, ListPlus, MapPin, MoreHorizontal, Sparkles, X } from 'lucide-react';
 import type { TodayPriorities, TodayPriority } from '@/data';
@@ -31,6 +31,7 @@ const MotionAsk = motion.create(Button);
 const ISSUE_LABEL: Record<TodayPriority['issue'], string> = {
   'region-underperformance': 'Region underperformance',
   'sales-decline': 'Sales decline',
+  refunds: 'Unusual refunds',
   'cl-below-target': 'Contact lens below target',
   training: 'Training incomplete',
 };
@@ -270,6 +271,7 @@ export function HomeDialog({
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   /** The priority being turned into a task, if any. */
   const [assignItem, setAssignItem] = useState<TodayPriority | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const priorities = today.items.slice(0, 5);
   const visible = priorities.filter((item) => !dismissedIds.includes(item.id));
 
@@ -290,7 +292,17 @@ export function HomeDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
+      <DialogContent
+        ref={contentRef}
+        onOpenAutoFocus={(event) => {
+          // The briefing is a list, not a form: nothing in it should wear a
+          // focus ring on open. Focus lands on the dialog itself, and Tab
+          // still reaches every control with the ring it deserves.
+          event.preventDefault();
+          contentRef.current?.focus();
+        }}
+        className="max-w-3xl gap-0 overflow-hidden p-0 focus:outline-none"
+      >
         <DialogHeader className="relative mx-[5px] border-b border-border px-[19px] pb-4 pr-14 pt-5 text-left">
           <DialogTitle className="text-lg font-semibold tracking-tight">What needs attention today</DialogTitle>
           <DialogDescription className="pt-1">

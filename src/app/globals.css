@@ -85,6 +85,22 @@
     --shadow-hero: 0 1px 2px rgba(232, 116, 26, 0.12), 0 10px 22px -10px rgba(232, 116, 26, 0.3);
     --send-gradient: linear-gradient(180deg, #ffa04d, #e8741a);
     --well: inset 0 1px 2px rgba(120, 80, 50, 0.07);
+    /* The raised thumb inside a recessed track (the Chat/Map switch): in light
+       a clean white above the track's cream, in dark a clear step above the
+       track. No border: the fill and the lit edge carry the shape. */
+    --thumb: #ffffff;
+    /* One depth cue, not two: a lit top edge only, so the thumb reads as a
+       segmented-control indicator, never as a raised button. */
+    --thumb-depth: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    /* 3D plates. The comparison card and its explanation wear a lit top edge
+       and a shaded bottom edge, so they read as raised plates rather than
+       outlines; bars wear the same lit edge, so they read as solid rods. */
+    --plate-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(120, 80, 50, 0.06);
+    --bar-bevel: inset 0 1.5px 0 rgba(255, 255, 255, 0.5);
+    /* The groove a bar sits in, and the tick that marks its target. Both are
+       visible in both themes: the remaining length must always be readable. */
+    --track: rgba(120, 80, 50, 0.10);
+    --track-mark: rgba(120, 80, 50, 0.38);
 
     /* ---- Tailwind bridge (bare oklch triples) -------------------------- */
     --background: 0.973 0.016 79.35;        /* --bg */
@@ -185,6 +201,17 @@
       0 16px 32px -12px rgba(0, 0, 0, 0.5),
       0 32px 64px -16px rgba(0, 0, 0, 0.6);
     --well: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+    /* On black the thumb is a clear step above the track, never below it. */
+    --thumb: #262626;
+    /* One depth cue, not two: a lit top edge only. The border carries the
+       shape, so a cast shadow would read as a raised button, not a thumb. */
+    --thumb-depth: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    /* On black the lit edge is the whole depth cue: a whisper of light on top,
+       a deeper shade under the bottom edge. */
+    --plate-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.65);
+    --bar-bevel: inset 0 1.5px 0 rgba(255, 255, 255, 0.34);
+    --track: rgba(255, 255, 255, 0.08);
+    --track-mark: rgba(255, 255, 255, 0.35);
     /* --accent-*, --good, --bad, --shadow-send and --send-gradient are kept. */
 
     --background: 0 0 0;                    /* --bg #000000 */
@@ -302,6 +329,21 @@
 
   /* A recessed area, for facts that sit inside a raised card. */
   .surface-well {
+    box-shadow: var(--well);
+  }
+
+  /* The comparison's 3D plate: lit top edge, shaded bottom edge, raised. */
+  .surface-3d {
+    box-shadow: var(--plate-bevel), var(--shadow-raised);
+  }
+
+  /* A solid rod: the lit edge a rounded bar needs to read as three dimensional. */
+  .bar-3d {
+    box-shadow: var(--bar-bevel);
+  }
+
+  /* The groove the bars sit in. */
+  .track-well {
     box-shadow: var(--well);
   }
 
