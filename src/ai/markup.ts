@@ -9,7 +9,9 @@
  *
  * This module does three jobs:
  *   1. `MarkupStreamFilter` removes markup from a token stream, without leaving
- *      half a tag on screen while the rest is still in flight.
+ *      half a tag on screen while the rest is still in flight. It also removes
+ *      the `<<<` / `>>>` quote markers that wrap guidance inside tool results:
+ *      they are machinery for the model and must never reach a reader.
  *   2. `stripModelMarkup` removes markup from a complete string.
  *   3. `extractLeakedToolCalls` recovers the tool call the model was trying to
  *      make, so a leaked call can still be executed instead of becoming an
@@ -126,7 +128,7 @@ export function trimTrailingPartialTag(text: string): string {
   return start === text.length ? text : text.slice(0, start);
 }
 
-export class MarkupStreamFilter {
+class MarkupScanner {
   private buffer = '';
   private inBlock = false;
   private closer: RegExp | null = null;
@@ -205,6 +207,83 @@ export class MarkupStreamFilter {
     this.buffer = '';
     const keep = partialTagStart(held);
     return held.slice(0, keep);
+  }
+}
+
+/**
+ * The `<<<` / `>>>` quote markers wrap guidance inside tool results so the
+ * model can tell quoted data from instructions. They are machinery, not prose:
+ * strip them from the stream without ever flashing a half marker, by holding
+ * back a trailing run of one or two `<` or `>` characters until the next chunk
+ * decides whether a marker completes.
+ */
+class QuoteMarkerFilter {
+  private held = '';
+  private strippedAny = false;
+
+  get stripped(): boolean {
+    return this.strippedAny;
+  }
+
+  get families(): string[] {
+    return this.strippedAny ? ['quote-marker'] : [];
+  }
+
+  push(text: string): string {
+    if (text.length === 0 && this.held.length === 0) return '';
+    const buffer = this.held + text;
+    this.held = '';
+
+    let out = '';
+    let index = 0;
+    while (index < buffer.length) {
+      if (buffer.startsWith('<<<', index) || buffer.startsWith('>>>', index)) {
+        this.strippedAny = true;
+        index += 3;
+        continue;
+      }
+      out += buffer[index];
+      index += 1;
+    }
+
+    const tail = /([<>]{1,2})$/.exec(out);
+    if (tail) {
+      this.held = tail[1];
+      return out.slice(0, out.length - tail[1].length);
+    }
+    return out;
+  }
+
+  flush(): string {
+    const held = this.held;
+    this.held = '';
+    return held;
+  }
+}
+
+/**
+ * The public filter: model markup first, then the quote markers, each chunk
+ * safe on its own boundary.
+ */
+export class MarkupStreamFilter {
+  private scanner = new MarkupScanner();
+  private markers = new QuoteMarkerFilter();
+
+  get stripped(): boolean {
+    return this.scanner.stripped || this.markers.stripped;
+  }
+
+  get families(): string[] {
+    return [...this.scanner.families, ...this.markers.families];
+  }
+
+  push(chunk: string): string {
+    return this.markers.push(this.scanner.push(chunk));
+  }
+
+  flush(): string {
+    const tail = this.markers.push(this.scanner.flush());
+    return tail + this.markers.flush();
   }
 }
 

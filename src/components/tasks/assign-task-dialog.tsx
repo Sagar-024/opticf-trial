@@ -29,6 +29,7 @@ export function AssignTaskDialog({
   open,
   onOpenChange,
   defaultTitle,
+  defaultNote,
   source,
   assignees,
   onAssigned,
@@ -36,6 +37,8 @@ export function AssignTaskDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTitle: string;
+  /** Optional prefill for the note, e.g. the finding the task came from. */
+  defaultNote?: string;
   source?: TaskSource;
   assignees: Assignee[];
   onAssigned?: () => void;
@@ -51,7 +54,7 @@ export function AssignTaskDialog({
     setTitle(defaultTitle);
     setAssigneeName(assignees[0]?.name ?? '');
     setDue('');
-    setNote('');
+    setNote(defaultNote ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

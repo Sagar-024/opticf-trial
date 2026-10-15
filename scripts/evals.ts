@@ -170,6 +170,19 @@ const goldens: EvalCase[] = [
     ],
   },
   {
+    id: 'refunds',
+    title: 'A refunds question is answered with figures and the flags',
+    turns: ['Show me refunds'],
+    check: ([result]) => [
+      ...expect(result.toolCalls.length > 0, 'used at least one tool'),
+      ...expect(usedAny(result, ['query_refunds']), 'queried the refunds ledger'),
+      ...expect(result.widgets.length >= 2, 'returned refunds widgets'),
+      ...expect(/£/.test(result.text), 'quotes a refund figure'),
+      ...expect(!result.flagged, 'not flagged'),
+      ...expect(result.sources.some((source) => source.startsWith('Refunds')), 'cites the refunds ledger'),
+    ],
+  },
+  {
     id: 'latency',
     title: 'Answers stay inside the time budget',
     turns: ['Which practices need the most attention?'],
@@ -241,6 +254,7 @@ function makeMockClient(): LlmClient {
       if (/biggest.*drop|largest.*drop/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'practice', period_a: { from: to, to }, period_b: { from, to: from }, limit: 5 } };
       if (/break that down/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'practice', period_a: { from: to, to }, period_b: { from, to: from } } };
       if (/north west/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'region', period_a: { from: to, to }, period_b: { from, to: from } } };
+      if (/refund|goodwill/.test(q)) return { tool: 'query_refunds', input: {} };
       if (/contact lens/.test(q)) return { tool: 'below_cl_target', input: {} };
       return { tool: 'today_priorities', input: {} };
     };

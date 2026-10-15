@@ -112,6 +112,47 @@ describe('markup stream filter', () => {
   });
 });
 
+describe('quote marker stripping', () => {
+  it('removes the triple angle markers around quoted guidance', () => {
+    const result = stripModelMarkup('It states that <<<record the reason and the amount>>> on the patient record.');
+    expect(result.stripped).toBe(true);
+    expect(result.text).toBe('It states that record the reason and the amount on the patient record.');
+    expect(result.families).toContain('quote-marker');
+  });
+
+  it('removes markers split across chunks without flashing one', () => {
+    const filter = new MarkupStreamFilter();
+    let out = '';
+    out += filter.push('Up to 50 pounds ');
+    out += filter.push('<<');
+    out += filter.push('<Practice managers may authorise');
+    out += filter.push('>>>');
+    out += filter.push(' and above that needs the lead');
+    out += filter.flush();
+    expect(out).toBe('Up to 50 pounds Practice managers may authorise and above that needs the lead');
+    expect(filter.stripped).toBe(true);
+    expect(filter.families).toContain('quote-marker');
+  });
+
+  it('releases a lone angle bracket that never becomes a marker', () => {
+    const filter = new MarkupStreamFilter();
+    let out = filter.push('capacity is 3 <');
+    out += filter.push(' 5');
+    out += filter.flush();
+    expect(out).toBe('capacity is 3 < 5');
+
+    const tail = new MarkupStreamFilter();
+    expect(tail.push('over 95% >') + tail.flush()).toBe('over 95% >');
+  });
+
+  it('leaves ordinary prose with angle brackets and pipes untouched', () => {
+    const prose = '3 < 5 and a | b, no markers here.';
+    const result = stripModelMarkup(prose);
+    expect(result.stripped).toBe(false);
+    expect(result.text).toBe(prose);
+  });
+});
+
 describe('leaked tool call recovery', () => {
   const known = new Set(['query_metrics', 'compare']);
 

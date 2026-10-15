@@ -10,6 +10,7 @@ import {
   Copy,
   Eye,
   FileText,
+  ListPlus,
   Map,
   MapPin,
   PanelRight,
@@ -31,6 +32,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { DashboardPanel } from '@/components/chat/dashboard-panel';
+import { AssignTaskDialog } from '@/components/tasks/assign-task-dialog';
+import { LEADERSHIP } from '@/lib/people';
 import { WaveText } from '@/components/wave-text';
 import { Logo } from '@/components/logo';
 import { forceVisibleIfStuck } from '@/lib/anim';
@@ -122,6 +125,31 @@ function canvasWidgets(widgets: Widget[]): Widget[] {
 function canvasTitle(widgets: Widget[]): string {
   const kpi = widgets.find((widget) => widget.type === 'kpi');
   return kpi?.title ?? widgets[0]?.title ?? 'Dashboard';
+}
+
+/** The question that produced this answer, for a task that starts from it. */
+function questionBefore(list: Turn[], index: number): string {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const turn = list[cursor];
+    if (turn?.role === 'user') return turn.text.trim();
+  }
+  return '';
+}
+
+/** A task title from the question, capped so the board stays readable. */
+function taskTitleFrom(question: string): string {
+  if (!question) return 'Follow up on this answer';
+  return question.length > 90 ? `${question.slice(0, 89)}…` : question;
+}
+
+/** The finding line a task carries: the first line of the answer, capped. */
+function findingLine(text: string): string {
+  const line = text
+    .split('\n')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+  if (!line) return '';
+  return line.length > 160 ? `${line.slice(0, 159)}…` : line;
 }
 
 /**
@@ -238,6 +266,8 @@ export function ChatView({
   const [dangling, setDangling] = useState(false);
   /** The dashboard, open beside the chat, built by the build_dashboard tool. */
   const [dashboard, setDashboard] = useState<{ title: string; widgets: Widget[]; sources: string[] } | null>(null);
+  /** The answer a task is being written from: title and finding prefilled. */
+  const [assignTask, setAssignTask] = useState<{ title: string; note: string } | null>(null);
 
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -834,6 +864,21 @@ export function ChatView({
                               How this answer was built
                             </button>
                           ) : null}
+                          {/* The answer is where the work starts: a task can be
+                              written from it, with the finding attached. */}
+                          {turn.text || turn.widgets.length > 0 ? (
+                            <button
+                              onClick={() =>
+                                setAssignTask({
+                                  title: taskTitleFrom(questionBefore(turns, index)),
+                                  note: findingLine(turn.text),
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                              <ListPlus className="size-3.5" /> Create task
+                            </button>
+                          ) : null}
                           <button
                             onClick={() => void copyTurn(index, turn.text)}
                             className={cn(
@@ -974,6 +1019,16 @@ export function ChatView({
           onClose={() => setDashboard(null)}
         />
       ) : null}
+
+      <AssignTaskDialog
+        open={assignTask !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssignTask(null);
+        }}
+        defaultTitle={assignTask?.title ?? ''}
+        defaultNote={assignTask?.note}
+        assignees={LEADERSHIP}
+      />
     </div>
   );
 }

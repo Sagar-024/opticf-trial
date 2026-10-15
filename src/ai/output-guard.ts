@@ -45,6 +45,7 @@ const DATA_KEYWORDS = [
   'contact lens', 'sales', 'performance', 'attention', 'dashboard', 'compare',
   'why', 'which', 'who', 'show', 'focus', 'mentor', 'brain', 'guidance', 'policy',
   'warranty', 'claims', 'stock', 'campaign', 'trend', 'month', 'group',
+  'refund', 'refunds', 'goodwill',
 ];
 
 /**

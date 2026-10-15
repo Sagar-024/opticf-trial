@@ -37,6 +37,8 @@ function makeMockClient(): LlmClient {
   const pick = (text: string): { tool: string; input: Record<string, unknown> } => {
     const q = text.toLowerCase();
     if (/dashboard/.test(q)) return { tool: 'build_dashboard', input: { metrics: ['revenue', 'conversion'], group_by: 'group' } };
+    if (/unusual refunds|refund.*unusual|which practices.*refunds/.test(q)) return { tool: 'refund_anomalies', input: {} };
+    if (/refund|goodwill/.test(q)) return { tool: 'query_refunds', input: {} };
     if (/revenue drop|biggest/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'practice', period_a: { from: to, to }, period_b: { from, to: from }, limit: 5 } };
     if (/compare.*north west|north west.*other/.test(q)) return { tool: 'compare', input: { metric: 'revenue', group_by: 'region', period_a: { from: to, to }, period_b: { from, to: from } } };
     if (/north west/.test(q)) return { tool: 'query_metrics', input: { regions: ['North West'] } };
@@ -91,6 +93,7 @@ const SCENARIOS: Scenario[] = [
   { title: '6. Most attention + evidence', turns: ['Which practices need the most attention, and what in the data suggests that?'] },
   { title: '7. Show those on the map', turns: ['Which practices need the most attention, and what in the data suggests that?', 'Show those practices on the map.'] },
   { title: '8. Why did North West revenue drop? (must say data does not explain)', turns: ['Why did North West revenue drop?'] },
+  { title: '9. Refunds: the figure, then the stories (+ follow-up)', turns: ['Show me refunds', 'Which practices have unusual refunds?'] },
 ];
 
 const line = '─'.repeat(76);
