@@ -59,41 +59,48 @@ npm run llm:check
 11. Ask **Which practices need the most attention, and what in the data suggests that?**
     - Expect: ranked practices with the evidence behind each score.
 12. Click **Show N practices on the map** on that answer.
+12b. Ask **Show me refunds**.
+    - Expect: the figure (£10,648 across 90 payments in October), the rate (0.3% of revenue), the month-on-month change, net revenue, the reason mix, the six month trend, and a note that three practices look unusual.
+12c. Ask **Which practices have unusual refunds?**
+    - Expect: Chorlton (a spike against its own usual level, and 2.6% of revenue), Liverpool (a goodwill gesture above £50 with no regional lead recorded) and Plymouth (gestures clustered just under £50), each with its evidence and the policy quoted from the Brain.
 
 ### The map (2 minutes)
 
 13. You arrive with the matches highlighted and everything else dimmed. The lens has auto-selected.
-14. Click the **lens** dropdown and step through: Region, Sales, Contact lens, Training, Mentors.
+14. Click the **lens** dropdown and step through: Region, Sales, Refunds, Contact lens, Training, Mentors.
     - Each one recolours, relabels the legend, and offers its own filters.
-15. On **Contact lens**, click **Below 90% of target**. Expect **8 of 40 matching**.
-16. On **Training**, click **Training incomplete**. Expect **9 of 40**. Overdue gives 4.
-17. On **Mentors**, the strip becomes **Mentor portfolios**: four mentors, each with revenue, conversion
+15. On **Refunds**, click **Unusual refunds**. Expect **3 of 40 matching**: Chorlton coral (spiking), Liverpool and Plymouth amber (policy flags). Open Chorlton: the Refunds tile reads £2,007 and the evidence names the spike against its usual £396.
+16. On **Contact lens**, click **Below 90% of target**. Expect **8 of 40 matching**.
+17. On **Training**, click **Training incomplete**. Expect **9 of 40**. Overdue gives 4.
+18. On **Mentors**, the strip becomes **Mentor portfolios**: four mentors, each with revenue, conversion
     change and how many practices grew. Click one to highlight their practices.
-18. Click a single practice node to open the inspector: metrics, six month trend, the evidence behind its
+19. Click a single practice node to open the inspector: metrics (now including refunds), six month trend, the evidence behind its
     attention score, training gaps, context from the Brain, mentor, and buttons to ask about it or highlight it.
-19. Press the **Focus** button in the bottom centre cluster. The shell animates away and the graph fills
+20. Press the **Focus** button in the bottom centre cluster. The shell animates away and the graph fills
     the screen. Press **Esc** or **Exit focus** to come back.
-20. Try **Fit**, the **+ / -** buttons and the scroll wheel to zoom.
+21. Try **Fit**, the **+ / -** buttons and the scroll wheel to zoom.
 
 ### The Brain (1 minute)
 
-21. Go to **Brain**. Six sections, 17 documents, each with an owner, a review date and a scope.
-22. Search **warranty** and open the procedure. Note it says guidance is cited in chat sources.
-23. Click **Edit** on that document, change the wording, and **Save**. The card shows an **Edited** badge.
-24. Go back to **Chat** and ask **How do we handle a frame warranty claim?**
+22. Go to **Brain**. Six sections, 17 documents, each with an owner, a review date and a scope.
+23. Search **warranty** and open the procedure. Note it says guidance is cited in chat sources.
+24. Click **Edit** on that document, change the wording, and **Save**. The card shows an **Edited** badge.
+25. Go back to **Chat** and ask **How do we handle a frame warranty claim?**
     - Expect: it quotes **your edited wording**, and the source chip opens the document in the Brain.
     - That is the proof that guidance edits reach the AI.
-25. Ask **What do we know about Chorlton?**
+26. Ask **What do we know about Chorlton?**
     - Expect: it searches the Brain, returns the **Practice context** documents and cites them.
     - This is the knowledge layer working alongside the numbers, for one specific practice.
-26. Filter **Practice context** and open the Chorlton note. Click the **Chorlton** chip on the card: it
+27. Filter **Practice context** and open the Chorlton note. Click the **Chorlton** chip on the card: it
     jumps to the map with the practice highlighted. On the map, open Chorlton's sheet and the same
     document appears under **Context from the Brain**. Knowledge and place point at each other.
-27. Mark a document as conflicting, ask about it, and it will say clarification is required.
+28. Open the **Refunds and goodwill authority** document under **Finance & Claims**: this is the policy
+    the refund checks quote (managers approve up to £50, above that the regional lead).
+29. Mark a document as conflicting, ask about it, and it will say clarification is required.
 
 ### Light and dark (15 seconds)
 
-28. Toggle the sun/moon in the top bar. Everything follows, including the map canvas and the charts.
+30. Toggle the sun/moon in the top bar. Everything follows, including the map canvas and the charts.
 
 ## 3. If something goes wrong
 
@@ -115,6 +122,9 @@ npm run llm:check
 - The product **refuses to invent causes**. It will say the data does not explain a change.
 - The map and the chat use the **same functions**, so they cannot disagree. There is a test asserting it.
 - Edits in the Brain are **used by the AI** on the next question.
+- **Refunds are tracked end to end**: the chat quotes the figure and the reason mix, the map has a Refunds
+  lens, the Refund watch flags unusual patterns, and an approval routes to the right owner (the regional
+  lead when a gesture crosses the £50 line).
 
 ## 5. Deploying to Vercel, if you want a URL for the call
 

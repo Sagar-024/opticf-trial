@@ -45,7 +45,7 @@ npm run chat:test -- --mock   # same harness with a deterministic mock transport
 
 | Script | What it does |
 |---|---|
-| `npm run seed` | Generate `data/practices.csv`, `monthly_performance.csv`, `training.csv` |
+| `npm run seed` | Generate `data/practices.csv`, `monthly_performance.csv`, `training.csv`, `refunds.csv` |
 | `npm run demo` | Read-only report from the data layer (metrics, attention, Today, checks) |
 | `npm test` | Unit tests for the data layer and Today priorities |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -117,12 +117,13 @@ has a hidden-tab fallback; Dither Kit does not.
 
 ```
 src/
-  domain/types.ts     Data model (Practice, MonthlyPerformance, TrainingRecord, Dataset)
+  domain/types.ts     Data model (Practice, MonthlyPerformance, TrainingRecord, Refund, Dataset)
   lib/                csv, prng, months, format (all pure)
   data/               THE data layer, all numbers originate here
     metrics.ts          query_metrics()
     compare.ts          compare()
     training.ts         training_status()
+    refunds.ts          refund_summary(), refund_findings()
     attention.ts        rank_attention()
     today.ts            today_priorities()  -> the Today tab
   ai/                 Chat layer (server)
@@ -217,11 +218,11 @@ enforced in code and covered by a test or an eval, not left to the prompt.
 
 **Change safety**
 
-- `npm run evals` scores ten golden questions against machine checked assertions: tools used,
+- `npm run evals` scores twelve golden questions against machine checked assertions: tools used,
   figures traceable, sources cited, no invented practice, an honest "the data does not explain this"
-  answer, out of scope refused, both injection cases blocked, a bullet point request coming back as a
-  clean list, latency inside budget. It runs against a deterministic mock, so it is free and belongs in
-  CI (see `.github/workflows/ci.yml`).
+  answer, a refunds answer with the figures and the flags, out of scope refused, both injection cases
+  blocked, a bullet point request coming back as a clean list, latency inside budget. It runs against a
+  deterministic mock, so it is free and belongs in CI (see `.github/workflows/ci.yml`).
 - `npm run evals -- --hostile` points a deliberately cheating model at the pipeline: it answers with no
   tool call, leaks the system prompt, invents a figure after a real tool call, leaks a key and a token,
   leaks a tool call as DSML markup, and answers with unusable markup only. All six must be caught or
@@ -232,4 +233,7 @@ enforced in code and covered by a test or an eval, not left to the prompt.
 
 40 practices across 5 regions, 6 months (`2026-05` to `2026-10`). Planted, test verified stories:
 North West revenue **and** conversion decline, 8 practices below contact-lens target, 9 practices
-with incomplete training (4 overdue).
+with incomplete training (4 overdue), and on refunds: Chorlton's frame-fault spike (£2,007 in October
+against a usual £396), Plymouth's gestures clustered under the £50 line, and Liverpool's gesture above
+it with no regional lead recorded. The refund checks follow the Brain's own policy, so the product can
+hold the group to its published rulebook.
