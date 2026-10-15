@@ -28,6 +28,11 @@ export interface Task {
   createdAt: number;
   createdBy: string;
   source?: TaskSource;
+  /** What changed when it was closed, in the closer's words. The record
+      leadership actually reads: not that it was ticked, but that it moved. */
+  outcome?: string;
+  /** When it was closed; cleared on reopen, so it always means "closed now". */
+  closedAt?: number;
 }
 
 const TASKS_KEY = 'opticf-tasks-v1';
@@ -65,8 +70,32 @@ export function addTask(task: Omit<Task, 'id' | 'createdAt' | 'status'>): Task {
   return full;
 }
 
-export function setTaskStatus(id: string, status: Task['status']): void {
-  write(listTasks().map((task) => (task.id === id ? { ...task, status } : task)));
+/**
+ * Close a task with the outcome: what changed. The outcome is optional, but
+ * it is the point of the record: a done tick says the work stopped, the
+ * outcome says whether the problem did.
+ */
+export function closeTask(id: string, outcome?: string): void {
+  const clean = outcome?.trim();
+  write(
+    listTasks().map((task) =>
+      task.id === id
+        ? { ...task, status: 'done' as const, outcome: clean || undefined, closedAt: Date.now() }
+        : task,
+    ),
+  );
+}
+
+/**
+ * Reopen: the outcome stays as history (a re-close pre-fills it), the close
+ * date goes, because the task is not closed anymore.
+ */
+export function reopenTask(id: string): void {
+  write(
+    listTasks().map((task) =>
+      task.id === id ? { ...task, status: 'open' as const, closedAt: undefined } : task,
+    ),
+  );
 }
 
 export function deleteTask(id: string): void {
