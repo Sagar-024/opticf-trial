@@ -186,10 +186,12 @@ export function Workspace({
     setView('map');
   }
 
-  /** Deep-opens the practice sheet on the map; used by Home's Open Practice. */
-  function openPracticeDetails(practiceId: string): void {
-    setHighlighted([]);
-    setMapIntent({ selectedId: practiceId, nonce: Date.now() });
+  /** Deep-opens the practice sheet on the map; used by Home, Automations and
+      the task source chips. A jump from a task remembers the map as it was,
+      and Back returns to the board. */
+  function openPracticeDetails(practiceId: string, from?: 'tasks'): void {
+    if (from !== 'tasks') setHighlighted([]);
+    setMapIntent({ selectedId: practiceId, nonce: Date.now(), ...(from ? { from } : {}) });
     setView('map');
   }
 
@@ -912,6 +914,7 @@ export function Workspace({
               onToggleFocus={() => setMapFocus((value) => !value)}
               onOpenBrain={openBrainDocument}
               onAsk={askAboutPractices}
+              onBackToTasks={() => setView('tasks')}
             />
           ) : null}
 
@@ -936,7 +939,7 @@ export function Workspace({
           {view === 'tasks' ? (
             <TasksView
               onOpenSource={(source) => {
-                if (source.practiceId) openPracticeDetails(source.practiceId);
+                if (source.practiceId) openPracticeDetails(source.practiceId, 'tasks');
                 else if (source.region) openRegionOnMap(source.region);
               }}
             />

@@ -151,6 +151,7 @@ export function PracticePanel({
   onClose,
   onOpenBrain,
   onCompare,
+  backLabel = 'Map',
 }: {
   practice: MapPractice;
   /** The dataset's latest month, so the trend chart can label itself. */
@@ -159,6 +160,8 @@ export function PracticePanel({
   onOpenBrain?: (documentTitle: string) => void;
   /** Hands this practice to the map's compare picker as the first side. */
   onCompare?: (practiceId: string) => void;
+  /** Where the way back leads, when the panel was opened from somewhere else. */
+  backLabel?: string;
 }) {
   const [thread, setThread] = useState<AskTurn[]>([]);
   const [input, setInput] = useState('');
@@ -349,10 +352,11 @@ export function PracticePanel({
           <motion.div variants={fadeUp} data-anim className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button
               onClick={onClose}
+              aria-label={`Back to ${backLabel.toLowerCase()}`}
               className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" />
-              Map
+              {backLabel}
             </button>
             <h2 className="text-lg font-semibold tracking-tight">{practice.name}</h2>
             <Badge variant="secondary">{practice.region}</Badge>

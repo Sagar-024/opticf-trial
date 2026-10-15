@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CircleDashed, GitCompare, LayoutGrid, List, Maximize2, Minimize2, Search, X } from 'lucide-react';
 import type { MapModel, MapPractice } from '@/data/map-model';
@@ -45,6 +45,8 @@ export interface MapIntent {
   selectedId?: string | null;
   /** Open the compare dock on this pair, e.g. from a chat comparison. */
   compare?: string[];
+  /** Where the practice page was opened from, so the way back returns there. */
+  from?: 'tasks';
   /** Bump to re-apply the same intent. */
   nonce: number;
 }
@@ -61,6 +63,8 @@ export interface MapViewProps {
   onOpenBrain?: (documentTitle: string) => void;
   /** Hands a compared set to the assistant, for the written explanation. */
   onAsk?: (practiceIds: string[]) => void;
+  /** The way back when the page was opened from the task board. */
+  onBackToTasks?: () => void;
 }
 
 function inferLensFromHighlight(practices: MapPractice[], ids: string[]): LensId {
@@ -87,6 +91,7 @@ export function MapView({
   onToggleFocus,
   onOpenBrain,
   onAsk,
+  onBackToTasks,
 }: MapViewProps) {
   const [lensId, setLensId] = useState<LensId>('region');
   const [region, setRegion] = useState<string | null>(null);
@@ -96,6 +101,10 @@ export function MapView({
   const [showList, setShowList] = useState(false);
   /** The practice page is open: the whole area, like a popup over the map. */
   const [pageOpen, setPageOpen] = useState(false);
+  /** The page was opened from the task board: Back returns there, and the map
+      is restored exactly as it was. */
+  const [pageFromTasks, setPageFromTasks] = useState(false);
+  const selectedBeforeJump = useRef<string | null>(null);
   /** Compare mode: node clicks build the pair instead of opening a practice. */
   const [compareMode, setCompareMode] = useState(false);
   /** The comparison page itself, over the map, exactly like the practice page. */
@@ -241,6 +250,13 @@ export function MapView({
       onHighlightChange(intent.compare.slice(0, COMPARE_MAX));
     }
     setRegion(intent.region ?? null);
+    if (intent.from === 'tasks') {
+      // Remember the map exactly as it was, so Back can restore it.
+      selectedBeforeJump.current = selectedId;
+      setPageFromTasks(true);
+    } else {
+      setPageFromTasks(false);
+    }
     setSelectedId(intent.selectedId ?? null);
     setPageOpen(Boolean(intent.selectedId));
     onIntentHandled?.();
@@ -318,7 +334,17 @@ export function MapView({
           key={selected.practiceId}
           practice={selected}
           month={model.month}
-          onClose={() => setPageOpen(false)}
+          backLabel={pageFromTasks ? 'Tasks' : 'Map'}
+          onClose={() => {
+            setPageOpen(false);
+            if (pageFromTasks) {
+              // A jump from the board: the map goes back exactly as it was,
+              // then the reader returns to the tasks they came from.
+              setSelectedId(selectedBeforeJump.current);
+              setPageFromTasks(false);
+              onBackToTasks?.();
+            }
+          }}
           onOpenBrain={onOpenBrain}
           onCompare={(practiceId) => {
             setPageOpen(false);
