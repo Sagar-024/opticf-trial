@@ -11,7 +11,7 @@ import {
 import { checkRateLimit, resetRateLimit } from '../src/ai/rate-limit';
 import { allowedSet, findUnsupportedNumbers } from '../src/ai/guard';
 import { getTool } from '../src/ai/tools';
-import { runChat } from '../src/ai/chat';
+import { isProductQuestion, runChat } from '../src/ai/chat';
 import type { LlmClient, LlmResponse } from '../src/ai/llm';
 import { generateDataset } from '../src/seed/generate';
 
@@ -288,5 +288,63 @@ describe('chat orchestration guards', () => {
     expect(result.text).not.toContain('DSML');
     expect(result.text).not.toContain('query_metrics');
     expect(result.text).toContain('could not put an answer together');
+  });
+
+  it('gives a question about the product itself no tools, so it cannot re-run a comparison', async () => {
+    let offered: string[] = [];
+    const client: LlmClient = {
+      chat: async () => empty(),
+      stream: async (params, onDelta) => {
+        offered = params.tools.map((definition) => definition.function.name);
+        const text = 'No, every figure is computed from the group data when you ask.';
+        onDelta(text);
+        return { text, toolCalls: [], finishReason: 'stop' };
+      },
+    };
+    // The exact state from the bug report: a comparison just ran, so the
+    // context still points at the two practices.
+    const context = {
+      metric: 'comparison',
+      group_by: 'practice',
+      filters: { practiceIds: ['P034', 'P005'] },
+      period: { month: '2026-10' },
+      practiceIds: ['P034', 'P005'],
+    };
+    const result = await runChat({ messages: ask('is this hardcoded ans ??'), context, client, model: 'mock' });
+    expect(offered).toEqual([]);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.widgets).toEqual([]);
+    expect(result.flagged).toBeFalsy();
+    expect(result.text).toContain('computed from the group data');
+  });
+
+  it('still offers the full tool set to a data question', async () => {
+    let offered: string[] = [];
+    let rounds = 0;
+    const client: LlmClient = {
+      chat: async () => empty(),
+      stream: async (params, onDelta) => {
+        rounds += 1;
+        if (rounds === 1) offered = params.tools.map((definition) => definition.function.name);
+        const text = 'Here is the position.';
+        onDelta(text);
+        return { text, toolCalls: [], finishReason: 'stop' };
+      },
+    };
+    await runChat({ messages: ask('What was revenue this month?'), client, model: 'mock' });
+    expect(offered).toContain('query_metrics');
+    expect(offered.length).toBeGreaterThan(5);
+  });
+
+  it('classifies product questions without swallowing data questions', () => {
+    expect(isProductQuestion('is this hardcoded ans ??')).toBe(true);
+    expect(isProductQuestion('where do these numbers come from?')).toBe(true);
+    expect(isProductQuestion('are these figures real?')).toBe(true);
+    expect(isProductQuestion('is this live?')).toBe(true);
+    expect(isProductQuestion('how does this work?')).toBe(true);
+    expect(isProductQuestion('What was revenue this month?')).toBe(false);
+    expect(isProductQuestion('Compare Edinburgh and Wilmslow')).toBe(false);
+    expect(isProductQuestion('Show me live data for October')).toBe(false);
+    expect(isProductQuestion('Which region has the worst conversion?')).toBe(false);
   });
 });

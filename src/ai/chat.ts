@@ -131,6 +131,30 @@ function isRefinement(message: string): boolean {
   return /\b(only|just|filter|narrow|those|them|that|break\b.*\bdown|by practice|by region|drill|on the map|map)\b/i.test(message);
 }
 
+/**
+ * Questions about the product itself, not the group's data: "is this
+ * hardcoded", "where do these numbers come from", "how does this work".
+ *
+ * These are answered in prose, so the request is given no tools at all. The
+ * model cannot re-run a tool to prove a point, and a question that is not
+ * about the data can never re-emit a widget from the previous turn. Patterns
+ * are kept narrow on purpose: a data question must never lose its tools.
+ */
+const PRODUCT_QUESTION_PATTERNS: RegExp[] = [
+  /\bhard[- ]?coded\b/i,
+  /\bis (this|it|that) live\b/i,
+  /\bwhere (do|does) (the|these|those|your|its) (numbers|figures|data|values)\b/i,
+  /\b(are|is) (these|this|those)( numbers| figures| values| data)? (real|fake|mock|made ?up|invented)\b/i,
+  /\bhow does (this|the app|the product|optific) work\b/i,
+  /\bwhat model\b/i,
+  /\bwhich (ai|model)\b/i,
+  /\bare you (an? )?(ai|bot|human|robot)\b/i,
+];
+
+export function isProductQuestion(message: string): boolean {
+  return PRODUCT_QUESTION_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 /** Restrict the tool list for refuements so discovery tools cannot re-run. */
 function gateTools(message: string, context: ChatContext | null): LlmToolDefinition[] {
   const all = llmToolDefinitions();
@@ -156,6 +180,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 
   const lastUser = [...input.messages].reverse().find((m) => m.role === 'user');
   logChat({ event: 'chat.start', ...(input.traceId !== undefined ? { traceId: input.traceId } : {}) }, lastUser?.content);
+  const question = lastUser?.content ?? '';
   const system = buildSystemPrompt(latest, input.context ?? null, months[0]);
   const toolContext: ToolContext = {
     brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
@@ -179,7 +204,12 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   let budgetExceeded = false;
   let salvagedCalls = 0;
   let markupEvents = 0;
-  const tools = gateTools(lastUser?.content ?? '', input.context ?? null);
+  // A question about the product itself is answered in prose, so it gets no
+  // tools at all: the model cannot re-run a comparison to demonstrate
+  // anything, and no widget is re-emitted for a question that is not about
+  // the data. Everything else keeps the usual (possibly gated) tool set.
+  const productQuestion = isProductQuestion(question);
+  const tools = productQuestion ? [] : gateTools(question, input.context ?? null);
 
   const emitWidgets = () => handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((output) => output.widgets)));
 
@@ -315,7 +345,9 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
 
   // A data question answered with no tool call at all is not grounded. Give the
   // model one chance to go and look before telling the user to be careful.
-  const requiresGrounding = looksLikeDataQuestion(lastUser?.content ?? '', dataset);
+  // Product questions are exempt: they carry no tools by design, so they can
+  // never be flagged for answering without one.
+  const requiresGrounding = !productQuestion && looksLikeDataQuestion(question, dataset);
   if (requiresGrounding && outputs.length === 0) {
     messages.push({ role: 'assistant', content: text });
     messages.push({

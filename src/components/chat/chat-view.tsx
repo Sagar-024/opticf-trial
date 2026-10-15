@@ -650,7 +650,10 @@ export function ChatView({
                       ) : null}
                     </div>
 
-                    {turn.text && !turn.widgets.some((widget) => widget.type === 'compare') ? (
+                    {/* The written answer is always shown. A comparison card
+                        used to hide it, which meant a question like "is this
+                        hardcoded" appeared to get no answer at all. */}
+                    {turn.text ? (
                       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                         {/* While the answer streams, each arriving chunk settles in. */}
                         {turn.chunks && turn.chunks.length > 0
@@ -720,8 +723,6 @@ export function ChatView({
                         >
                           <WidgetRenderer
                             widget={widget}
-                            notes={widget.type === 'compare' && turn.text ? [cleanAnswer(turn.text)] : undefined}
-                            notesStreaming={widget.type === 'compare' && loading && index === turns.length - 1}
                             onOpenBrain={onOpenBrain}
                             onCompareOnMap={onCompareOnMap}
                           />
