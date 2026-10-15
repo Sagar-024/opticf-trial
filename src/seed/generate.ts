@@ -2,24 +2,31 @@ import type {
   Dataset,
   MonthlyPerformance,
   Practice,
+  Refund,
+  RefundReason,
   TrainingRecord,
 } from '../domain/types';
 import { seededFor } from '../lib/prng';
 import {
+  ABOVE_AUTHORITY_PRACTICES,
   CL_BELOW_TARGET,
   CL_TARGET_SHARE,
   CONVERSION_OVERRIDES,
   CONVERSION_TARGET,
   DEFAULT_SEED,
+  GOODWILL_AUTHORITY_LIMIT,
+  GOODWILL_CLUSTER_PRACTICES,
   MENTORS,
   MODULES,
   MONTHS,
   NORTH_WEST_REGION,
   NORTH_WEST_SHARP_DECLINE,
   PRACTICES,
+  REFUND_SPIKE_PRACTICES,
   REVENUE_TARGET_UPLIFT,
   SEASONALITY,
   TRAINING_GAP_PRACTICES,
+  type PracticeConfig,
 } from './config';
 
 /**
@@ -86,6 +93,90 @@ function trainingFor(
   });
 }
 
+/**
+ * Build the refund rows for one practice, honouring the planted stories.
+ *
+ * Background: a small mix of frame faults, fit issues, change-of-mind and the
+ * occasional small gesture. Stories: Chorlton's frame-fault spike climbs from
+ * August, Plymouth leaves many gestures just under the authority line, and
+ * Liverpool records one above the line without approval. Consumes `rng` after
+ * the performance and training streams, so adding refunds never shifts them.
+ */
+function refundsFor(cfg: PracticeConfig, rng: () => number): Refund[] {
+  const rows: Refund[] = [];
+  const isSpike = REFUND_SPIKE_PRACTICES.includes(cfg.practiceId);
+  const isCluster = GOODWILL_CLUSTER_PRACTICES.includes(cfg.practiceId);
+  const isAbove = ABOVE_AUTHORITY_PRACTICES.includes(cfg.practiceId);
+
+  const push = (month: string, amount: number, reason: RefundReason, escalated: boolean): void => {
+    const day = 1 + Math.floor(rng() * 28);
+    rows.push({
+      refundId: '', // numbered in one deterministic pass in generateDataset
+      practiceId: cfg.practiceId,
+      date: `${month}-${String(day).padStart(2, '0')}`,
+      amount: Math.round(amount),
+      reason,
+      orderRef: `O-${10000 + Math.floor(rng() * 89999)}`,
+      authorisedBy: cfg.manager,
+      escalated,
+    });
+  };
+
+  MONTHS.forEach((month, t) => {
+    const isLatest = t === MONTHS.length - 1;
+
+    if (isCluster) {
+      // Story 5: gestures just under the £50 authority line, month after month.
+      const gestures = isLatest ? 5 : 4 + Math.floor(rng() * 3);
+      for (let i = 0; i < gestures; i += 1) {
+        push(month, 41 + Math.floor(rng() * 8), 'goodwill', false);
+      }
+      return;
+    }
+
+    // Background: one to three payments, mixed reasons.
+    const count = 1 + Math.floor(rng() * 3);
+    for (let i = 0; i < count; i += 1) {
+      const roll = rng();
+      if (roll < 0.32) push(month, 90 + rng() * 140, 'frame-fault', false);
+      else if (roll < 0.55) push(month, 55 + rng() * 85, 'lens-fit', false);
+      else if (roll < 0.8) push(month, 45 + rng() * 105, 'change-of-mind', false);
+      else push(month, 20 + rng() * 28, 'goodwill', false);
+    }
+
+    // The rare, compliant above-limit gesture elsewhere in the group.
+    if (!isAbove && rng() < 0.06) {
+      push(month, 55 + rng() * 35, 'goodwill', true);
+    }
+
+    if (isSpike) {
+      // Story 4: frame replacements climb from August (t=3) and peak in the
+      // latest month, alongside the refit and supply-account context in the Brain.
+      if (t === 3) {
+        push(month, 130 + rng() * 120, 'frame-fault', false);
+        push(month, 110 + rng() * 100, 'frame-fault', false);
+      } else if (t === 4) {
+        push(month, 150 + rng() * 140, 'frame-fault', false);
+        push(month, 170 + rng() * 130, 'frame-fault', false);
+        push(month, 140 + rng() * 110, 'frame-fault', false);
+        push(month, 80 + rng() * 60, 'lens-fit', false);
+      } else if (t === 5) {
+        for (let i = 0; i < 5; i += 1) {
+          push(month, 170 + rng() * 200, 'frame-fault', false);
+        }
+        push(month, 150 + rng() * 60, 'change-of-mind', false);
+      }
+    }
+
+    if (isAbove && t >= 3) {
+      // Story 6: above the authority line, with no regional lead recorded.
+      push(month, GOODWILL_AUTHORITY_LIMIT + 5 + rng() * 45, 'goodwill', false);
+    }
+  });
+
+  return rows;
+}
+
 /** Generate the full dataset. */
 export function generateDataset(options: GenerateOptions = {}): Dataset {
   const seed = options.seed ?? DEFAULT_SEED;
@@ -105,6 +196,7 @@ export function generateDataset(options: GenerateOptions = {}): Dataset {
 
   const performance: MonthlyPerformance[] = [];
   const training: TrainingRecord[] = [];
+  const refunds: Refund[] = [];
 
   PRACTICES.forEach((cfg, index) => {
     const rng = seededFor(seed, cfg.practiceId);
@@ -161,7 +253,20 @@ export function generateDataset(options: GenerateOptions = {}): Dataset {
     });
 
     training.push(...trainingFor(cfg.practiceId, index, rng));
+    refunds.push(...refundsFor(cfg, rng));
   });
 
-  return { practices, performance, training };
+  // One deterministic numbering pass: practice, then date, then generation
+  // order, so the ids (and the CSV) are byte-identical for a given seed.
+  const numbered = refunds
+    .map((refund, sourceIndex) => ({ refund, sourceIndex }))
+    .sort(
+      (a, b) =>
+        a.refund.practiceId.localeCompare(b.refund.practiceId) ||
+        a.refund.date.localeCompare(b.refund.date) ||
+        a.sourceIndex - b.sourceIndex,
+    )
+    .map(({ refund }, index) => ({ ...refund, refundId: `R${String(index + 1).padStart(5, '0')}` }));
+
+  return { practices, performance, training, refunds: numbered };
 }

@@ -19,11 +19,11 @@ import { rank_attention, type AttentionRow } from './attention';
  * Every string is pre-formatted here so the UI and the LLM only ever quote it.
  */
 
-export type PracticeIssue = 'sales-decline' | 'cl-below-target' | 'training';
+export type PracticeIssue = 'sales-decline' | 'refunds' | 'cl-below-target' | 'training';
 export type TodayIssue = 'region-underperformance' | PracticeIssue;
 
 export interface MapView {
-  lens: 'performance' | 'contactLens' | 'training';
+  lens: 'performance' | 'refunds' | 'contactLens' | 'training';
   regions?: string[];
   practiceIds?: string[];
   attentionOnly?: boolean;
@@ -61,35 +61,53 @@ export interface TodayPriorities {
 
 const MAX_ITEMS = 5;
 const MAX_PER_REGION = 2;
-const ISSUE_ORDER: PracticeIssue[] = ['sales-decline', 'cl-below-target', 'training'];
+// Money first: a refund spike is direct leakage and outranks a practice-level
+// sales item, which the region card already carries when a region is falling.
+const ISSUE_ORDER: PracticeIssue[] = ['refunds', 'sales-decline', 'cl-below-target', 'training'];
 
 const ISSUE_TITLE: Record<PracticeIssue, string> = {
   'sales-decline': 'revenue is falling',
+  refunds: 'unusual refunds',
   'cl-below-target': 'contact lens below target',
   training: 'required training incomplete',
 };
 
 const ISSUE_LENS: Record<PracticeIssue, MapView['lens']> = {
   'sales-decline': 'performance',
+  refunds: 'refunds',
   'cl-below-target': 'contactLens',
   training: 'training',
 };
 
 const ISSUE_METRICS: Record<PracticeIssue, string[]> = {
   'sales-decline': ['revenue', 'conversion'],
+  refunds: ['revenue'],
   'cl-below-target': ['contactLens', 'revenue'],
   training: ['revenue'],
 };
 
+/** Signals in these families point at the refunds issue. */
+function isRefundsSignal(code: string): boolean {
+  return code.startsWith('refund') || code.startsWith('goodwill');
+}
+
 /** Which category a practice's signals point at most strongly. */
 function primaryIssue(row: AttentionRow): PracticeIssue | null {
-  const points: Record<PracticeIssue, number> = { 'sales-decline': 0, 'cl-below-target': 0, training: 0 };
+  const points: Record<PracticeIssue, number> = {
+    'sales-decline': 0,
+    refunds: 0,
+    'cl-below-target': 0,
+    training: 0,
+  };
   for (const signal of row.signals) {
-    const cat: PracticeIssue = signal.code === 'cl-below-target'
-      ? 'cl-below-target'
-      : signal.code.startsWith('training')
-        ? 'training'
-        : 'sales-decline';
+    const cat: PracticeIssue =
+      signal.code === 'cl-below-target'
+        ? 'cl-below-target'
+        : signal.code.startsWith('training')
+          ? 'training'
+          : isRefundsSignal(signal.code)
+            ? 'refunds'
+            : 'sales-decline';
     points[cat] += signal.points;
   }
   let best: PracticeIssue | null = null;
@@ -107,6 +125,14 @@ function practiceMetric(row: AttentionRow, issue: PracticeIssue): TodayPriority[
   switch (issue) {
     case 'sales-decline':
       return { label: 'Revenue', value: row.stats.revenueDisplay, comparison: `${row.stats.revenueMoMDisplay} vs previous month` };
+    case 'refunds':
+      return {
+        label: 'Refunds',
+        value: row.stats.refundLatestDisplay,
+        comparison: row.stats.refundMoMDisplay
+          ? `${row.stats.refundMoMDisplay} vs previous month, ${row.stats.refundRateDisplay} of revenue`
+          : `${row.stats.refundRateDisplay} of revenue`,
+      };
     case 'cl-below-target':
       return { label: 'Contact lens', value: row.stats.clAttainmentDisplay, comparison: 'of target' };
     case 'training':
@@ -186,7 +212,15 @@ export function today_priorities(dataset: Dataset, month?: string): TodayPriorit
   const pushPractice = (row: AttentionRow, issue: PracticeIssue): void => {
     usedPractice.add(row.practiceId);
     noteRegion(row.region);
-    const top = row.signals[0];
+    // The one-line summary states the evidence behind the issue the card was
+    // picked for, not just the first signal on the row.
+    const top = issue === 'refunds'
+      ? row.signals.find((s) => isRefundsSignal(s.code)) ?? row.signals[0]
+      : issue === 'cl-below-target'
+        ? row.signals.find((s) => s.code === 'cl-below-target') ?? row.signals[0]
+        : issue === 'training'
+          ? row.signals.find((s) => s.code.startsWith('training')) ?? row.signals[0]
+          : row.signals[0];
     items.push({
       id: `practice-${row.practiceId}`,
       kind: 'practice',

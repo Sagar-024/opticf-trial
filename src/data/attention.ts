@@ -3,6 +3,7 @@ import { formatMoney, formatPercent, formatSignedPp, formatSignedPercent } from 
 import { monthLabel } from '../lib/months';
 import { monthsOf } from './dataset';
 import { aggregateMetrics, selectPerformance } from './metrics';
+import { refund_findings, REFUND_WEIGHTS } from './refunds';
 import { training_status } from './training';
 
 /**
@@ -21,7 +22,11 @@ export type AttentionSignalCode =
   | 'below-revenue-target'
   | 'cl-below-target'
   | 'training-incomplete'
-  | 'training-overdue';
+  | 'training-overdue'
+  | 'refund-spike'
+  | 'refund-rate-high'
+  | 'goodwill-above-authority'
+  | 'goodwill-near-threshold';
 
 export interface AttentionSignal {
   code: AttentionSignalCode;
@@ -62,6 +67,12 @@ export interface AttentionRow {
     clAttainmentDisplay: string;
     trainingCompletionPct: number;
     trainingCompletionDisplay: string;
+    /** Refunds for the latest month, with the rate and the movement. */
+    refundLatestDisplay: string;
+    refundCountDisplay: string;
+    refundRateDisplay: string;
+    /** Signed percentage against the previous month, or empty. */
+    refundMoMDisplay: string;
   };
 }
 
@@ -114,6 +125,14 @@ export function rank_attention(dataset: Dataset, options: AttentionOptions = {})
     asOf: options.asOf,
   });
   const trainingByPractice = new Map(training.byPractice.map((t) => [t.practiceId, t]));
+
+  // Refund findings come from the refunds layer, which owns the thresholds and
+  // the evidence strings. This file only weights them into the score.
+  const refunds = refund_findings(dataset, {
+    regions: options.regions,
+    practiceIds: options.practiceIds,
+  });
+  const refundsByPractice = new Map(refunds.map((row) => [row.practiceId, row]));
 
   const scoped = dataset.practices.filter((p) => {
     if (options.practiceIds && options.practiceIds.length > 0) return options.practiceIds.includes(p.practiceId);
@@ -224,6 +243,21 @@ export function rank_attention(dataset: Dataset, options: AttentionOptions = {})
       }
     }
 
+    // Refunds and goodwill: the findings arrive scored, with evidence.
+    const r = refundsByPractice.get(practice.practiceId);
+    if (r) {
+      for (const finding of r.findings) {
+        signals.push({
+          code: finding.code,
+          label: finding.label,
+          weight: REFUND_WEIGHTS[finding.code],
+          severity: finding.severity,
+          points: finding.points,
+          evidence: finding.evidence,
+        });
+      }
+    }
+
     const rawScore = signals.reduce((sum, s) => sum + s.points, 0);
     const score = Math.min(100, rawScore);
 
@@ -252,6 +286,10 @@ export function rank_attention(dataset: Dataset, options: AttentionOptions = {})
         clAttainmentDisplay: now.contactLens.attainmentDisplay,
         trainingCompletionPct: t?.completionPct ?? 100,
         trainingCompletionDisplay: t?.completionDisplay ?? '100%',
+        refundLatestDisplay: r?.latestTotalDisplay ?? formatMoney(0),
+        refundCountDisplay: r?.latestCountDisplay ?? '0',
+        refundRateDisplay: r?.rateDisplay ?? formatPercent(0),
+        refundMoMDisplay: r?.momDisplay ?? '',
       },
     });
   }

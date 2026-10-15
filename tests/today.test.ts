@@ -46,12 +46,21 @@ describe('today_priorities', () => {
 
   it('covers the distinct practice issues (not all sales decline)', () => {
     const issues = new Set(today.items.map((i) => i.issue));
-    expect(issues.has('sales-decline')).toBe(true);
+    expect(issues.has('refunds')).toBe(true);
     expect(issues.has('cl-below-target')).toBe(true);
     expect(issues.has('training')).toBe(true);
     // The four practice items are not all the same issue.
     const practiceIssues = today.items.filter((i) => i.kind === 'practice').map((i) => i.issue);
     expect(new Set(practiceIssues).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('carries the refunds story: Chorlton flagged with the money on the card', () => {
+    const chorlton = today.items.find((i) => i.practiceId === 'P001');
+    expect(chorlton?.issue).toBe('refunds');
+    expect(chorlton?.metric.label).toBe('Refunds');
+    expect(chorlton?.metric.value).toMatch(/£/);
+    expect(chorlton?.metric.comparison).toMatch(/of revenue/);
+    expect(chorlton?.mapView.lens).toBe('refunds');
   });
 
   it('every item is actionable: summary, evidence and link targets', () => {
@@ -60,7 +69,7 @@ describe('today_priorities', () => {
       expect(item.summary.length).toBeGreaterThan(0);
       expect(item.evidence.length).toBeGreaterThan(0);
       expect(item.metric.value.length).toBeGreaterThan(0);
-      expect(['performance', 'contactLens', 'training']).toContain(item.mapView.lens);
+      expect(['performance', 'refunds', 'contactLens', 'training']).toContain(item.mapView.lens);
       expect(item.dashboardQuery.metrics.length).toBeGreaterThan(0);
       expect(item.dashboardQuery.period.month).toBe(today.month);
     }

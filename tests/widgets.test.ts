@@ -67,4 +67,31 @@ describe('dashboard widgets', () => {
       expect(chart.title).toMatch(/by practice/);
     }
   });
+
+  it('names the scope on the KPI card, never "Group" over region figures', () => {
+    const tool = getTool('query_metrics')!;
+
+    const region = tool.run(dataset, { month: '2026-10', regions: ['North West'] });
+    const regionKpi = region.widgets.find((w) => w.type === 'kpi');
+    if (regionKpi?.type === 'kpi') expect(regionKpi.title).toBe('North West metrics - Oct 2026');
+
+    const whole = tool.run(dataset, { month: '2026-10' });
+    const wholeKpi = whole.widgets.find((w) => w.type === 'kpi');
+    if (wholeKpi?.type === 'kpi') expect(wholeKpi.title).toBe('Group metrics - Oct 2026');
+
+    const one = tool.run(dataset, { month: '2026-10', practiceIds: ['P001'] });
+    const oneKpi = one.widgets.find((w) => w.type === 'kpi');
+    if (oneKpi?.type === 'kpi') expect(oneKpi.title).toBe('Chorlton metrics - Oct 2026');
+  });
+
+  it('names the scope on the dashboard card too', () => {
+    const tool = getTool('build_dashboard')!;
+    const output = tool.run(dataset, {
+      metrics: ['revenue'],
+      group_by: 'group',
+      filters: { regions: ['North West'] },
+    });
+    const kpi = output.widgets.find((w) => w.type === 'kpi');
+    if (kpi?.type === 'kpi') expect(kpi.title).toBe('North West dashboard - Oct 2026');
+  });
 });

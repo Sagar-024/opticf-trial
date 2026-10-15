@@ -10,6 +10,7 @@ const FILES: Array<[keyof RawDataset, string]> = [
   ['practices', 'practices.csv'],
   ['performance', 'monthly_performance.csv'],
   ['training', 'training.csv'],
+  ['refunds', 'refunds.csv'],
 ];
 
 /**

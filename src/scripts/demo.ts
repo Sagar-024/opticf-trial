@@ -7,6 +7,8 @@ import {
   training_status,
   rank_attention,
   today_priorities,
+  refund_findings,
+  refund_summary,
 } from '../data';
 
 /**
@@ -95,8 +97,34 @@ for (const row of training.byPractice) {
   console.log(`  ${row.name.padEnd(14)} ${row.region.padEnd(12)} ${row.completionDisplay.padStart(4)}  ${modules}`);
 }
 
-// ── 6. Consistency checks ────────────────────────────────────────────────────
-heading('6. Consistency checks');
+// ── 6. Refunds and goodwill - the money given back ───────────────────────────
+const refunds = refund_summary(dataset, { groupBy: 'region' });
+heading(`6. Refunds - ${refunds.monthLabel}`);
+console.log(`Refunds        ${refunds.totalDisplay} across ${refunds.countDisplay} payments (${refunds.rateDisplay} of revenue)`);
+console.log(`Vs previous    ${refunds.previous.changeDisplay ?? 'n/a'} against ${refunds.previous.monthLabel} (${refunds.previous.totalDisplay ?? '-'})`);
+console.log(`Net revenue    ${refunds.netRevenueDisplay} after refunds`);
+console.log(`By reason      ${refunds.byReason.map((row) => `${row.label} ${row.totalDisplay} (${row.shareDisplay})`).join(' · ')}`);
+console.log(`By region      ${(refunds.breakdown ?? []).map((row) => `${row.label} ${row.totalDisplay}`).join(' · ')}`);
+console.log(`Trend          ${refunds.trend.map((point) => `${point.monthLabel} ${point.totalDisplay}`).join(' → ')}`);
+
+const refundRows = refund_findings(dataset);
+const flaggedRefunds = refundRows.filter((row) => row.findings.length > 0);
+console.log(`\nUnusual refunds (${flaggedRefunds.length} practices):`);
+for (const row of flaggedRefunds) {
+  console.log(`  ${row.name.padEnd(14)} ${row.region.padEnd(12)} ${row.latestTotalDisplay.padStart(8)} ${row.rateDisplay.padStart(6)}`);
+  for (const finding of row.findings) {
+    console.log(`     • [${finding.points} pts] ${finding.label}: ${finding.evidence}`);
+  }
+}
+if (refunds.aboveAuthority.length > 0) {
+  console.log(`\nAbove-authority gestures: ${refunds.aboveAuthority.map((entry) => entry.evidence).join(' ')}`);
+}
+if (refunds.nearThreshold.length > 0) {
+  console.log(`Under-the-line clusters: ${refunds.nearThreshold.map((entry) => entry.evidence).join(' ')}`);
+}
+
+// ── 7. Consistency checks ────────────────────────────────────────────────────
+heading('7. Consistency checks');
 const practiceSum = byPractice.reduce((n, row) => n + row.metrics.revenue.actual, 0);
 const regionSum = (query_metrics(dataset, { month: latest, groupBy: 'region' }).breakdown ?? [])
   .reduce((n, row) => n + row.metrics.revenue.actual, 0);
@@ -106,11 +134,14 @@ const groupCompare = compare(dataset, {
   periodA: { from: latest, to: latest },
   periodB: { from: months[months.length - 2], to: months[months.length - 2] },
 });
+const refundsByPractice = refund_summary(dataset, { groupBy: 'practice' });
+const refundSum = (refundsByPractice.breakdown ?? []).reduce((n, row) => n + row.total, 0);
 const check = (label: string, a: number, b: number) =>
   console.log(`  ${a === b ? 'PASS' : 'FAIL'}  ${label}: ${a} vs ${b}`);
 
 check('sum(practice revenue) == group revenue (query_metrics)', practiceSum, group.revenue.actual);
 check('sum(region revenue) == group revenue (query_metrics)', regionSum, group.revenue.actual);
 check('compare(group, latest) == query_metrics(latest)', groupCompare.rows[0].current, group.revenue.actual);
+check('sum(practice refunds) == group refunds (refund_summary)', refundSum, refunds.total);
 console.log(`\n${line}`);
 console.log('All figures above come from src/data pure functions - none are hard-coded.');

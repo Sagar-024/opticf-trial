@@ -48,5 +48,6 @@ export function tinyDataset(): Dataset {
       { practiceId: 'P2', moduleId: 'CL-FIT', moduleName: 'Contact lens fitting', required: true, completed: true, completedDate: '2026-06-01', dueDate: '2026-09-30' },
       { practiceId: 'P2', moduleId: 'GDPR', moduleName: 'Data protection & GDPR', required: true, completed: true, completedDate: '2026-06-01', dueDate: '2026-09-30' },
     ],
+    refunds: [],
   };
 }

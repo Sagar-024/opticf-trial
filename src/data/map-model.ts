@@ -3,6 +3,7 @@ import { formatMoney, formatPercent, formatSignedPercent, formatSignedPp } from 
 import { monthLabel } from '../lib/months';
 import { monthsOf } from './dataset';
 import { aggregateMetrics, selectPerformance } from './metrics';
+import { refund_findings } from './refunds';
 import { training_status } from './training';
 import { rank_attention } from './attention';
 
@@ -48,6 +49,15 @@ export interface MapPractice {
   trainingGaps: string[];
   trainingStatus: 'complete' | 'incomplete' | 'overdue';
 
+  /** Refunds for the latest month, with the rate and the movement. */
+  refundTotal: number;
+  refundLatestDisplay: string;
+  refundRatePct: number;
+  refundRateDisplay: string;
+  refundMoMDisplay: string;
+  /** Which refund checks fired, as finding codes. Empty means no flags. */
+  refundFlags: string[];
+
   /** The evidence behind this practice's position on the map, plain sentences. */
   attentionSignals: string[];
 
@@ -77,6 +87,9 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
   const attention = rank_attention(dataset, { asOf: '2026-10-12' });
   const attentionByPractice = new Map(attention.map((row) => [row.practiceId, row]));
 
+  const refunds = refund_findings(dataset);
+  const refundByPractice = new Map(refunds.map((row) => [row.practiceId, row]));
+
   const practices: MapPractice[] = dataset.practices.map((practice) => {
     const currentRows = selectPerformance(dataset, { practiceIds: [practice.practiceId], month: target });
     const previousRows = selectPerformance(dataset, { practiceIds: [practice.practiceId], month: previous });
@@ -95,6 +108,7 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
 
     const t = trainingByPractice.get(practice.practiceId);
     const a = attentionByPractice.get(practice.practiceId);
+    const r = refundByPractice.get(practice.practiceId);
 
     return {
       practiceId: practice.practiceId,
@@ -129,6 +143,13 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
       trainingOverdue: t?.overdueCount ?? 0,
       trainingGaps: t?.gaps.map((gap) => gap.moduleName) ?? [],
       trainingStatus: t?.status ?? 'complete',
+
+      refundTotal: r?.latestTotal ?? 0,
+      refundLatestDisplay: r?.latestTotalDisplay ?? formatMoney(0),
+      refundRatePct: r?.ratePct ?? 0,
+      refundRateDisplay: r?.rateDisplay ?? formatPercent(0),
+      refundMoMDisplay: r?.momDisplay ?? '',
+      refundFlags: r?.findings.map((finding) => finding.code) ?? [],
 
       attentionSignals: a?.signals.map((signal) => signal.evidence) ?? [],
 

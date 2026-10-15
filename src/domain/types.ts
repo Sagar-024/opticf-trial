@@ -58,6 +58,37 @@ export interface MonthlyPerformance {
   clTarget: number;
 }
 
+/**
+ * Why a refund or goodwill payment was made. A closed vocabulary: reporting
+ * by reason relies on every row using one of these values.
+ */
+export type RefundReason = 'frame-fault' | 'lens-fit' | 'change-of-mind' | 'goodwill';
+
+/**
+ * One refund or goodwill payment against an order.
+ *
+ * The group's guidance (`Refunds and goodwill authority`) is the source of
+ * the fields: the reason, the amount and the original order reference are what
+ * a practice must record, and gestures above the authority limit need the
+ * regional lead, which `escalated` captures.
+ */
+export interface Refund {
+  /** Stable id, e.g. `R00001`. */
+  refundId: string;
+  practiceId: string;
+  /** ISO date (`YYYY-MM-DD`). */
+  date: string;
+  /** Whole GBP. */
+  amount: number;
+  reason: RefundReason;
+  /** The order the payment relates to. */
+  orderRef: string;
+  /** Who authorised it (normally the practice manager). */
+  authorisedBy: string;
+  /** True when the regional lead's approval is recorded (needed above £50). */
+  escalated: boolean;
+}
+
 /** A required training module and whether a practice has completed it. */
 export interface TrainingRecord {
   practiceId: string;
@@ -77,6 +108,7 @@ export interface Dataset {
   practices: Practice[];
   performance: MonthlyPerformance[];
   training: TrainingRecord[];
+  refunds: Refund[];
 }
 
 /** Raw CSV text for each table - the on-disk representation of a Dataset. */
@@ -84,4 +116,5 @@ export interface RawDataset {
   practices: string;
   performance: string;
   training: string;
+  refunds: string;
 }

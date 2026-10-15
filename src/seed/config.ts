@@ -154,3 +154,27 @@ export const TRAINING_GAP_PRACTICES = ['P002', 'P005', 'P009', 'P012', 'P017', '
 export const CONVERSION_OVERRIDES: Record<string, { start: number; end: number }> = {
   P001: { start: 63, end: 54 },
 };
+
+// ── Refunds and goodwill ─────────────────────────────────────────────────────
+
+/** Gestures above this need the regional lead (the Brain's policy). */
+export const GOODWILL_AUTHORITY_LIMIT = 50;
+
+/**
+ * Story 4 - Chorlton's refunds: frame replacements climb sharply from August,
+ * matching its recorded context (refit, local supply account, no warranty term
+ * sheet attached). The timing is planted; the cause is context, never proof.
+ */
+export const REFUND_SPIKE_PRACTICES = ['P001'];
+
+/**
+ * Story 5 - Plymouth hands out many gestures just under the authority line
+ * (£40-49), the pattern of staying below approval.
+ */
+export const GOODWILL_CLUSTER_PRACTICES = ['P024'];
+
+/**
+ * Story 6 - Liverpool records a goodwill gesture above £50 without the
+ * regional lead's approval: the policy check firing on real rows.
+ */
+export const ABOVE_AUTHORITY_PRACTICES = ['P008'];

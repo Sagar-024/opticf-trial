@@ -10,6 +10,13 @@ describe('seed generator', () => {
     expect(new Set(dataset.practices.map((p) => p.region)).size).toBe(REGIONS.length); // 5
     expect(dataset.performance).toHaveLength(PRACTICES.length * MONTHS.length); // 240
     expect(dataset.training).toHaveLength(PRACTICES.length * MODULES.length); // 240
+    // At least one refund per practice-month by construction.
+    expect(dataset.refunds.length).toBeGreaterThanOrEqual(PRACTICES.length * MONTHS.length);
+    for (const refund of dataset.refunds) {
+      expect(refund.refundId).toMatch(/^R\d{5}$/);
+      expect(refund.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(refund.amount).toBeGreaterThan(0);
+    }
   });
 
   it('is deterministic - the same seed gives identical CSVs', () => {

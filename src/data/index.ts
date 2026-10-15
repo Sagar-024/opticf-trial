@@ -12,6 +12,8 @@ export type {
   MonthlyPerformance,
   Practice,
   RawDataset,
+  Refund,
+  RefundReason,
   TrainingRecord,
 } from '../domain/types';
 
@@ -70,6 +72,21 @@ export type {
   AttentionSignal,
   AttentionSignalCode,
 } from './attention';
+
+export { refund_findings, refund_summary, REFUND_REASON_LABELS, REFUND_THRESHOLDS, REFUND_WEIGHTS } from './refunds';
+export type {
+  RefundAuthorityEntry,
+  RefundBreakdownRow,
+  RefundClusterEntry,
+  RefundFinding,
+  RefundFindingCode,
+  RefundFindingsOptions,
+  RefundPracticeRow,
+  RefundQuery,
+  RefundReasonRow,
+  RefundSummary,
+  RefundTrendPoint,
+} from './refunds';
 
 export { today_priorities } from './today';
 export type {

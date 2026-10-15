@@ -4,6 +4,8 @@ import {
   training_status,
   rank_attention,
   today_priorities,
+  refund_findings,
+  refund_summary,
   monthsOf,
 } from '../data/index';
 import type { Dataset, SeriesMetrics, MetricsBreakdownRow } from '../data/index';
@@ -80,6 +82,28 @@ function resolveBreakdown(
   if (practiceIds && practiceIds.length > 0) return { groupBy: 'practice', label: 'practice' };
   if (regions && regions.length === 1) return { groupBy: 'practice', label: 'practice' };
   return { groupBy: 'region', label: 'region' };
+}
+
+/**
+ * What the numbers actually cover, for the KPI card's title: a named
+ * practice, the practices in scope, the regions in scope, or the group. A
+ * region-scoped card must never say "Group metrics" over North West figures.
+ */
+function scopeName(ds: Dataset, regions: string[] | undefined, practiceIds: string[] | undefined): string {
+  if (practiceIds && practiceIds.length > 0) {
+    if (practiceIds.length === 1) {
+      const practice = ds.practices.find((row) => row.practiceId === practiceIds[0]);
+      if (practice) return practice.name;
+    }
+    if (practiceIds.length === 2) {
+      return practiceIds
+        .map((id) => ds.practices.find((row) => row.practiceId === id)?.name ?? id)
+        .join(' and ');
+    }
+    return `${practiceIds.length} practices`;
+  }
+  if (regions && regions.length > 0) return regions.join(', ');
+  return 'Group';
 }
 
 interface ScopeRow {
@@ -167,7 +191,7 @@ function runQueryMetrics(ds: Dataset, input: Record<string, unknown>): ToolOutpu
 
   const m = query_metrics(ds, { month, groupBy, regions, practiceIds });
   const rows = scopeRows(m);
-  const widgets: Widget[] = [kpiWidget('qm-kpi', `Group metrics - ${monthLabel(month)}`, m)];
+  const widgets: Widget[] = [kpiWidget('qm-kpi', `${scopeName(ds, regions, practiceIds)} metrics - ${monthLabel(month)}`, m)];
   if (rows.length >= 2) {
     widgets.push(...chartWidgets(rows, ['revenue', 'conversion'], 'qm', label));
     widgets.push(metricTable(`Metrics by ${label}`, rows, ['revenue', 'conversion', 'contactLens']));
@@ -401,6 +425,7 @@ function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput
   const m = query_metrics(ds, { practiceIds: [practice.practiceId], month: latest });
   const training = training_status(ds, { practiceIds: [practice.practiceId] });
   const t = training.byPractice[0];
+  const refunds = refund_findings(ds, { practiceIds: [practice.practiceId] })[0];
 
   const table: TableWidget = {
     type: 'table',
@@ -417,9 +442,15 @@ function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput
       ['Conversion', m.conversion.rateDisplay],
       ['Contact lens', `${m.contactLens.actualDisplay} (${m.contactLens.attainmentDisplay} of target)`],
       ['Training', t ? `${t.completionDisplay}${t.gaps.length ? ` - missing ${t.gaps.map((g) => g.moduleName).join(', ')}` : ''}` : 'n/a'],
+      [
+        'Refunds',
+        refunds
+          ? `${refunds.latestTotalDisplay} (${refunds.rateDisplay} of revenue${refunds.momDisplay ? `, ${refunds.momDisplay} vs ${refunds.prevMonthLabel}` : ''})${refunds.findings.length ? ` - ${refunds.findings.map((finding) => finding.label).join('; ')}` : ''}`
+          : 'n/a',
+      ],
     ],
   };
-  const summary = `${practice.name} (${practice.region}), manager ${practice.manager}, mentor ${practice.mentorName}. Revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target), conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.attainmentDisplay} of target${t ? `, training ${t.completionDisplay} complete` : ''}.`;
+  const summary = `${practice.name} (${practice.region}), manager ${practice.manager}, mentor ${practice.mentorName}. Revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target), conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.attainmentDisplay} of target${t ? `, training ${t.completionDisplay} complete` : ''}${refunds ? `, refunds ${refunds.latestTotalDisplay} (${refunds.rateDisplay} of revenue)` : ''}.`;
 
   return withNumbers({
     summary,
@@ -501,7 +532,7 @@ function runBuildDashboard(ds: Dataset, input: Record<string, unknown>): ToolOut
 
   const m = query_metrics(ds, { month, groupBy, regions: filters.regions, practiceIds: filters.practiceIds });
   const rows = scopeRows(m);
-  const widgets: Widget[] = [kpiWidget('dash-kpi', `Dashboard - ${monthLabel(month)}`, m)];
+  const widgets: Widget[] = [kpiWidget('dash-kpi', `${scopeName(ds, filters.regions, filters.practiceIds)} dashboard - ${monthLabel(month)}`, m)];
   if (rows.length >= 2) {
     widgets.push(...chartWidgets(rows, metrics, 'dash', label));
     widgets.push(metricTable(`Dashboard table by ${label}`, rows, metrics));
@@ -521,6 +552,170 @@ function runBuildDashboard(ds: Dataset, input: Record<string, unknown>): ToolOut
     widgets,
     sources: [`Monthly performance, ${monthLabel(month)}`],
     context: context({ metric: metrics.join('+'), groupBy, regions: filters.regions, practiceIds: filters.practiceIds, month }),
+  });
+}
+
+/**
+ * Refunds: totals, rate, trend, reason mix and the policy checks. This is the
+ * tool behind "show me refunds", which used to have no answer.
+ */
+function runQueryRefunds(ds: Dataset, input: Record<string, unknown>): ToolOutput {
+  const latest = monthsOf(ds).at(-1)!;
+  const month = (input.month as string) ?? latest;
+  const regions = input.regions as string[] | undefined;
+  const practiceIds = input.practiceIds as string[] | undefined;
+  const requested = (input.group_by as 'group' | 'region' | 'practice') ?? 'group';
+  const { groupBy, label } = resolveBreakdown(requested, regions, practiceIds);
+
+  const summary = refund_summary(ds, { month, regions, practiceIds, groupBy });
+  const topReason = summary.byReason[0];
+  const flaggedNames = summary.flaggedPracticeIds
+    .map((id) => ds.practices.find((practice) => practice.practiceId === id)?.name ?? id)
+    .join(', ');
+
+  const kpi: Widget = {
+    type: 'kpi',
+    id: 'refunds-kpi',
+    title: `Refunds - ${monthLabel(month)}`,
+    items: [
+      {
+        label: 'Refunds',
+        value: summary.totalDisplay,
+        sub: summary.previous.changeDisplay
+          ? `${summary.countDisplay} payments, ${summary.previous.changeDisplay} vs ${summary.previous.monthLabel}`
+          : `${summary.countDisplay} payments`,
+      },
+      { label: 'Refund rate', value: summary.rateDisplay, sub: `of ${summary.revenueDisplay} revenue` },
+      { label: 'Net revenue', value: summary.netRevenueDisplay, sub: `after ${summary.totalDisplay} refunded` },
+      topReason
+        ? { label: 'Largest reason', value: topReason.label, sub: `${topReason.totalDisplay} (${topReason.shareDisplay} of refunds)` }
+        : { label: 'Largest reason', value: 'None', sub: 'no refunds this month' },
+    ],
+  };
+
+  const widgets: Widget[] = [kpi];
+
+  const trendChart: Widget = {
+    type: 'chart',
+    id: 'refunds-trend',
+    title: `Refunds by month to ${monthLabel(month)}`,
+    chart: 'bar',
+    valueType: 'currency',
+    series: [
+      {
+        name: 'Refunds',
+        points: summary.trend.map((point) => ({ label: point.monthLabel, value: point.total, display: point.totalDisplay })),
+      },
+    ],
+  };
+  widgets.push(trendChart);
+
+  if (summary.byReason.length > 0) {
+    const reasonChart: Widget = {
+      type: 'chart',
+      id: 'refunds-reasons',
+      title: `Refunds by reason - ${monthLabel(month)}`,
+      chart: 'bar',
+      valueType: 'currency',
+      series: [
+        {
+          name: 'Refunds',
+          points: summary.byReason.map((row) => ({ label: row.label, value: row.total, display: row.totalDisplay })),
+        },
+      ],
+    };
+    widgets.push(reasonChart);
+
+    const reasonTable: TableWidget = {
+      type: 'table',
+      id: 'refunds-reason-table',
+      title: 'Refunds by reason',
+      columns: ['Reason', 'Payments', 'Total', 'Share'],
+      rows: summary.byReason.map((row) => [row.label, formatNumber(row.count), row.totalDisplay, row.shareDisplay]),
+    };
+    widgets.push(reasonTable);
+  }
+
+  const breakdown = summary.breakdown ?? [];
+  if (breakdown.length >= 2) {
+    const table: TableWidget = {
+      type: 'table',
+      id: 'refunds-breakdown',
+      title: `Refunds by ${label} - ${monthLabel(month)}`,
+      columns: ['Group', 'Refunds', 'Payments', 'Rate', 'Vs previous month'],
+      rows: breakdown
+        .slice(0, 20)
+        .map((row) => [row.label, row.totalDisplay, formatNumber(row.count), row.rateDisplay, row.momDisplay || '-']),
+    };
+    widgets.push(table);
+  }
+
+  const summaryText = [
+    `Refunds in ${monthLabel(month)}: ${summary.totalDisplay} across ${summary.countDisplay} payments, ${summary.rateDisplay} of revenue.`,
+    summary.previous.changeDisplay
+      ? `That is ${summary.previous.changeDisplay} against ${summary.previous.monthLabel} (${summary.previous.totalDisplay}).`
+      : '',
+    `Net revenue ${summary.netRevenueDisplay} after refunds.`,
+    topReason ? `Largest reason: ${topReason.label} at ${topReason.totalDisplay} (${topReason.shareDisplay} of refunds).` : 'No refunds this month.',
+    breakdown.length >= 2
+      ? `By ${label}: ${breakdown.slice(0, 6).map((row) => `${row.label} ${row.totalDisplay} (${row.rateDisplay})`).join(', ')}.`
+      : '',
+    summary.flaggedPracticeIds.length > 0
+      ? `${formatNumber(summary.flaggedPracticeIds.length)} practice${summary.flaggedPracticeIds.length === 1 ? '' : 's'} look unusual this month (${flaggedNames}); use refund_anomalies for the evidence behind each.`
+      : 'No practice looks unusual this month.',
+  ].join(' ');
+
+  return withNumbers({
+    summary: summaryText,
+    widgets,
+    mapHighlight: summary.flaggedPracticeIds,
+    sources: [`Refunds ledger, ${monthLabel(month)}`, `Monthly performance, ${monthLabel(month)}`],
+    context: context({ metric: 'refunds', groupBy, regions, practiceIds, month }),
+  });
+}
+
+/**
+ * Which practices look unusual on refunds, and why each was flagged. Every
+ * check is a plain rule from the refunds layer, quoted with its evidence.
+ */
+function runRefundAnomalies(ds: Dataset, input: Record<string, unknown>): ToolOutput {
+  const regions = input.regions as string[] | undefined;
+  const practiceIds = input.practiceIds as string[] | undefined;
+  const limit = (input.limit as number) ?? 8;
+
+  const all = refund_findings(ds, { regions, practiceIds }).filter((row) => row.findings.length > 0);
+  const rows = all.slice(0, limit);
+  const monthLabelText = rows[0]?.latestMonthLabel ?? monthLabel(monthsOf(ds).at(-1)!);
+
+  const table: TableWidget = {
+    type: 'table',
+    id: 'refund-anomalies-table',
+    title: `Unusual refunds - ${monthLabelText}`,
+    columns: ['Practice', 'Region', 'Refunds', 'Rate', 'Vs previous month', 'Why'],
+    rows: rows.map((row) => [
+      row.name,
+      row.region,
+      row.latestTotalDisplay,
+      row.rateDisplay,
+      row.momDisplay || '-',
+      row.findings.map((finding) => finding.label).join('; '),
+    ]),
+  };
+
+  const summaryText = rows.length > 0
+    ? [
+        `${formatNumber(rows.length)} practice${rows.length === 1 ? '' : 's'} have unusual refunds in ${monthLabelText}.`,
+        ...rows.slice(0, 3).map((row) => `${row.name}: ${row.findings.map((finding) => finding.evidence).join(' ')}`),
+        'The checks: a spike against the practice\'s own usual level, a refund rate above 1.0% of revenue, goodwill above £50 without the regional lead, and gestures clustered under £50.',
+      ].join(' ')
+    : `No practice has unusual refunds in ${monthLabelText}.`;
+
+  return withNumbers({
+    summary: summaryText,
+    widgets: [table],
+    mapHighlight: rows.map((row) => row.practiceId),
+    sources: [`Refunds ledger, ${monthLabelText}`, 'Goodwill policy (Brain)'],
+    context: context({ metric: 'refunds', groupBy: 'practice', regions, practiceIds: rows.map((row) => row.practiceId) }),
   });
 }
 
@@ -691,6 +886,23 @@ export const TOOLS: Tool[] = [
   },
   {
     definition: {
+      name: 'query_refunds',
+      description:
+        'Refunds and goodwill for a month: the total, the refund rate as a share of revenue, net revenue after refunds, the month-on-month change, the reason mix, and the trend across all months. Use this for "show me refunds", "how much did we refund", "what are refunds costing us" and refund breakdowns by region or practice. The summary states which practices look unusual; call refund_anomalies for their evidence.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          month: { type: 'string', description: MONTH_DESC },
+          regions: { type: 'array', items: { type: 'string' }, description: 'Restrict to these regions.' },
+          practiceIds: { type: 'array', items: { type: 'string' }, description: 'Restrict to these practice ids.' },
+          group_by: { type: 'string', enum: ['group', 'region', 'practice'], description: 'Aggregation level (default group).' },
+        },
+      },
+    },
+    run: runQueryRefunds,
+  },
+  {
+    definition: {
       name: 'compare',
       description: 'Compare a metric between two periods at group, region or practice level, sorted by biggest fall first. Use for "biggest drop vs last month" and "compare region X with the others".',
       input_schema: {
@@ -794,6 +1006,22 @@ export const TOOLS: Tool[] = [
       },
     },
     run: runBelowClTarget,
+  },
+  {
+    definition: {
+      name: 'refund_anomalies',
+      description:
+        'Practices whose refunds look unusual this month, worst first, each with the evidence behind the flag: a spike against the practice\'s own usual level, a refund rate above 1.0% of revenue, goodwill above £50 without the regional lead recorded, or gestures clustered just under £50. Use for "which practices have unusual refunds?" and after query_refunds reports flags. Reporting the pattern is fine; never invent a cause for it.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          regions: { type: 'array', items: { type: 'string' } },
+          practiceIds: { type: 'array', items: { type: 'string' }, description: 'Restrict to these practice ids.' },
+          limit: { type: 'number', description: 'Max rows (default 8).' },
+        },
+      },
+    },
+    run: runRefundAnomalies,
   },
   {
     definition: {

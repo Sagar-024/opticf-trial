@@ -6,7 +6,7 @@ import type { MapPractice } from '../data/map-model';
  * keys which the paint layer resolves to real colours for the current theme.
  */
 
-export type LensId = 'region' | 'sales' | 'contactLens' | 'training' | 'mentors';
+export type LensId = 'region' | 'sales' | 'refunds' | 'contactLens' | 'training' | 'mentors';
 
 export type PaletteKey =
   | 'coral'
@@ -52,8 +52,8 @@ const ALL_FILTER: LensFilter = { id: 'all', label: 'All practices', match: () =>
 /**
  * The one cross-cutting question, so every lens can answer "where is hot".
  * It is a plain rule over real metrics, not a hidden score: falling revenue,
- * revenue under 95% of target, contact lens under 90% of target, or an
- * overdue training module.
+ * revenue under 95% of target, contact lens under 90% of target, an overdue
+ * training module, or a refund check that fired.
  */
 const ATTENTION_FILTER: LensFilter = {
   id: 'attention',
@@ -62,7 +62,8 @@ const ATTENTION_FILTER: LensFilter = {
     p.revenueMoMPct <= -3
     || p.revenueAttainmentPct < 95
     || p.clAttainmentPct < 90
-    || p.trainingOverdue > 0,
+    || p.trainingOverdue > 0
+    || p.refundFlags.length > 0,
 };
 
 export interface LensContext {
@@ -111,6 +112,30 @@ export function buildLenses(context: LensContext): Lens[] {
         return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
       },
       valueLabel: (practice) => `${practice.revenueDisplay} (${practice.revenueMoMDisplay})`,
+    },
+    {
+      id: 'refunds',
+      label: 'Refunds',
+      legend: [
+        { colorKey: 'coral', label: 'Spiking or high rate' },
+        { colorKey: 'amber', label: 'Policy flags' },
+        { colorKey: 'green', label: 'Normal' },
+      ],
+      filters: [
+        ALL_FILTER,
+        ATTENTION_FILTER,
+        { id: 'flagged', label: 'Unusual refunds', match: (p) => p.refundFlags.length > 0 },
+        { id: 'above-authority', label: 'Above authority', match: (p) => p.refundFlags.includes('goodwill-above-authority') },
+        { id: 'near-threshold', label: 'Under the line', match: (p) => p.refundFlags.includes('goodwill-near-threshold') },
+      ],
+      visual: (practice) => {
+        if (practice.refundFlags.some((code) => code === 'refund-spike' || code === 'refund-rate-high')) {
+          return { colorKey: 'coral', opacity: 1, sizeFactor: 1.15 };
+        }
+        if (practice.refundFlags.length > 0) return { colorKey: 'amber', opacity: 1, sizeFactor: 1.1 };
+        return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
+      },
+      valueLabel: (practice) => `${practice.refundLatestDisplay} refunded (${practice.refundRateDisplay} of revenue)`,
     },
     {
       id: 'contactLens',

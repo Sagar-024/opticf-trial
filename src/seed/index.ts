@@ -16,6 +16,7 @@ const FILES: Array<[keyof ReturnType<typeof serializeDataset>, string]> = [
   ['practices', 'practices.csv'],
   ['performance', 'monthly_performance.csv'],
   ['training', 'training.csv'],
+  ['refunds', 'refunds.csv'],
 ];
 
 function argSeed(): number {

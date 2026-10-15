@@ -174,8 +174,18 @@ describe('hit testing', () => {  it('finds the nearest node and returns null whe
 });
 
 describe('lenses', () => {
-  it('defines the five lenses requested, without claims or systems', () => {
-    expect(lenses.map((lens) => lens.id)).toEqual(['region', 'sales', 'contactLens', 'training', 'mentors']);
+  it('defines the six lenses requested, without claims or systems', () => {
+    expect(lenses.map((lens) => lens.id)).toEqual(['region', 'sales', 'refunds', 'contactLens', 'training', 'mentors']);
+  });
+
+  it('colours refund stories: coral for the spike, amber for the policy flag', () => {
+    const lens = lensById(lenses, 'refunds');
+    const chorlton = model.practices.find((p) => p.practiceId === 'P001')!;
+    const liverpool = model.practices.find((p) => p.practiceId === 'P008')!;
+    const normal = model.practices.find((p) => p.refundFlags.length === 0)!;
+    expect(lens.visual(chorlton).colorKey).toBe('coral');
+    expect(lens.visual(liverpool).colorKey).toBe('amber');
+    expect(lens.visual(normal).colorKey).toBe('green');
   });
 
   it('colours contact lens shortfalls in coral and on-track practices in green', () => {
@@ -258,6 +268,15 @@ describe('the map and the chat cannot disagree', () => {
     const mapCount = model.practices.filter(filter.match).length;
     const chatCount = (getTool('training_status')!.run(dataset, {}).mapHighlight ?? []).length;
     expect(mapCount).toBe(chatCount);
+  });
+
+  it('unusual refunds match the chat tool exactly', () => {
+    const lens = lensById(lenses, 'refunds');
+    const filter = filterById(lens, 'flagged');
+    const mapCount = model.practices.filter(filter.match).length;
+    const chatCount = (getTool('refund_anomalies')!.run(dataset, {}).mapHighlight ?? []).length;
+    expect(mapCount).toBe(chatCount);
+    expect(mapCount).toBe(3);
   });
 
   it('builds one map row per practice with no missing metrics', () => {    expect(model.practices).toHaveLength(dataset.practices.length);

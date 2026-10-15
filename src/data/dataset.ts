@@ -1,4 +1,4 @@
-import type { Dataset, MonthlyPerformance, Practice, RawDataset, TrainingRecord } from '../domain/types';
+import type { Dataset, MonthlyPerformance, Practice, RawDataset, Refund, RefundReason, TrainingRecord } from '../domain/types';
 import { parseCsvObjects, toCsv } from '../lib/csv';
 import { uniqueMonths } from '../lib/months';
 
@@ -59,6 +59,19 @@ const TRAINING_HEADER = [
   'due_date',
 ];
 
+const REFUND_HEADER = [
+  'refund_id',
+  'practice_id',
+  'date',
+  'amount',
+  'reason',
+  'order_ref',
+  'authorised_by',
+  'escalated',
+];
+
+const REFUND_REASON_VALUES: RefundReason[] = ['frame-fault', 'lens-fit', 'change-of-mind', 'goodwill'];
+
 /** Parse the practices CSV into typed rows. */
 export function parsePractices(csv: string): Practice[] {
   return parseCsvObjects(csv).map((r) => ({
@@ -103,12 +116,27 @@ export function parseTraining(csv: string): TrainingRecord[] {
   }));
 }
 
+/** Parse the refunds CSV into typed rows. Unknown reasons fall back to `goodwill`. */
+export function parseRefunds(csv: string): Refund[] {
+  return parseCsvObjects(csv).map((r) => ({
+    refundId: r.refund_id,
+    practiceId: r.practice_id,
+    date: r.date,
+    amount: toInt(r.amount),
+    reason: REFUND_REASON_VALUES.includes(r.reason as RefundReason) ? (r.reason as RefundReason) : 'goodwill',
+    orderRef: r.order_ref ?? '',
+    authorisedBy: r.authorised_by ?? '',
+    escalated: toBool(r.escalated),
+  }));
+}
+
 /** Build a Dataset from raw CSV text. */
 export function parseDataset(raw: RawDataset): Dataset {
   return {
     practices: parsePractices(raw.practices),
     performance: parsePerformance(raw.performance),
     training: parseTraining(raw.training),
+    refunds: parseRefunds(raw.refunds),
   };
 }
 
@@ -162,7 +190,29 @@ export function serializeDataset(dataset: Dataset): RawDataset {
       ]),
   );
 
-  return { practices, performance, training };
+  const refunds = toCsv(
+    REFUND_HEADER,
+    [...dataset.refunds]
+      .sort((a, b) =>
+        a.practiceId === b.practiceId
+          ? a.date === b.date
+            ? a.refundId.localeCompare(b.refundId)
+            : a.date.localeCompare(b.date)
+          : a.practiceId.localeCompare(b.practiceId),
+      )
+      .map((r) => [
+        r.refundId,
+        r.practiceId,
+        r.date,
+        r.amount,
+        r.reason,
+        r.orderRef,
+        r.authorisedBy,
+        r.escalated,
+      ]),
+  );
+
+  return { practices, performance, training, refunds };
 }
 
 /** Ascending list of month keys present in the dataset. */
