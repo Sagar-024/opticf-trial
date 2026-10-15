@@ -2,11 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Mail, X } from 'lucide-react';
+import { Download, Send, X } from 'lucide-react';
 import type { Widget } from '@/ai/types';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { forceVisibleIfStuck } from '@/lib/anim';
+import { LEADERSHIP } from '@/lib/people';
+import { addSend, sentAtLabel, type SendRecord } from '@/lib/send-store';
 import { cn } from '@/lib/utils';
 
 /**
@@ -34,7 +45,9 @@ export function DashboardPanel({
   sources: string[];
   onClose: () => void;
 }) {
-  const [emailNote, setEmailNote] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [recipient, setRecipient] = useState(LEADERSHIP[0]?.name ?? '');
+  const [receipt, setReceipt] = useState<SendRecord | null>(null);
   /** Shown after the first export: how to get a clean page out of the dialog. */
   const [printHint, setPrintHint] = useState(false);
   /** Null means the default 44 percent; a number is a width the reader chose. */
@@ -48,6 +61,18 @@ export function DashboardPanel({
     const timer = window.setTimeout(() => forceVisibleIfStuck(panelRef.current), 700);
     return () => window.clearTimeout(timer);
   }, []);
+
+  // A new answer is a new report: the last receipt belongs to the old one.
+  useEffect(() => {
+    setReceipt(null);
+  }, [title]);
+
+  function confirmSend(): void {
+    const person = LEADERSHIP.find((candidate) => candidate.name === recipient) ?? LEADERSHIP[0];
+    if (!person) return;
+    setReceipt(addSend({ title, sources, recipient: person.name, recipientRole: person.role }));
+    setSendOpen(false);
+  }
 
   function exportPdf(): void {
     // Chrome's own header and footer (URL, date, page numbers) is a print
@@ -165,9 +190,9 @@ export function DashboardPanel({
             <Download className="size-3.5" />
             Export PDF
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={() => setEmailNote(true)}>
-            <Mail className="size-3.5" />
-            Email
+          <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={() => setSendOpen(true)}>
+            <Send className="size-3.5" />
+            Send
           </Button>
           <button
             onClick={onClose}
@@ -179,9 +204,11 @@ export function DashboardPanel({
         </div>
       </div>
 
-      {emailNote ? (
+      {receipt ? (
         <p className="print-hide border-b border-border px-4 py-2 text-[11px] text-muted-foreground">
-          Email delivery connects when the email backend lands. Nothing is sent yet.
+          Queued for <span className="font-medium text-foreground">{receipt.recipient}</span> ·{' '}
+          {receipt.recipientRole} · {sentAtLabel(receipt.at)}. Delivery connects when the platform
+          has accounts; nothing is sent yet.
         </p>
       ) : null}
 
@@ -207,6 +234,49 @@ export function DashboardPanel({
           From: {sources.join(' · ')}
         </p>
       ) : null}
+
+      {/* Send: the finding, its sources and the date, put in a person's hands.
+          The queue is real; the pipe connects when the platform has accounts. */}
+      <Dialog open={sendOpen} onOpenChange={setSendOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send this report</DialogTitle>
+            <DialogDescription>
+              {title}
+              {sources.length > 0 ? ` · From: ${sources.join(' · ')}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="label-caps mb-1.5 block">Send to</label>
+              <Select value={recipient} onValueChange={setRecipient}>
+                <SelectTrigger className="text-sm" aria-label="Send to">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEADERSHIP.map((person) => (
+                    <SelectItem key={person.name} value={person.name} className="text-xs">
+                      {person.name} · {person.role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              The figures, their sources and today's date go with it. Delivery connects when the
+              platform has accounts; nothing is sent yet.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setSendOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={confirmSend}>
+              Queue for {recipient.split(' ')[0]}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.aside>
   );
 }
