@@ -7,9 +7,9 @@
  * produce the same positions, so a node only moves when the guidance changed.
  */
 
-import { hashSeed, mulberry32 } from '@/lib/prng';
 import { BRAIN_AS_OF, BRAIN_SECTIONS, isReviewDue, type BrainDocument } from '@/content/brain';
 import type { Bounds } from '@/map/layout';
+import { hashSeed, mulberry32 } from '@/lib/prng';
 
 export type BrainNodeRole = 'hub' | 'section' | 'document' | 'owner';
 
@@ -104,20 +104,14 @@ function ownerInitials(key: string): string {
   return words.slice(0, 2).map((word) => word[0]!.toUpperCase()).join('') || '?';
 }
 
-/** Stable signed jitter in [-amount, amount], seeded by name. */
-function jitter(key: string, amount: number): number {
-  return (mulberry32(hashSeed(key))() * 2 - 1) * amount;
-}
-
-/** Two stable signed offsets in [-amount, amount], seeded by name. */
-function offsets(key: string, amount: number): [number, number] {
-  const rand = mulberry32(hashSeed(key));
-  return [(rand() * 2 - 1) * amount, (rand() * 2 - 1) * amount];
-}
-
 /** Round to half pixels and guarantee a finite number, like the map layout. */
 function halfPx(value: number): number {
   return Number.isFinite(value) ? Math.round(value * 2) / 2 : 0;
+}
+
+/** One stable pseudo-random float in [0, 1) for a named entity. */
+function unitOf(key: string): number {
+  return mulberry32(hashSeed(key))();
 }
 
 /** Sections in display order: known sections first, unknown ones alphabetically. */
@@ -157,8 +151,9 @@ export function brainStats(documents: BrainDocument[], asOf?: string): BrainStat
   };
 }
 
-/** The graph the canvas draws: hub at the origin, sections in a ring, each
-    section's documents clustered beside it, owners on the outer ring. */
+/** The graph the canvas draws: hub at the origin, sections in an even ring,
+    each section's documents in an outward fan, owners beyond the section
+    holding most of their documents. */
 export function buildBrainGraph(documents: BrainDocument[], asOf?: string): BrainGraph {
   const clock = asOf ?? BRAIN_AS_OF;
   const stats = brainStats(documents, clock);
@@ -177,33 +172,28 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
 
   const sections = orderedSections(documents);
   const r1 = 330 + 12 * Math.sqrt(documents.length);
-
-  interface SectionPlacement {
-    angle: number;
-    x: number;
-    y: number;
-    docRing: number;
-  }
-  const placements = new Map<string, SectionPlacement>();
+  const sectionStep = (2 * Math.PI) / Math.max(1, sections.length);
+  const sectionAnchors = new Map<string, { angle: number; distance: number }>();
 
   sections.forEach((name, index) => {
     const members = documents.filter((document) => document.section === name);
-    const angle = -Math.PI / 2 + index * ((2 * Math.PI) / Math.max(1, sections.length)) + jitter(`brain:section:${name}`, 0.08);
-    const x = Math.cos(angle) * r1;
-    const y = Math.sin(angle) * r1;
+    // A hand-balanced ring: even spacing with one small stable offset per
+    // section, so the graph reads organic rather than mechanical.
+    const angle = -Math.PI / 2 + index * sectionStep + (unitOf(`brain-section-angle:${name}`) - 0.5) * 0.2;
+    const distance = r1 * (0.93 + unitOf(`brain-section-radius:${name}`) * 0.18);
     nodes.push({
       id: sectionNodeId(name),
       role: 'section',
       label: name,
       sub: `${members.length} documents`,
-      x,
-      y,
-      r: 12 + 2.4 * Math.sqrt(members.length),
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+      r: 12 + 2.6 * Math.sqrt(members.length),
       section: name,
       initials: initialsOf(name),
     });
     edges.push({ a: 'hub', b: sectionNodeId(name), kind: 'structure' });
-    placements.set(name, { angle, x, y, docRing: 96 + 16 * Math.sqrt(members.length) });
+    sectionAnchors.set(name, { angle, distance });
   });
 
   // Document radius scales with content length across the whole corpus.
@@ -213,15 +203,21 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
   const span = maxLen - minLen || 1;
 
   for (const name of sections) {
-    const placement = placements.get(name)!;
+    const anchor = sectionAnchors.get(name)!;
     const members = documents
       .filter((document) => document.section === name)
       .sort((a, b) => a.id.localeCompare(b.id));
+    // Loose arcs on two rings, so a section reads as a group of notes rather
+    // than a row of beads. Angles and distances carry a small stable jitter.
+    const count = members.length;
+    const step = count > 1 ? Math.min(0.5, 1.35 / (count - 1)) : 0;
     members.forEach((document, index) => {
-      // A sunflower bouquet around the section: even angles, growing radius.
-      const angle = index * 2.39996 + placement.angle + jitter(`brain:doc:angle:${document.id}`, 0.05);
-      const distance = placement.docRing * Math.sqrt((index + 0.5) / members.length);
-      const [dx, dy] = offsets(`brain:doc:xy:${document.id}`, 9);
+      const angle =
+        anchor.angle +
+        (index - (count - 1) / 2) * step +
+        (unitOf(`brain-doc-angle:${document.id}`) - 0.5) * 0.1;
+      const distance =
+        anchor.distance + 118 + (index % 2) * 62 + (unitOf(`brain-doc-radius:${document.id}`) - 0.5) * 26;
       const flags: BrainNodeFlags = {};
       if (document.conflict) flags.conflict = true;
       if (isReviewDue(document.reviewed, clock)) flags.reviewDue = true;
@@ -232,14 +228,14 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
         id: documentNodeId(document.id),
         role: 'document',
         label: document.title,
-        x: placement.x + Math.cos(angle) * distance + dx,
-        y: placement.y + Math.sin(angle) * distance + dy,
-        r: 5 + 6.5 * Math.pow((document.content.length - minLen) / span, 0.75),
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        r: 8 + 4.5 * Math.pow((document.content.length - minLen) / span, 0.75),
         section: name,
         documentId: document.id,
         ...(Object.keys(flags).length > 0 ? { flags } : {}),
       });
-      edges.push({ a: sectionNodeId(name), b: documentNodeId(document.id), kind: 'structure' });
+      edges.push({ a: sectionNodeId(name), b: documentNodeId(document.id), kind: 'knowledge' });
     });
   }
 
@@ -248,12 +244,12 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
     count: number;
     sections: Set<string>;
   }
-  const ownerIndex = new Map<string, { count: number; sections: Set<string> }>();
+  const ownerIndex = new Map<string, { count: number; sections: Map<string, number> }>();
   for (const document of documents) {
     const key = ownerKeyOf(document.owner);
-    const entry = ownerIndex.get(key) ?? { count: 0, sections: new Set<string>() };
+    const entry = ownerIndex.get(key) ?? { count: 0, sections: new Map<string, number>() };
     entry.count += 1;
-    entry.sections.add(document.section);
+    entry.sections.set(document.section, (entry.sections.get(document.section) ?? 0) + 1);
     ownerIndex.set(key, entry);
   }
 
@@ -267,39 +263,41 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
   const groups: OwnerGroup[] = [];
   for (const key of rankedOwners.slice(0, 12)) {
     const entry = ownerIndex.get(key)!;
-    groups.push({ key, count: entry.count, sections: new Set(entry.sections) });
+    groups.push({ key, count: entry.count, sections: new Set(entry.sections.keys()) });
   }
   if (rankedOwners.length > 12) {
     const folded = rankedOwners.slice(12);
-    const count = folded.reduce((total, key) => total + ownerIndex.get(key)!.count, 0);
-    const sectionsOfFolded = new Set(folded.flatMap((key) => [...ownerIndex.get(key)!.sections]));
-    groups.push({ key: 'Other owners', count, sections: sectionsOfFolded });
+    const sectionsHeld = new Set<string>();
+    let count = 0;
+    for (const key of folded) {
+      const entry = ownerIndex.get(key)!;
+      count += entry.count;
+      for (const section of entry.sections.keys()) sectionsHeld.add(section);
+    }
+    groups.push({ key: 'Other owners', count, sections: sectionsHeld });
   }
 
-  const maxDocRing = sections.length > 0
-    ? Math.max(...sections.map((name) => placements.get(name)!.docRing))
-    : 0;
-  const r3 = r1 + maxDocRing + 120 + 26 * Math.sqrt(groups.length);
-
+  // The teams sit together in the top right corner, three to a row, staggered.
+  // The canvas ties a row with its bus bracket and one thread runs to the hub,
+  // like the people area of the reference drawing.
   groups.forEach((group, index) => {
-    const angle = -Math.PI / 2 + index * ((2 * Math.PI) / Math.max(1, groups.length)) + jitter(`brain:owner:${group.key}`, 0.15);
+    const row = Math.floor(index / 3);
+    const column = index % 3;
     nodes.push({
       id: ownerNodeId(group.key),
       role: 'owner',
       label: group.key,
       sub: `${group.count} documents`,
-      x: Math.cos(angle) * r3,
-      y: Math.sin(angle) * r3,
-      r: Math.min(18, 12 + 2 * Math.log2(1 + group.count)),
+      x: 320 + column * 150 + (row % 2) * 75,
+      y: -560 + row * 120,
+      r: 15 + Math.min(3, Math.log2(1 + group.count)),
       ownerKey: group.key,
       initials: ownerInitials(group.key),
     });
-    for (const section of sections) {
-      if (group.sections.has(section)) {
-        edges.push({ a: ownerNodeId(group.key), b: sectionNodeId(section), kind: 'structure' });
-      }
-    }
   });
+  if (groups.length > 0) {
+    edges.push({ a: 'hub', b: ownerNodeId(groups[0].key), kind: 'knowledge' });
+  }
 
   // Documents that share a linked practice are connected knowledge.
   for (let i = 0; i < documents.length; i += 1) {
@@ -309,6 +307,35 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
       const linksB = documents[j].relatedPracticeIds ?? [];
       if (linksB.some((id) => linksA.includes(id))) {
         edges.push({ a: documentNodeId(documents[i].id), b: documentNodeId(documents[j].id), kind: 'knowledge' });
+      }
+    }
+  }
+
+  // A tiny deterministic settle so no two discs can share space. Documents
+  // move; the hub, sections and owners stay where they were placed. The
+  // clearance is positional only, so editing a document's content changes its
+  // size but never its position.
+  const settler = nodes.filter((node) => node.role === 'document');
+  for (let step = 0; step < 6; step += 1) {
+    for (const doc of settler) {
+      for (const other of nodes) {
+        if (other === doc) continue;
+        if (other.role === 'document' && other.id.localeCompare(doc.id) < 0) continue;
+        const dx = other.x - doc.x;
+        const dy = other.y - doc.y;
+        const distance = Math.hypot(dx, dy);
+        const clearance = 34;
+        if (distance >= clearance) continue;
+        const split = other.role === 'document' ? 2 : 1;
+        const push = (clearance - distance) / split;
+        const ux = distance > 0.001 ? dx / distance : 1;
+        const uy = distance > 0.001 ? dy / distance : 0;
+        doc.x -= ux * push;
+        doc.y -= uy * push;
+        if (other.role === 'document') {
+          other.x += ux * push;
+          other.y += uy * push;
+        }
       }
     }
   }

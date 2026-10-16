@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { Frame, Minus, Plus } from 'lucide-react';
 import type { BrainGraph, BrainGraphNode } from '@/brain/graph';
-import { initialsOf, oklchLightness } from '@/components/canvas/ink';
+import { initialsOf } from '@/components/canvas/ink';
 import { readPalette, type Palette } from '@/components/map/palette';
 import { Button } from '@/components/ui/button';
 import { computeFit, computeFlyTo, type Bounds } from '@/map/layout';
@@ -26,8 +26,9 @@ import { cn } from '@/lib/utils';
  * Same viewport discipline as the map canvas: the draw loop measures the DOM
  * directly and keeps the transform in a ref, so painting never waits on React
  * state, and the palette is read once per theme change. The graph itself is
- * pure geometry from buildBrainGraph: hub at the origin, sections in a ring,
- * each section's documents beside it, owners on the outer ring.
+ * pure geometry from buildBrainGraph: hub at the origin, sections in an even
+ * ring, each section's documents in an outward fan, owners beyond their
+ * busiest section.
  */
 
 export interface BrainCanvasHandle {
@@ -68,6 +69,13 @@ interface TooltipState {
   lines: string[];
 }
 
+/** One drawn line of a node label: its own font and colour. */
+interface LabelLine {
+  text: string;
+  font: string;
+  color: string;
+}
+
 const VIEWPORT_PADDING = { top: 16, right: 20, bottom: 64, left: 20 };
 const FIT_PADDING = 26;
 /**
@@ -85,12 +93,13 @@ const DOT_STEP_UNITS = 28;
 const DOT_MIN_SCREEN = 18;
 const MAX_DOTS = 5000;
 
-/** Smallest screen radius each role keeps, so a node never becomes a speck. */
+/** Smallest screen radius each role keeps, so a node never becomes a speck.
+    The hub floor also keeps the sparkle legible at the resting fit. */
 function radiusOf(role: BrainGraphNode['role'], screenR: number): number {
-  if (role === 'hub') return Math.max(11, screenR);
+  if (role === 'hub') return Math.max(30, screenR);
   if (role === 'section') return Math.max(7, screenR);
   if (role === 'owner') return Math.max(6, screenR);
-  return Math.max(3, screenR);
+  return Math.max(5.5, screenR);
 }
 
 function collides(box: { x: number; y: number; w: number; h: number }, others: Array<{ x: number; y: number; w: number; h: number }>): boolean {
@@ -98,6 +107,13 @@ function collides(box: { x: number; y: number; w: number; h: number }, others: A
     (other) =>
       box.x < other.x + other.w && box.x + box.w > other.x && box.y < other.y + other.h && box.y + box.h > other.y,
   );
+}
+
+/** Same colour at a lower alpha, for gradients over the dotted paper. */
+function withAlpha(color: string, alpha: number): string {
+  const close = color.lastIndexOf(')');
+  if (!color.startsWith('oklch(') || close < 0) return color;
+  return `${color.slice(0, close)} / ${alpha}${color.slice(close)}`;
 }
 
 /** A rounded rectangle as an explicit path, without relying on ctx.roundRect. */
@@ -123,7 +139,8 @@ function roundedRectPath(
   context.closePath();
 }
 
-/** The tiny page glyph inside a document disc: a rounded rect plus two lines. */
+/** The page mark inside a document disc: a rounded outline plus one line,
+    drawn only once the disc is large enough to hold it. */
 function drawPageGlyph(
   context: CanvasRenderingContext2D,
   x: number,
@@ -137,48 +154,19 @@ function drawPageGlyph(
   const top = y - h / 2;
   context.save();
   context.strokeStyle = color;
-  context.lineWidth = Math.max(0.8, radius * 0.09);
+  context.lineWidth = 1;
   context.lineJoin = 'round';
   context.lineCap = 'round';
   roundedRectPath(context, left, top, w, h, Math.min(1.6, w * 0.28));
   context.stroke();
   context.beginPath();
-  context.moveTo(left + w * 0.22, top + h * 0.36);
-  context.lineTo(left + w * 0.78, top + h * 0.36);
-  context.moveTo(left + w * 0.22, top + h * 0.62);
-  context.lineTo(left + w * 0.62, top + h * 0.62);
+  context.moveTo(left + w * 0.24, top + h * 0.42);
+  context.lineTo(left + w * 0.76, top + h * 0.42);
   context.stroke();
   context.restore();
 }
 
-/** A tiny coral map pin, marking a document that links to practices. */
-function drawPin(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  color: string,
-  holeColor: string,
-): void {
-  context.save();
-  context.fillStyle = color;
-  context.beginPath();
-  context.moveTo(x - size * 0.85, y + size * 0.75);
-  context.lineTo(x + size * 0.85, y + size * 0.75);
-  context.lineTo(x, y + size * 2.3);
-  context.closePath();
-  context.fill();
-  context.beginPath();
-  context.arc(x, y, size, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = holeColor;
-  context.beginPath();
-  context.arc(x, y, size * 0.38, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
-}
-
-/** The hub mark: a four point sparkle, two overlapping thin diamonds. */
+/** The hub mark: one four point sparkle as a single quadratic path. */
 function drawSparkle(
   context: CanvasRenderingContext2D,
   x: number,
@@ -186,24 +174,50 @@ function drawSparkle(
   size: number,
   color: string,
 ): void {
-  const thin = size * 0.2;
+  // The path is authored in a 20.4 unit box, so scale it to the wanted span.
+  const scale = size / 20.4;
+  const px = (value: number): number => x + (value - 12) * scale;
+  const py = (value: number): number => y + (value - 12) * scale;
   context.save();
   context.fillStyle = color;
   context.beginPath();
-  context.moveTo(x, y - size);
-  context.lineTo(x + thin, y);
-  context.lineTo(x, y + size);
-  context.lineTo(x - thin, y);
-  context.closePath();
-  context.fill();
-  context.beginPath();
-  context.moveTo(x - size, y);
-  context.lineTo(x, y + thin);
-  context.lineTo(x + size, y);
-  context.lineTo(x, y - thin);
+  context.moveTo(px(12), py(1.8));
+  context.quadraticCurveTo(px(13.2), py(10.8), px(22.2), py(12));
+  context.quadraticCurveTo(px(13.2), py(13.2), px(12), py(22.2));
+  context.quadraticCurveTo(px(10.8), py(13.2), px(1.8), py(12));
+  context.quadraticCurveTo(px(10.8), py(10.8), px(12), py(1.8));
   context.closePath();
   context.fill();
   context.restore();
+}
+
+/** Longest document label line the canvas keeps before cutting with an ellipsis. */
+const LABEL_LINE_CHARS = 22;
+
+/** Two tidy lines at most: words for the first line up to the limit, the rest
+    on the second line, cut at a word boundary with an ellipsis. */
+function splitTitle(title: string): string[] {
+  const words = title.split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) return [''];
+  const first: string[] = [];
+  let index = 0;
+  while (index < words.length) {
+    const candidate = [...first, words[index]].join(' ');
+    if (first.length > 0 && candidate.length > LABEL_LINE_CHARS) break;
+    first.push(words[index]);
+    index += 1;
+  }
+  const rest = words.slice(index).join(' ');
+  if (rest.length === 0) return [first.join(' ')];
+  return [first.join(' '), clampLine(rest)];
+}
+
+function clampLine(text: string): string {
+  if (text.length <= LABEL_LINE_CHARS) return text;
+  const cut = text.slice(0, LABEL_LINE_CHARS + 1);
+  const space = cut.lastIndexOf(' ');
+  const body = (space > 0 ? cut.slice(0, space) : text.slice(0, LABEL_LINE_CHARS)).trimEnd();
+  return `${body}…`;
 }
 
 export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(function BrainCanvas(
@@ -233,12 +247,11 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
   const lastSizeRef = useRef({ w: 0, h: 0 });
 
   const highlightSet = useMemo(() => new Set(highlighted), [highlighted]);
-  const structureEdges = useMemo(() => graph.edges.filter((edge) => edge.kind === 'structure'), [graph]);
-  const knowledgeEdges = useMemo(() => graph.edges.filter((edge) => edge.kind === 'knowledge'), [graph]);
   const hubNode = useMemo(() => graph.nodes.find((node) => node.role === 'hub') ?? null, [graph]);
   const ownerNodes = useMemo(() => graph.nodes.filter((node) => node.role === 'owner'), [graph]);
   const sectionNodes = useMemo(() => graph.nodes.filter((node) => node.role === 'section'), [graph]);
   const documentNodes = useMemo(() => graph.nodes.filter((node) => node.role === 'document'), [graph]);
+  const roleById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node.role])), [graph]);
 
   // ── Palette follows the theme ─────────────────────────────────────────────
   const invalidateRef = useRef<(() => void) | null>(null);
@@ -330,51 +343,93 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       const cols = lastX - firstX + 1;
       const rows = lastY - firstY + 1;
       if (cols > 0 && rows > 0 && cols * rows <= MAX_DOTS) {
-        const dot = 1.5;
-        context.globalAlpha = 0.35;
+        // One path for every dot: a fill per dot would cost 5000 draws.
+        context.globalAlpha = 0.16;
         context.fillStyle = palette.border;
+        context.beginPath();
         for (let ix = firstX; ix <= lastX; ix += 1) {
           for (let iy = firstY; iy <= lastY; iy += 1) {
-            context.fillRect(originX + ix * screenStep - dot / 2, originY + iy * screenStep - dot / 2, dot, dot);
+            const dotX = originX + ix * screenStep;
+            const dotY = originY + iy * screenStep;
+            context.moveTo(dotX + 0.85, dotY);
+            context.arc(dotX, dotY, 0.85, 0, Math.PI * 2);
           }
         }
+        context.fill();
         context.globalAlpha = 1;
       }
     }
 
-    // ── Structure edges (solid, under the nodes) ──
-    context.lineWidth = 1;
-    context.strokeStyle = palette.labelStrong;
-    context.setLineDash([]);
-    for (const edge of structureEdges) {
+    // ── Edges ──
+    // Two voices only: the coral spokes carry structure from the hub to the
+    // sections, and every knowledge thread is a fine grey dashed curve. All of
+    // it is curved, so the graph reads woven rather than wired.
+    for (const edge of graph.edges) {
       const a = points.get(edge.a);
       const b = points.get(edge.b);
       if (!a || !b) continue;
+      const aRole = roleById.get(edge.a);
+      const bRole = roleById.get(edge.b);
+      const hubSpoke =
+        edge.kind === 'structure' &&
+        ((aRole === 'hub' && bRole === 'section') || (bRole === 'hub' && aRole === 'section'));
       const touched = inFocus(edge.a) || inFocus(edge.b);
-      context.globalAlpha = touched || !dimming ? 0.5 : palette.dimOpacity;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) || 1;
+      // Bow every thread to one side: a gentle, deterministic weave.
+      const bow = hubSpoke ? 0.1 : 0.07;
+      const controlX = (a.x + b.x) / 2 + (-dy / length) * length * bow;
+      const controlY = (a.y + b.y) / 2 + (dx / length) * length * bow;
       context.beginPath();
       context.moveTo(a.x, a.y);
-      const cx = (a.x + b.x) / 2 + (b.y - a.y) * 0.07;
-      const cy = (a.y + b.y) / 2 - (b.x - a.x) * 0.07;
-      context.quadraticCurveTo(cx, cy, b.x, b.y);
+      context.quadraticCurveTo(controlX, controlY, b.x, b.y);
+      if (hubSpoke) {
+        context.setLineDash([]);
+        context.lineWidth = 1.25;
+        context.strokeStyle = palette.colors.coral;
+      } else {
+        context.setLineDash([3, 4]);
+        context.lineWidth = 1;
+        context.strokeStyle = palette.border;
+      }
+      context.globalAlpha = touched || !dimming ? (hubSpoke ? 0.5 : 0.3) : palette.dimOpacity;
       context.stroke();
     }
+    context.setLineDash([]);
 
-    // ── Knowledge edges (connected knowledge, dotted) ──
-    context.lineWidth = 0.9;
-    context.setLineDash([3, 4]);
-    for (const edge of knowledgeEdges) {
-      const a = points.get(edge.a);
-      const b = points.get(edge.b);
-      if (!a || !b) continue;
-      const touched = inFocus(edge.a) || inFocus(edge.b);
-      context.globalAlpha = touched || !dimming ? 0.45 : palette.dimOpacity;
-      context.beginPath();
-      context.moveTo(a.x, a.y);
-      context.lineTo(b.x, b.y);
-      context.stroke();
+    // ── Owner bus ──
+    // A row of team discs is joined by one quiet bracket underneath, the
+    // structure line of the team area.
+    if (ownerNodes.length > 1) {
+      const rows = new Map<number, ScreenPoint[]>();
+      for (const node of ownerNodes) {
+        const point = points.get(node.id);
+        if (!point) continue;
+        const key = Math.round(point.y / 40);
+        rows.set(key, [...(rows.get(key) ?? []), point]);
+      }
+      const ownerFocused = ownerNodes.some((node) => inFocus(node.id));
+      context.setLineDash([]);
+      context.lineWidth = 1;
+      context.strokeStyle = palette.label;
+      context.globalAlpha = !dimming || ownerFocused ? 0.3 : palette.dimOpacity;
+      for (const row of rows.values()) {
+        if (row.length < 2) continue;
+        const bracketY = Math.max(...row.map((point) => point.y)) + radiusOf('owner', row[0].r) + 18;
+        const minX = Math.min(...row.map((point) => point.x));
+        const maxX = Math.max(...row.map((point) => point.x));
+        context.beginPath();
+        context.moveTo(minX, bracketY);
+        context.lineTo(maxX, bracketY);
+        for (const point of row) {
+          context.moveTo(point.x, point.y + radiusOf('owner', point.r));
+          context.lineTo(point.x, bracketY);
+        }
+        context.stroke();
+      }
+      context.globalAlpha = 1;
     }
-    context.setLineDash([]);
 
     // ── Discs ──
     const discBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
@@ -382,7 +437,7 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       discBoxes.push({ x: point.x - radius, y: point.y - radius, w: radius * 2, h: radius * 2 });
     };
 
-    // Owners: people.
+    // Owners: soft neutral discs with the initials. No stroke, no border noise.
     for (const node of ownerNodes) {
       const point = points.get(node.id);
       if (!point || cull(point)) continue;
@@ -392,22 +447,17 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.globalAlpha = alpha;
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fillStyle = palette.hubSurface;
+      context.fillStyle = palette.background;
       context.fill();
       context.lineWidth = 1;
-      context.strokeStyle = palette.hubRing;
-      context.globalAlpha = alpha * 0.55;
+      context.strokeStyle = palette.border;
       context.stroke();
-      context.globalAlpha = alpha;
-      if (radius >= 7) {
-        const lightness = oklchLightness(palette.hubSurface);
-        context.save();
-        context.font = `600 ${Math.round(radius * 0.85)}px Inter, sans-serif`;
+      if (radius >= 8) {
+        context.font = '500 11px Inter, sans-serif';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillStyle = lightness > 0.62 ? 'rgba(15, 17, 20, 0.78)' : 'rgba(255, 255, 255, 0.94)';
-        context.fillText(node.initials ?? initialsOf(node.label), point.x, point.y + radius * 0.04);
-        context.restore();
+        context.fillStyle = palette.labelStrong;
+        context.fillText(node.initials ?? initialsOf(node.label), point.x, point.y + 0.5);
       }
     }
 
@@ -422,7 +472,7 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       discBox(point, radius);
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.globalAlpha = alpha * 0.16;
+      context.globalAlpha = alpha * 0.2;
       context.fillStyle = palette.colors.coral;
       context.fill();
       context.globalAlpha = alpha * 0.55;
@@ -431,15 +481,15 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.stroke();
       context.globalAlpha = alpha;
       if (count) {
-        context.font = `600 ${Math.round(radius * 0.95)}px Inter, sans-serif`;
+        context.font = `600 ${Math.max(12, Math.round(radius * 0.95))}px Inter, sans-serif`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillStyle = palette.labelStrong;
-        context.fillText(count, point.x, point.y + radius * 0.04);
+        context.fillText(count, point.x, point.y + 0.5);
       }
     }
 
-    // Documents: white discs with a page glyph and the live flags.
+    // Documents: quiet discs, a page mark only when it fits, and the live flags.
     for (const node of documentNodes) {
       const point = points.get(node.id);
       if (!point || cull(point)) continue;
@@ -451,95 +501,83 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.globalAlpha = alpha;
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fillStyle = palette.hubSurface;
+      context.fillStyle = palette.background;
       context.fill();
-      context.lineWidth = 1;
-      context.strokeStyle = palette.border;
+      // A conflict takes over the border: one coral ring, nothing added outside.
+      context.lineWidth = flags?.conflict ? 1.5 : 1;
+      context.strokeStyle = flags?.conflict ? palette.colors.coral : palette.border;
       context.stroke();
 
-      if (flags?.conflict) {
-        context.globalAlpha = alpha * 0.9;
-        context.beginPath();
-        context.arc(point.x, point.y, radius + 2.4, 0, Math.PI * 2);
-        context.lineWidth = 1.5;
-        context.strokeStyle = palette.colors.coral;
-        context.stroke();
-      }
-
-      if (radius >= 6) {
-        context.globalAlpha = alpha * 0.85;
+      if (radius >= 5.5) {
+        context.globalAlpha = alpha * 0.55;
         drawPageGlyph(context, point.x, point.y, radius, palette.label);
       }
 
       if (flags?.reviewDue) {
-        const dotRadius = Math.max(1.6, radius * 0.26);
         context.globalAlpha = alpha;
         context.beginPath();
-        context.arc(point.x + radius * 0.78, point.y - radius * 0.78, dotRadius, 0, Math.PI * 2);
+        context.arc(point.x + radius * Math.SQRT1_2, point.y - radius * Math.SQRT1_2, 1.5, 0, Math.PI * 2);
         context.fillStyle = palette.colors.amber;
         context.fill();
-        context.lineWidth = 1;
-        context.strokeStyle = palette.hubSurface;
-        context.stroke();
       }
 
       if (flags?.practiceLinks && flags.practiceLinks.length > 0) {
         context.globalAlpha = alpha;
-        drawPin(
-          context,
-          point.x - radius * 0.82,
-          point.y + radius * 0.82,
-          Math.max(1.4, radius * 0.22),
-          palette.colors.coral,
-          palette.hubSurface,
-        );
-      }
-
-      if (inFocus(node.id)) {
-        const isSelected = selectedId === node.id;
-        context.globalAlpha = alpha;
         context.beginPath();
-        context.arc(point.x, point.y, radius + (isSelected ? 4 : 3), 0, Math.PI * 2);
-        context.strokeStyle = isSelected ? palette.colors.coral : palette.hubRing;
-        context.lineWidth = isSelected ? 2 : 1;
-        context.stroke();
+        context.arc(point.x, point.y + radius, 1.5, 0, Math.PI * 2);
+        context.fillStyle = palette.colors.coral;
+        context.fill();
       }
     }
 
-    // The hub, last: the coral centre of the whole graph.
+    // The hub, last: a soft halo, the pale disc, then the coral app mark with
+    // the white sparkle, so the hub reads as the source of everything.
     if (hubNode) {
       const point = points.get(hubNode.id);
       if (point) {
         const radius = radiusOf('hub', point.r);
         const alpha = alphaOf(hubNode.id);
         discBox(point, radius);
-        context.globalAlpha = alpha * 0.4;
+        const halo = context.createRadialGradient(
+          point.x,
+          point.y,
+          radius * 0.5,
+          point.x,
+          point.y,
+          radius * 2.8,
+        );
+        halo.addColorStop(0, withAlpha(palette.colors.coral, 0.14 * alpha));
+        halo.addColorStop(1, withAlpha(palette.colors.coral, 0));
+        context.fillStyle = halo;
         context.beginPath();
-        context.arc(point.x, point.y, radius + 7, 0, Math.PI * 2);
-        context.lineWidth = 1.2;
-        context.strokeStyle = palette.colors.coral;
-        context.stroke();
-        context.globalAlpha = alpha * 0.12;
-        context.beginPath();
-        context.arc(point.x, point.y, radius + 12, 0, Math.PI * 2);
-        context.lineWidth = 5;
-        context.stroke();
-        context.globalAlpha = alpha;
+        context.arc(point.x, point.y, radius * 2.8, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = alpha * 0.22;
+        context.fillStyle = palette.colors.coral;
         context.beginPath();
         context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        context.fill();
+        const mark = radius * 1.35;
+        context.globalAlpha = alpha;
+        roundedRectPath(context, point.x - mark / 2, point.y - mark / 2, mark, mark, mark * 0.3);
         context.fillStyle = palette.colors.coral;
         context.fill();
-        context.lineWidth = 1.4;
-        context.strokeStyle = palette.background;
+        drawSparkle(context, point.x, point.y, mark * 0.62, '#ffffff');
+      }
+    }
+
+    // Hover and selection share one quiet coral ring, and nothing else.
+    if (hovered !== null || selectedId !== null) {
+      context.lineWidth = 1.5;
+      context.strokeStyle = palette.colors.coral;
+      for (const node of graph.nodes) {
+        if (node.id !== hovered && node.id !== selectedId) continue;
+        const point = points.get(node.id);
+        if (!point || cull(point)) continue;
+        context.globalAlpha = alphaOf(node.id);
+        context.beginPath();
+        context.arc(point.x, point.y, radiusOf(node.role, point.r) + 4, 0, Math.PI * 2);
         context.stroke();
-        if (inFocus(hubNode.id)) {
-          context.beginPath();
-          context.arc(point.x, point.y, radius + 4, 0, Math.PI * 2);
-          context.lineWidth = 1;
-          context.strokeStyle = selectedId === hubNode.id ? palette.labelStrong : palette.hubRing;
-          context.stroke();
-        }
-        drawSparkle(context, point.x, point.y, radius * 0.5, 'rgba(255, 255, 255, 0.96)');
       }
     }
 
@@ -548,24 +586,28 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
     // tries below, above, right, then left. A document label that collides is
     // dropped unless the node is priority (hovered, selected or highlighted).
     const labelBoxes: Array<{ x: number; y: number; w: number; h: number }> = [];
+    /** Whether the projected graph has room for every node's label. */
+    const labelsFit = fit.scale * zoom >= 0.42;
     const placeLabel = (
       point: ScreenPoint,
       radius: number,
       alpha: number,
-      label: string,
+      lines: LabelLine[],
       sub: string | null,
-      labelFont: string,
       subFont: string,
       isPriority: boolean,
       avoidDiscs: boolean,
       gap: number,
     ): void => {
-      context.font = labelFont;
-      const labelWidth = context.measureText(label).width;
+      const widths = lines.map((line) => {
+        context.font = line.font;
+        return context.measureText(line.text).width;
+      });
       context.font = subFont;
       const subWidth = sub ? context.measureText(sub).width : 0;
-      const boxWidth = Math.max(labelWidth, subWidth) + 14;
-      const boxHeight = sub ? 31 : 21;
+      const boxWidth = Math.max(subWidth, ...widths, 0) + 14;
+      const lineHeight = 13;
+      const boxHeight = lines.length * lineHeight + (sub ? 13 : 0) + 8;
       const options = [
         { x: point.x - boxWidth / 2, y: point.y + radius + gap, w: boxWidth, h: boxHeight },
         { x: point.x - boxWidth / 2, y: point.y - radius - gap - boxHeight, w: boxWidth, h: boxHeight },
@@ -579,21 +621,24 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       labelBoxes.push(box);
 
       const centreX = box.x + boxWidth / 2;
-      const line1Y = box.y + (sub ? 12 : 14);
-      context.globalAlpha = alpha;
       context.textAlign = 'center';
       context.textBaseline = 'alphabetic';
       context.lineWidth = 4;
       context.strokeStyle = palette.background;
-      context.font = labelFont;
-      context.strokeText(label, centreX, line1Y);
-      context.fillStyle = palette.labelStrong;
-      context.fillText(label, centreX, line1Y);
+      context.globalAlpha = alpha;
+      lines.forEach((line, index) => {
+        context.font = line.font;
+        const y = box.y + 12 + index * lineHeight;
+        context.strokeText(line.text, centreX, y);
+        context.fillStyle = line.color;
+        context.fillText(line.text, centreX, y);
+      });
       if (sub) {
         context.font = subFont;
-        context.strokeText(sub, centreX, line1Y + 13);
+        const y = box.y + 12 + lines.length * lineHeight;
+        context.strokeText(sub, centreX, y);
         context.fillStyle = palette.label;
-        context.fillText(sub, centreX, line1Y + 13);
+        context.fillText(sub, centreX, y);
       }
     };
 
@@ -604,27 +649,43 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
           point,
           radiusOf('hub', point.r),
           alphaOf(hubNode.id),
-          hubNode.label || 'Practice Brain',
+          [{ text: hubNode.label || 'Practice Brain', font: '600 13.5px Inter, sans-serif', color: palette.labelStrong }],
           hubNode.sub ?? null,
-          '600 13px Inter, sans-serif',
-          '400 9px Inter, sans-serif',
+          '400 9.5px Inter, sans-serif',
           true,
           true,
-          12,
+          14,
         );
       }
     }
 
-    for (const node of [...ownerNodes, ...sectionNodes]) {
+    for (const node of sectionNodes) {
       const point = points.get(node.id);
       if (!point) continue;
       placeLabel(
         point,
-        radiusOf(node.role, point.r),
+        radiusOf('section', point.r),
         alphaOf(node.id),
-        node.label,
+        [{ text: node.label, font: '500 11.5px Inter, sans-serif', color: palette.labelStrong }],
         null,
-        '600 11px Inter, sans-serif',
+        '400 9px Inter, sans-serif',
+        true,
+        false,
+        10,
+      );
+    }
+
+    for (const node of ownerNodes) {
+      const point = points.get(node.id);
+      if (!point) continue;
+      const priority = hovered === node.id || selectedId === node.id || highlightSet.has(node.id);
+      if (!labelsFit && !priority) continue;
+      placeLabel(
+        point,
+        radiusOf('owner', point.r),
+        alphaOf(node.id),
+        [{ text: node.label, font: '500 10.5px Inter, sans-serif', color: palette.labelStrong }],
+        node.sub ?? null,
         '400 9px Inter, sans-serif',
         true,
         false,
@@ -636,19 +697,23 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       const point = points.get(node.id);
       if (!point) continue;
       const priority = hovered === node.id || selectedId === node.id || highlightSet.has(node.id);
-      const wantsLabel =
-        priority ||
-        zoom >= 1.1 ||
-        Boolean(node.flags?.conflict) ||
-        Boolean(node.flags?.reviewDue);
-      if (!wantsLabel) continue;
+      // Up to two quiet lines in the muted ink, halved behind a stroke so
+      // dashed threads never cut them. A tight fit hides them all except the
+      // focused and the flagged, so the graph never becomes text soup; zooming
+      // in (or a wider window) brings every label back.
+      const flagged = Boolean(node.flags?.conflict) || Boolean(node.flags?.reviewDue);
+      if (!labelsFit && !priority && !flagged) continue;
+      const lines: LabelLine[] = splitTitle(node.label).map((line) => ({
+        text: line,
+        font: '500 10px Inter, sans-serif',
+        color: palette.label,
+      }));
       placeLabel(
         point,
         radiusOf('document', point.r),
         alphaOf(node.id),
-        node.label,
+        lines,
         null,
-        '450 10px Inter, sans-serif',
         '400 9px Inter, sans-serif',
         priority,
         false,
@@ -684,12 +749,11 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
     highlightSet,
     hovered,
     hubNode,
-    knowledgeEdges,
     ownerNodes,
     pan,
+    roleById,
     sectionNodes,
     selectedId,
-    structureEdges,
     zoom,
   ]);
 

@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type FormEvent } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, Brain, ChevronRight, FileText, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, FileText, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
 import type { BrainAskEvent, BrainCitation } from '@/brain/ask';
 import {
   buildBrainGraph,
-  deriveBrainSuggestions,
   documentNodeId,
   type BrainGraphNode,
 } from '@/brain/graph';
@@ -33,6 +32,15 @@ import { cn } from '@/lib/utils';
  */
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+/** The hub's mark, shared with the canvas: a crisp four point sparkle. */
+function SparkleMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+      <path d="M12 1.8 Q13.2 10.8 22.2 12 Q13.2 13.2 12 22.2 Q10.8 13.2 1.8 12 Q10.8 10.8 12 1.8 Z" />
+    </svg>
+  );
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -210,7 +218,6 @@ export function BrainOverlay({
 }) {
   const documents = useBrainDocuments();
   const graph = useMemo(() => buildBrainGraph(documents), [documents]);
-  const suggestions = useMemo(() => deriveBrainSuggestions(documents, 8), [documents]);
   const documentsById = useMemo(() => new Map(documents.map((document) => [document.id, document])), [documents]);
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph]);
 
@@ -219,7 +226,6 @@ export function BrainOverlay({
   const [turn, setTurn] = useState<BrainTurn | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<string[]>([]);
-  const [showAllPrompts, setShowAllPrompts] = useState(false);
 
   const canvasRef = useRef<BrainCanvasHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -447,7 +453,6 @@ export function BrainOverlay({
     selectedNode && selectedNode.role === 'document' && selectedNode.documentId
       ? documentsById.get(selectedNode.documentId) ?? null
       : null;
-  const visibleSuggestions = showAllPrompts ? suggestions : suggestions.slice(0, 3);
 
   const citationChips = useMemo(() => {
     if (!turn || turn.citations.length === 0) return [];
@@ -475,22 +480,20 @@ export function BrainOverlay({
         if (!open) onClose();
       }}
     >
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40" />
-        <DialogPrimitive.Content
-          className="fixed inset-0 z-50 flex flex-col bg-background outline-none"
-          onOpenAutoFocus={(event) => {
+      <DialogPrimitive.Content
+        className="absolute inset-0 z-20 flex flex-col overflow-hidden bg-background outline-none"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          // The panel is a layer: the first Escape closes it, not the page.
+          if (selectedId) {
             event.preventDefault();
-            inputRef.current?.focus();
-          }}
-          onEscapeKeyDown={(event) => {
-            // The panel is a layer: the first Escape closes it, not the page.
-            if (selectedId) {
-              event.preventDefault();
-              clearSelection();
-            }
-          }}
-        >
+            clearSelection();
+          }
+        }}
+      >
           <motion.div
             className="flex h-full min-h-0 flex-col overflow-y-auto"
             initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 14 }}
@@ -523,7 +526,7 @@ export function BrainOverlay({
                   aria-hidden
                   className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-600)]"
                 >
-                  <Brain className="size-4" />
+                  <SparkleMark className="size-4" />
                 </span>
                 <input
                   ref={inputRef}
@@ -534,45 +537,24 @@ export function BrainOverlay({
                   className="h-9 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[color:var(--ink-3)]"
                 />
                 {asking ? (
-                  <AccentButton type="button" onClick={stopAsk} aria-label="Stop answering">
+                  <button
+                    type="button"
+                    onClick={stopAsk}
+                    aria-label="Stop answering"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                  >
                     <Square className="size-3.5" /> Stop
-                  </AccentButton>
+                  </button>
                 ) : (
-                  <AccentButton type="submit" disabled={question.trim().length === 0}>
+                  <button
+                    type="submit"
+                    disabled={question.trim().length === 0}
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:opacity-50 disabled:[box-shadow:none]"
+                  >
                     Ask the Brain <ArrowRight className="size-3.5" />
-                  </AccentButton>
+                  </button>
                 )}
               </form>
-
-              {suggestions.length > 0 ? (
-                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                  <span className="mr-0.5 text-[11px] text-[color:var(--ink-3)]">Try asking</span>
-                  {visibleSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.id}
-                      type="button"
-                      onClick={() => {
-                        setQuestion(suggestion.question);
-                        inputRef.current?.focus();
-                      }}
-                      className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-[color:var(--ink-2)] transition-colors hover:border-[color:var(--line-strong)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
-                    >
-                      {suggestion.question}
-                    </button>
-                  ))}
-                  {suggestions.length > 3 ? (
-                    <button
-                      type="button"
-                      aria-expanded={showAllPrompts}
-                      onClick={() => setShowAllPrompts((value) => !value)}
-                      className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-1 text-[11px] font-medium text-[color:var(--accent-600)] transition-colors hover:text-[color:var(--accent-700)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
-                    >
-                      <ChevronRight className={cn('size-3 transition-transform', showAllPrompts && 'rotate-90')} />
-                      {showAllPrompts ? 'Fewer' : 'More prompts'}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
 
             {/* 3. The answer strip, only when a turn exists */}
@@ -669,7 +651,7 @@ export function BrainOverlay({
               </section>
             ) : null}
 
-            {/* 4. The graph, with the legend pinned under it */}
+            {/* 4. The graph, the hero of the page */}
             <div className="mt-3 flex min-h-[260px] flex-1 flex-col">
               <div className="relative min-h-[220px] flex-1 px-2 md:px-4">
                 <BrainCanvas
@@ -694,35 +676,9 @@ export function BrainOverlay({
                   />
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1.5 border-t border-border px-4 py-2 md:px-8">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span aria-hidden className="size-2.5 rounded-full border border-border bg-card" />
-                    People
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span
-                      aria-hidden
-                      className="size-2.5 rounded-full"
-                      style={{ background: `oklch(var(${tokenVarFor('coral')}))` }}
-                    />
-                    Knowledge &amp; tools
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span aria-hidden className="h-0.5 w-5 rounded-full bg-foreground/50" />
-                    Team structure
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span aria-hidden className="w-5 border-t border-dashed border-foreground/45" />
-                    Connected knowledge
-                  </span>
-                </div>
-                <span className="text-[11px] text-[color:var(--ink-3)]">Drag to explore · +/- to zoom</span>
-              </div>
             </div>
           </motion.div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
+      </DialogPrimitive.Content>
     </DialogPrimitive.Root>
   );
 }
