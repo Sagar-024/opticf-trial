@@ -14,6 +14,10 @@ export interface ChatLogEvent {
   iterations?: number;
   toolCalls?: number;
   widgets?: number;
+  /** Brain ask: retrieved document count, verified citation count, truncation count. */
+  docs?: number;
+  citations?: number;
+  truncated?: number;
   flagged?: boolean;
   budgetExceeded?: boolean;
   /** Version of the instructions that produced the answer. */

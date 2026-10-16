@@ -16,6 +16,7 @@ import { monthLabel } from '../lib/months';
 import { buildCompareView } from '../compare/model';
 import { buildMapModel, type MapPractice } from '../data/map-model';
 import { BRAIN_DOCUMENTS, type BrainDocument } from '../content/brain';
+import { resolvePracticeIds, selectBrainDocuments, type PracticeRef } from '../brain/retrieve';
 import { extractNumbers } from './guard';
 import type { LlmToolDefinition } from './llm';
 import type { ChatContext, TableWidget, ToolOutput, Widget } from './types';
@@ -771,68 +772,26 @@ function runRefundAnomalies(ds: Dataset, input: Record<string, unknown>): ToolOu
   });
 }
 
-/**
- * Search the group's written guidance (the Brain). Returns the matching
- * documents so the answer can cite guidance alongside the numbers.
- */
-function searchBrain(documents: BrainDocument[], query: string, limit: number): Array<{ document: BrainDocument; score: number }> {
-  const terms = query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((term) => term.length > 2);
-
-  return documents
-    .map((document) => {
-      const title = document.title.toLowerCase();
-      const section = document.section.toLowerCase();
-      const scope = document.scope.toLowerCase();
-      const content = document.content.toLowerCase();
-      // Title matches matter most; body matches still count.
-      const score = terms.reduce((total, term) => {
-        let points = 0;
-        if (title.includes(term)) points += 3;
-        if (section.includes(term) || scope.includes(term)) points += 1;
-        if (content.includes(term)) points += 1;
-        return total + points;
-      }, 0);
-      return { document, score };
-    })
-    .filter((result) => result.score > 0)
-    .sort((a, b) => b.score - a.score || a.document.title.localeCompare(b.document.title))
-    .slice(0, limit);
+/** The practices a search resolves against, named as the reader sees them. */
+function practiceRefs(ds: Dataset): PracticeRef[] {
+  return ds.practices.map((practice) => ({
+    id: practice.practiceId,
+    name: practiceDisplayName(ds, practice.practiceId),
+  }));
 }
 
 /**
  * The practice ids a search is about. The model's input is untrusted: it may
  * pass an id, a name, or nothing at all, so ids are resolved from the values
- * given and from the question text itself. A question that names a practice
- * must never miss that practice's recorded context because of a bad argument.
+ * given and from the question text itself through the shared resolver in
+ * `brain/retrieve`. A question that names a practice must never miss that
+ * practice's recorded context because of a bad argument.
  */
 function resolveSearchPracticeIds(ds: Dataset, raw: unknown, query: string): string[] {
-  const found = new Set<string>();
-  const add = (value: string): void => {
-    const needle = value.trim().toLowerCase();
-    if (needle.length === 0) return;
-    for (const practice of ds.practices) {
-      if (
-        practice.practiceId.toLowerCase() === needle ||
-        practice.name.toLowerCase() === needle ||
-        practiceDisplayName(ds, practice.practiceId).toLowerCase() === needle
-      ) {
-        found.add(practice.practiceId);
-      }
-    }
-  };
-  if (Array.isArray(raw)) {
-    for (const value of raw) if (typeof value === 'string') add(value);
-  }
-  // The question itself may name a practice even when the model forgets to.
-  for (const practice of ds.practices) {
-    const name = practiceDisplayName(ds, practice.practiceId);
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`\\b${escaped}\\b`, 'i').test(query)) found.add(practice.practiceId);
-  }
-  return [...found];
+  const values = Array.isArray(raw)
+    ? raw.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : [];
+  return resolvePracticeIds(practiceRefs(ds), [...values, query].join('\n'));
 }
 
 function runSearchBrain(ds: Dataset, input: Record<string, unknown>, ctx?: ToolContext): ToolOutput {
@@ -849,25 +808,10 @@ function runSearchBrain(ds: Dataset, input: Record<string, unknown>, ctx?: ToolC
     });
   }
 
-  // Documents linked to the practice in question come first: when the model
-  // asks about a specific practice, its recorded context outranks a generic
-  // keyword hit. Keyword matches fill the remaining slots, but a document that
-  // is scoped to other practices is never used to answer for this one.
-  const linked = practiceIds.length > 0
-    ? documents.filter((document) => (document.relatedPracticeIds ?? []).some((id) => practiceIds.includes(id)))
-    : [];
-  const matches = searchBrain(documents, query, limit).filter(({ document }) => {
-    const links = document.relatedPracticeIds ?? [];
-    if (links.length === 0) return true;
-    if (practiceIds.length === 0) return true;
-    return links.some((id) => practiceIds.includes(id));
-  });
-
-  const chosen: BrainDocument[] = [];
-  for (const document of [...linked, ...matches.map((match) => match.document)]) {
-    if (chosen.length >= limit) break;
-    if (!chosen.some((existing) => existing.id === document.id)) chosen.push(document);
-  }
+  // The selection rule lives in brain/retrieve, so the chat tool and the ask
+  // surface can never rank the same corpus two ways: linked documents first,
+  // then keyword matches, a document scoped to other practices never surfacing.
+  const chosen = selectBrainDocuments(documents, { text: query, practiceIds, limit });
 
   if (chosen.length === 0) {
     return withNumbers({
