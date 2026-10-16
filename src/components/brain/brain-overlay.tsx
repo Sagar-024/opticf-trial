@@ -344,9 +344,9 @@ export function BrainOverlay({
   );
 
   const stopAsk = useCallback(() => {
-    setTurn((current) => (current && current.status === 'streaming' ? { ...current, status: 'stopped' } : current));
+    stopLast();
     abortRef.current?.abort();
-  }, []);
+  }, [stopLast]);
 
   /** The graph's Focus toggle, from the cluster or the F key. */
   const toggleFocus = useCallback(() => {
@@ -366,17 +366,20 @@ export function BrainOverlay({
       const controller = new AbortController();
       abortRef.current = controller;
       setAsking(true);
-      setTurn({
-        question: text,
-        draft: '',
-        meta: [],
-        citations: [],
-        status: 'streaming',
-        error: null,
-        flagged: false,
-        flagReason: null,
-        withdrawn: false,
-      });
+      setTurns((list) => [
+        ...list,
+        {
+          question: text,
+          draft: '',
+          meta: [],
+          citations: [],
+          status: 'streaming',
+          error: null,
+          flagged: false,
+          flagReason: null,
+          withdrawn: false,
+        },
+      ]);
 
       const history = historyRef.current.slice(-6);
 
@@ -398,7 +401,7 @@ export function BrainOverlay({
           } catch {
             // Keep the status message.
           }
-          setTurn((current) => (current ? { ...current, status: 'error', error: message } : current));
+          patchLast({ status: 'error', error: message });
           return;
         }
 
@@ -411,7 +414,7 @@ export function BrainOverlay({
         const handleEvent = (event: BrainAskEvent): void => {
           if (event.type === 'meta') {
             metaDocs = event.docs;
-            setTurn((current) => (current ? { ...current, meta: event.docs } : current));
+            patchLast({ meta: event.docs });
             return;
           }
           if (event.type === 'delta') {
@@ -419,7 +422,7 @@ export function BrainOverlay({
             const known = new Set(metaDocs.map((doc) => doc.id));
             const cited = citedDocumentIds(rawText, known);
             const display = stripCitationTokens(cleanStream(rawText), new Set(cited));
-            setTurn((current) => (current ? { ...current, draft: display } : current));
+            patchLast({ draft: display });
             return;
           }
           if (event.type === 'done') {
@@ -432,24 +435,19 @@ export function BrainOverlay({
               { role: 'user' as const, content: text },
               { role: 'assistant' as const, content: display || event.text },
             ].slice(-6);
-            setTurn((current) =>
-              current
-                ? {
-                    ...current,
-                    draft: display,
-                    meta: event.docs,
-                    citations: event.citations,
-                    status: 'done',
-                    flagged: event.flagged,
-                    flagReason: event.flagReason,
-                    withdrawn: event.withdrawn,
-                  }
-                : current,
-            );
+            patchLast({
+              draft: display,
+              meta: event.docs,
+              citations: event.citations,
+              status: 'done',
+              flagged: event.flagged,
+              flagReason: event.flagReason,
+              withdrawn: event.withdrawn,
+            });
             return;
           }
           if (event.type === 'error') {
-            setTurn((current) => (current ? { ...current, status: 'error', error: event.message } : current));
+            patchLast({ status: 'error', error: event.message });
           }
         };
 
@@ -479,22 +477,20 @@ export function BrainOverlay({
           }
         }
         // A stream that ended without done is incomplete: offer the retry.
-        setTurn((current) => (current && current.status === 'streaming' ? { ...current, status: 'stopped' } : current));
+        stopLast();
       } catch (error) {
         if (controller.signal.aborted) {
-          setTurn((current) => (current && current.status === 'streaming' ? { ...current, status: 'stopped' } : current));
+          stopLast();
         } else {
           const detail = error instanceof Error && error.message ? ` ${error.message}` : '';
-          setTurn((current) =>
-            current ? { ...current, status: 'error', error: `The Brain could not be reached.${detail}` } : current,
-          );
+          patchLast({ status: 'error', error: `The Brain could not be reached.${detail}` });
         }
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         setAsking(false);
       }
     },
-    [asking],
+    [asking, patchLast, stopLast],
   );
 
   const submitAsk = (event: FormEvent<HTMLFormElement>): void => {
@@ -511,24 +507,25 @@ export function BrainOverlay({
       ? documentsById.get(selectedNode.documentId) ?? null
       : null;
 
-  const citationChips = useMemo(() => {
-    if (!turn || turn.citations.length === 0) return [];
+  /** The citation chips of one turn: id, title and section, deduped. */
+  const chipsFor = (entry: BrainTurn): Array<{ id: string; title: string; section: string }> => {
+    if (entry.citations.length === 0) return [];
     const seen = new Set<string>();
-    return turn.citations
+    return entry.citations
       .filter((citation) => {
         if (seen.has(citation.id)) return false;
         seen.add(citation.id);
         return true;
       })
       .map((citation) => {
-        const meta = turn.meta.find((doc) => doc.id === citation.id);
+        const meta = entry.meta.find((doc) => doc.id === citation.id);
         return {
           id: citation.id,
           title: meta?.title ?? citation.title,
           section: meta?.section ?? citation.section,
         };
       });
-  }, [turn]);
+  };
 
   return (
     <DialogPrimitive.Root
@@ -578,13 +575,17 @@ export function BrainOverlay({
               </Button>
             </header>
 
-            {/* 2. The ask bar */}
-            <div
-              className={cn(
-                'mx-auto w-full max-w-[1120px] shrink-0 px-4 md:px-8',
-                focused && 'hidden',
-              )}
-            >
+            {/* 2. The working area: the conversation sidebar on the left, the
+                graph staying on the right. */}
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <aside
+                aria-label="Ask the Practice Brain"
+                className={cn(
+                  'flex min-h-0 w-full flex-col lg:w-[380px] lg:shrink-0 lg:border-r lg:border-border xl:w-[420px]',
+                  focused && 'hidden',
+                )}
+              >
+                <div className="shrink-0 px-4 pt-3 md:px-8 lg:px-5">
               <form
                 onSubmit={submitAsk}
                 className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2 [box-shadow:var(--shadow-floating)]"
@@ -622,105 +623,100 @@ export function BrainOverlay({
                   </button>
                 )}
               </form>
-            </div>
+                </div>
 
-            {/* 3. The answer strip, only when a turn exists */}
-            {turn && !focused ? (
-              <section
-                aria-label="Answer from the Practice Brain"
-                className="mx-auto mt-3 w-full max-w-[1120px] shrink-0 px-4 md:px-8"
-              >
-                <div className="max-h-[26dvh] overflow-y-auto pr-1">
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-xs text-[color:var(--ink-3)]">{turn.question}</p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 px-2 text-[11px]"
-                      onClick={() => setTurn(null)}
-                    >
+                {/* The conversation: every asked question, with its answer. */}
+                {turns.length > 0 ? (
+                  <div className="flex items-center justify-end px-4 pt-2 md:px-8 lg:px-5">
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" onClick={clearTurns}>
                       Clear
                     </Button>
                   </div>
+                ) : null}
 
-                  {turn.withdrawn ? (
-                    <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-[color:var(--ink-2)]">
-                      <TriangleAlert className="size-3.5 shrink-0 text-[oklch(var(--chart-4))]" />
-                      This answer was withdrawn.
-                    </div>
-                  ) : (
-                    <div className="mt-1.5 rounded-xl border border-border bg-card px-3.5 py-3 [box-shadow:var(--shadow-raised)]">
-                      <p className="whitespace-pre-wrap text-sm leading-6">
-                        {turn.draft ||
-                          (turn.status === 'streaming' ? (
-                            <span className="text-[color:var(--ink-3)]">Reading the Brain...</span>
-                          ) : (
-                            ''
+                <div className="max-h-[42dvh] min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-2 md:px-8 lg:max-h-none lg:px-5">
+                  {turns.map((entry, index) => (
+                    <section key={index} aria-label="Answer from the Practice Brain" className="space-y-1.5">
+                      <p className="text-xs text-[color:var(--ink-3)]">{entry.question}</p>
+
+                      {entry.withdrawn ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-[color:var(--ink-2)]">
+                          <TriangleAlert className="size-3.5 shrink-0 text-[oklch(var(--chart-4))]" />
+                          This answer was withdrawn.
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-border bg-card px-3.5 py-3 [box-shadow:var(--shadow-raised)]">
+                          <p className="whitespace-pre-wrap text-sm leading-6">
+                            {entry.draft ||
+                              (entry.status === 'streaming' ? (
+                                <span className="text-[color:var(--ink-3)]">Reading the Brain...</span>
+                              ) : (
+                                ''
+                              ))}
+                          </p>
+                        </div>
+                      )}
+
+                      {chipsFor(entry).length > 0 && !entry.withdrawn ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-[color:var(--ink-3)]">From the Brain</span>
+                          {chipsFor(entry).map((chip) => (
+                            <button
+                              key={chip.id}
+                              type="button"
+                              title={chip.section ? `${chip.title} (${chip.section})` : chip.title}
+                              onClick={() => focusDocument(chip.id)}
+                              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-[color:var(--ink-2)] transition-colors hover:border-[color:var(--accent-border)] hover:text-[color:var(--accent-600)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                            >
+                              <FileText className="size-3 shrink-0" />
+                              <span className="truncate">{chip.title}</span>
+                            </button>
                           ))}
-                      </p>
-                    </div>
-                  )}
+                        </div>
+                      ) : null}
 
-                  {citationChips.length > 0 && !turn.withdrawn ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-[color:var(--ink-3)]">From the Brain</span>
-                      {citationChips.map((chip) => (
-                        <button
-                          key={chip.id}
-                          type="button"
-                          title={chip.section ? `${chip.title} (${chip.section})` : chip.title}
-                          onClick={() => focusDocument(chip.id)}
-                          className="inline-flex max-w-[26rem] items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-[color:var(--ink-2)] transition-colors hover:border-[color:var(--accent-border)] hover:text-[color:var(--accent-600)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
-                        >
-                          <FileText className="size-3 shrink-0" />
-                          <span className="truncate">{chip.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                      {entry.status === 'done' && entry.flagged && !entry.withdrawn ? (
+                        <p className="flex items-center gap-1.5 text-[11px] text-[color:var(--ink-3)]">
+                          <TriangleAlert className="size-3 shrink-0 text-[oklch(var(--chart-4))]" />
+                          {flagNote(entry.flagReason)}
+                        </p>
+                      ) : null}
 
-                  {turn.status === 'done' && turn.flagged && !turn.withdrawn ? (
-                    <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[color:var(--ink-3)]">
-                      <TriangleAlert className="size-3 shrink-0 text-[oklch(var(--chart-4))]" />
-                      {flagNote(turn.flagReason)}
-                    </p>
-                  ) : null}
+                      {entry.status === 'stopped' ? (
+                        <div className="flex items-center gap-3 text-[11px] text-[color:var(--ink-3)]">
+                          <span>Stopped before the answer was complete.</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 gap-1 px-2 text-[11px]"
+                            onClick={() => void askBrain(entry.question)}
+                          >
+                            <RefreshCw className="size-3" /> Retry
+                          </Button>
+                        </div>
+                      ) : null}
 
-                  {turn.status === 'stopped' ? (
-                    <div className="mt-2 flex items-center gap-3 text-[11px] text-[color:var(--ink-3)]">
-                      <span>Stopped before the answer was complete.</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 gap-1 px-2 text-[11px]"
-                        onClick={() => void askBrain(turn.question)}
-                      >
-                        <RefreshCw className="size-3" /> Retry
-                      </Button>
-                    </div>
-                  ) : null}
-
-                  {turn.status === 'error' ? (
-                    <div className="mt-2 flex items-center gap-2 rounded-xl border border-destructive/40 px-3 py-2 text-xs text-destructive">
-                      <Badge variant="destructive">Error</Badge>
-                      <span className="min-w-0 flex-1">{turn.error}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-                        onClick={() => void askBrain(turn.question)}
-                      >
-                        <RefreshCw className="size-3" /> Retry
-                      </Button>
-                    </div>
-                  ) : null}
+                      {entry.status === 'error' ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-destructive/40 px-3 py-2 text-xs text-destructive">
+                          <Badge variant="destructive">Error</Badge>
+                          <span className="min-w-0 flex-1">{entry.error}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+                            onClick={() => void askBrain(entry.question)}
+                          >
+                            <RefreshCw className="size-3" /> Retry
+                          </Button>
+                        </div>
+                      ) : null}
+                    </section>
+                  ))}
                 </div>
-              </section>
-            ) : null}
+              </aside>
 
-            {/* 4. The graph, the hero of the page */}
-            <div className={cn('flex min-h-[260px] flex-1 flex-col', focused ? 'mt-0' : 'mt-3')}>
-              <div className="relative min-h-[220px] flex-1 px-2 md:px-4">
+              {/* The graph, the hero, staying on the right. */}
+              <div className="relative min-h-[300px] min-w-0 flex-1 lg:min-h-0">
                 <BrainCanvas
                   ref={canvasRef}
                   graph={graph}
@@ -733,4 +729,21 @@ export function BrainOverlay({
                 />
                 {selectedDocument && selectedNode ? (
                   <DocumentPanel
-           
+                    document={selectedDocument}
+                    node={selectedNode}
+                    practiceName={practiceName}
+                    onAskAbout={() => {
+                      setQuestion(`What does the ${selectedDocument.title} say?`);
+                      clearSelection();
+                      inputRef.current?.focus();
+                    }}
+                    onOpen={onOpenDocument ? () => onOpenDocument(selectedDocument.title) : null}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </motion.div>
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Root>
+  );
+}
