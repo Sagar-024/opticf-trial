@@ -84,6 +84,8 @@ const NODE_SURFACE = 'rgba(255, 255, 255, 0.96)';
 const NODE_EDGE = 'rgba(24, 20, 16, 0.12)';
 const DOC_INK = '#8B857C';
 const TEAM_INK = '#4E5566';
+/** Connector threads: warm grey, readable on cream paper and on near black. */
+const EDGE_INK = 'rgba(168, 156, 144, 0.8)';
 
 const VIEWPORT_PADDING = { top: 16, right: 20, bottom: 64, left: 20 };
 const FIT_PADDING = 26;
@@ -148,8 +150,8 @@ function roundedRectPath(
   context.closePath();
 }
 
-/** The page mark inside a document disc: a rounded outline plus one line,
-    drawn only once the disc is large enough to hold it. */
+/** The page mark inside a document disc: a sheet with a turned-down corner and
+    two lines of writing, drawn only once the disc is large enough to hold it. */
 function drawPageGlyph(
   context: CanvasRenderingContext2D,
   x: number,
@@ -157,20 +159,42 @@ function drawPageGlyph(
   radius: number,
   color: string,
 ): void {
-  const w = radius * 0.78;
-  const h = radius * 1.04;
+  const w = radius * 0.66;
+  const h = radius * 0.86;
   const left = x - w / 2;
   const top = y - h / 2;
+  const right = left + w;
+  const bottom = top + h;
+  const fold = Math.min(w, h) * 0.34;
   context.save();
   context.strokeStyle = color;
   context.lineWidth = 1;
   context.lineJoin = 'round';
   context.lineCap = 'round';
-  roundedRectPath(context, left, top, w, h, Math.min(1.6, w * 0.28));
-  context.stroke();
+  // The sheet, with the corner turned down.
   context.beginPath();
-  context.moveTo(left + w * 0.24, top + h * 0.42);
-  context.lineTo(left + w * 0.76, top + h * 0.42);
+  context.moveTo(left, top + 1.5);
+  context.quadraticCurveTo(left, top, left + 1.5, top);
+  context.lineTo(right - fold, top);
+  context.lineTo(right, top + fold);
+  context.lineTo(right, bottom - 1.5);
+  context.quadraticCurveTo(right, bottom, right - 1.5, bottom);
+  context.lineTo(left + 1.5, bottom);
+  context.quadraticCurveTo(left, bottom, left, bottom - 1.5);
+  context.closePath();
+  context.stroke();
+  // The turned corner itself.
+  context.beginPath();
+  context.moveTo(right - fold, top);
+  context.lineTo(right - fold, top + fold);
+  context.lineTo(right, top + fold);
+  context.stroke();
+  // Two lines of writing.
+  context.beginPath();
+  context.moveTo(left + w * 0.22, top + h * 0.52);
+  context.lineTo(right - w * 0.22, top + h * 0.52);
+  context.moveTo(left + w * 0.22, top + h * 0.72);
+  context.lineTo(right - w * 0.36, top + h * 0.72);
   context.stroke();
   context.restore();
 }
@@ -397,12 +421,13 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
         context.setLineDash([]);
         context.lineWidth = 1.25;
         context.strokeStyle = palette.colors.coral;
+        context.globalAlpha = touched || !dimming ? 0.6 : palette.dimOpacity;
       } else {
-        context.setLineDash([3, 4]);
-        context.lineWidth = 1;
-        context.strokeStyle = palette.border;
+        context.setLineDash([4, 5]);
+        context.lineWidth = 1.25;
+        context.strokeStyle = EDGE_INK;
+        context.globalAlpha = touched || !dimming ? 1 : palette.dimOpacity;
       }
-      context.globalAlpha = touched || !dimming ? (hubSpoke ? 0.5 : 0.3) : palette.dimOpacity;
       context.stroke();
     }
     context.setLineDash([]);
@@ -420,9 +445,9 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       }
       const ownerFocused = ownerNodes.some((node) => inFocus(node.id));
       context.setLineDash([]);
-      context.lineWidth = 1;
-      context.strokeStyle = palette.label;
-      context.globalAlpha = !dimming || ownerFocused ? 0.3 : palette.dimOpacity;
+      context.lineWidth = 1.25;
+      context.strokeStyle = EDGE_INK;
+      context.globalAlpha = !dimming || ownerFocused ? 1 : palette.dimOpacity;
       for (const row of rows.values()) {
         if (row.length < 2) continue;
         const bracketY = Math.max(...row.map((point) => point.y)) + radiusOf('owner', row[0].r) + 18;
@@ -713,8 +738,8 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       if (!labelsFit && !priority && !flagged) continue;
       const lines: LabelLine[] = splitTitle(node.label).map((line) => ({
         text: line,
-        font: '500 10px Inter, sans-serif',
-        color: palette.label,
+        font: '500 10.5px Inter, sans-serif',
+        color: palette.labelStrong,
       }));
       placeLabel(
         point,
