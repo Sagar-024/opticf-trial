@@ -633,8 +633,9 @@ export function BrainOverlay({
 
             {/* 3. The graph stays on the left; the conversation opens on the
                 right once the first question has been asked. With no turns
-                the graph owns the whole area, nothing else on screen. */}
-            <div className="mt-3 flex min-h-0 flex-1 flex-col-reverse lg:flex-row-reverse">
+                the graph owns the whole area right up to the ask bar, with no
+                divider between them. */}
+            <div className="mt-1 flex min-h-0 flex-1 flex-col-reverse lg:flex-row-reverse">
               {turns.length > 0 && !focused ? (
                 <aside
                   aria-label="Answers"
@@ -729,8 +730,8 @@ export function BrainOverlay({
               </aside>
               ) : null}
 
-              {/* The graph, the hero, staying on the left. */}
-              <div className="relative min-h-[300px] min-w-0 flex-1 lg:min-h-0">
+              {/* The graph, the hero, staying on the left, edge to edge. */}
+              <div className="relative min-h-[320px] min-w-0 flex-1 lg:min-h-0">
                 <BrainCanvas
                   ref={canvasRef}
                   graph={graph}
