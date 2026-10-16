@@ -16,6 +16,7 @@ import {
 import type { Lens, PaletteKey } from '@/map/lenses';
 import { tooltipLines } from '@/map/lenses';
 import { Button } from '@/components/ui/button';
+import { initialsOf, oklchLightness } from '@/components/canvas/ink';
 import { cn } from '@/lib/utils';
 import { readPalette, type Palette } from './palette';
 
@@ -69,18 +70,6 @@ interface Transform {
   offsetY: number;
   width: number;
   height: number;
-}
-
-/** First two letters of a practice name, for the mark inside a large node. */
-function initialsOf(name: string): string {
-  const letters = name.replace(/[^A-Za-z]/g, '');
-  return letters.length >= 2 ? letters.slice(0, 2) : letters || '?';
-}
-
-/** Rough lightness of an oklch() string, used to pick letter contrast. */
-function oklchLightness(color: string): number {
-  const match = color.match(/oklch\(\s*([\d.]+)/);
-  return match ? Number(match[1]) : 0.5;
 }
 
 // The toolbar, legend and focus strip are separate rows, not overlays, so the
