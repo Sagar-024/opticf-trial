@@ -575,17 +575,14 @@ export function BrainOverlay({
               </Button>
             </header>
 
-            {/* 2. The working area: the conversation sidebar on the left, the
-                graph staying on the right. */}
-            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-              <aside
-                aria-label="Ask the Practice Brain"
-                className={cn(
-                  'flex min-h-0 w-full flex-col lg:w-[380px] lg:shrink-0 lg:border-r lg:border-border xl:w-[420px]',
-                  focused && 'hidden',
-                )}
-              >
-                <div className="shrink-0 px-4 pt-3 md:px-8 lg:px-5">
+            {/* 2. The ask bar, always on top. The conversation opens beside
+                the graph only after the first question is asked. */}
+            <div
+              className={cn(
+                'mx-auto w-full max-w-[1120px] shrink-0 px-4 md:px-8',
+                focused && 'hidden',
+              )}
+            >
               <form
                 onSubmit={submitAsk}
                 className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2 [box-shadow:var(--shadow-floating)]"
@@ -623,18 +620,25 @@ export function BrainOverlay({
                   </button>
                 )}
               </form>
-                </div>
+            </div>
 
-                {/* The conversation: every asked question, with its answer. */}
-                {turns.length > 0 ? (
-                  <div className="flex items-center justify-end px-4 pt-2 md:px-8 lg:px-5">
+            {/* 3. The graph stays on the left; the conversation opens on the
+                right once the first question has been asked. With no turns
+                the graph owns the whole area, nothing else on screen. */}
+            <div className="mt-3 flex min-h-0 flex-1 flex-col-reverse lg:flex-row-reverse">
+              {turns.length > 0 && !focused ? (
+                <aside
+                  aria-label="Answers"
+                  className="flex min-h-0 flex-col border-t border-border lg:w-[400px] lg:shrink-0 lg:border-l lg:border-t-0 xl:w-[440px]"
+                >
+                  <div className="flex shrink-0 items-center justify-between px-4 pt-3 md:px-6 lg:px-5">
+                    <span className="text-[11px] uppercase tracking-wide text-[color:var(--ink-3)]">Answers</span>
                     <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" onClick={clearTurns}>
                       Clear
                     </Button>
                   </div>
-                ) : null}
 
-                <div className="max-h-[42dvh] min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-2 md:px-8 lg:max-h-none lg:px-5">
+                <div className="max-h-[42dvh] min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-2 md:px-6 lg:max-h-none lg:px-5">
                   {turns.map((entry, index) => (
                     <section key={index} aria-label="Answer from the Practice Brain" className="space-y-1.5">
                       <p className="text-xs text-[color:var(--ink-3)]">{entry.question}</p>
@@ -714,8 +718,9 @@ export function BrainOverlay({
                   ))}
                 </div>
               </aside>
+              ) : null}
 
-              {/* The graph, the hero, staying on the right. */}
+              {/* The graph, the hero, staying on the left. */}
               <div className="relative min-h-[300px] min-w-0 flex-1 lg:min-h-0">
                 <BrainCanvas
                   ref={canvasRef}
