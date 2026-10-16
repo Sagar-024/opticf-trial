@@ -557,20 +557,28 @@ export function BrainOverlay({
             {/* 1. Header (hidden in focus mode; Escape or the cluster brings it back) */}
             <header
               className={cn(
-                'mx-auto flex w-full max-w-[1120px] shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-5 md:px-8 md:pt-7',
+                'mx-auto flex w-full max-w-[1120px] shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-3 md:px-8 md:pt-4',
                 focused && 'hidden',
               )}
             >
               <div className="min-w-0">
-                <p className="text-[11px] text-[color:var(--ink-3)]">Home / Behind your answers</p>
-                <DialogPrimitive.Title className="mt-1.5 text-2xl font-semibold tracking-tight md:text-3xl">
-                  Your Practice Brain
-                </DialogPrimitive.Title>
-                <DialogPrimitive.Description className="mt-1.5 max-w-[52ch] text-sm text-muted-foreground">
-                  The people, knowledge and systems behind every answer.
-                </DialogPrimitive.Description>
+                <p className="text-[10px] leading-4 text-[color:var(--ink-3)]">Home / Behind your answers</p>
+                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0">
+                  <DialogPrimitive.Title className="text-lg font-semibold leading-6 tracking-tight md:text-xl">
+                    Your Practice Brain
+                  </DialogPrimitive.Title>
+                  <DialogPrimitive.Description className="text-xs leading-5 text-muted-foreground">
+                    The people, knowledge and systems behind every answer.
+                  </DialogPrimitive.Description>
+                </div>
               </div>
-              <Button variant="ghost" size="icon" aria-label="Close" className="rounded-full" onClick={onClose}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close"
+                className="mt-0.5 size-8 shrink-0 rounded-full"
+                onClick={onClose}
+              >
                 <X className="size-4" />
               </Button>
             </header>
