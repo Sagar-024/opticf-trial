@@ -96,8 +96,8 @@ export function DashboardPanel({
   useEffect(() => {
     if (!printWidget) return;
     let timer = 0;
-    // The chart's canvas paints a frame after it mounts; printing in the same
-    // tick captures an empty card. One frame plus a beat lets the bitmap land.
+    // The print render draws the chart fully on its first paint (no grow-in
+    // wave), so a frame plus a beat is all the snapshot needs.
     const frame = window.requestAnimationFrame(() => {
       timer = window.setTimeout(() => {
         // Paper is light: flip a dark theme to light for the print, then restore.
@@ -107,7 +107,7 @@ export function DashboardPanel({
         window.print();
         if (wasDark) root.classList.add('dark');
         setPrintWidget(null);
-      }, 200);
+      }, 150);
     });
     return () => {
       window.cancelAnimationFrame(frame);
@@ -330,7 +330,7 @@ export function DashboardPanel({
         {printWidget ? (
           // The single-chart export: the one chart rides the panel's own
           // print container, so the path stays the same as Export PDF.
-          <WidgetRenderer widget={printWidget} />
+          <WidgetRenderer widget={printWidget} animateCharts={false} />
         ) : (
           widgets.map((widget) => (
             <div key={widget.id} className="group/chart relative">

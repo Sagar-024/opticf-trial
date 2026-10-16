@@ -81,6 +81,7 @@ export function WidgetRenderer({
   onOpenBrain,
   onCompareOnMap,
   hideTitle,
+  animateCharts = true,
 }: {
   widget: Widget;
   /** Prose handed to a comparison widget, shown behind its Explain toggle. */
@@ -90,9 +91,11 @@ export function WidgetRenderer({
   onCompareOnMap?: (practiceIds: string[]) => void;
   /** True when the surface above already names this widget (the side panel). */
   hideTitle?: boolean;
+  /** False for the print render: the chart draws fully on its first paint. */
+  animateCharts?: boolean;
 }) {
   if (widget.type === 'kpi') return <Kpi widget={widget} hideTitle={hideTitle} />;
-  if (widget.type === 'chart') return <ChartWidget widget={widget} />;
+  if (widget.type === 'chart') return <ChartWidget widget={widget} animate={animateCharts} />;
   if (widget.type === 'compare') {
     return (
       <CompareWidget

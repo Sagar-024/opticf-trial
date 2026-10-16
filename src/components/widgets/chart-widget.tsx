@@ -20,7 +20,7 @@ import { YAxis } from '@/components/dither-kit/y-axis';
 
 const SERIES_COLORS: DitherColor[] = ['orange', 'blue', 'purple', 'green', 'pink'];
 
-export function ChartWidget({ widget }: { widget: ChartWidgetType }) {
+export function ChartWidget({ widget, animate = true }: { widget: ChartWidgetType; animate?: boolean }) {
   const keys = useMemo(() => widget.series.map((_, index) => `s${index}`), [widget.series]);
   const labels = widget.series[0]?.points.map((point) => point.label) ?? [];
 
@@ -77,7 +77,7 @@ export function ChartWidget({ widget }: { widget: ChartWidgetType }) {
         {/* The legend overlays the plot's top edge, and on a change chart zero
             sits at the top, so every bar touched it. The margin keeps the plot
             clear of the legend band. */}
-        <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover margins={{ top: 30 }}>
+        <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover animate={animate} margins={{ top: 30 }}>
           <XAxis dataKey="label" maxTicks={6} />
           <YAxis tickFormatter={compactAxis} />
           {widget.series.map((series, index) => (
