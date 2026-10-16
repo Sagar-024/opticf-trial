@@ -1,7 +1,7 @@
 import type { Dataset, Refund, RefundReason } from '../domain/types';
 import { formatMoney, formatNumber, formatPercent, formatSignedPercent } from '../lib/format';
 import { monthLabel, previousMonth } from '../lib/months';
-import { monthsOf, practicesById } from './dataset';
+import { monthsOf, practicesById, practiceDisplayName } from './dataset';
 import { query_metrics, resolveMonths, resolvePracticeIds } from './metrics';
 
 /**
@@ -56,12 +56,13 @@ export const REFUND_WEIGHTS: Record<RefundFindingCode, number> = {
   'goodwill-near-threshold': 12,
 };
 
-/** The four reasons in display order, with the labels everything quotes. */
+/** The reasons in display order, with the labels everything quotes. */
 export const REFUND_REASON_LABELS: Array<{ reason: RefundReason; label: string }> = [
   { reason: 'frame-fault', label: 'Frame or product fault' },
   { reason: 'lens-fit', label: 'Contact lens fit issue' },
   { reason: 'change-of-mind', label: 'Customer change of mind' },
   { reason: 'goodwill', label: 'Goodwill gesture' },
+  { reason: 'other', label: 'Other reason' },
 ];
 
 const FINDING_LABEL: Record<RefundFindingCode, string> = {
@@ -246,7 +247,7 @@ export function refund_findings(dataset: Dataset, options: RefundFindingsOptions
 
     return {
       practiceId: practice.practiceId,
-      name: practice.name,
+      name: practiceDisplayName(dataset, practice.practiceId),
       region: practice.region,
       manager: practice.manager,
       latestMonth: latest,
@@ -396,8 +397,15 @@ export function refund_summary(dataset: Dataset, query: RefundQuery = {}): Refun
   const prevTotal = sumAmount(prevRows);
   const changePct = prev && prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : null;
 
+  // A reason the label set has never seen is bucketed as `other` rather than
+  // dropped, so the mix always accounts for every payment and every pound.
+  const knownReasons = new Set(REFUND_REASON_LABELS.map((row) => row.reason));
   const byReason: RefundReasonRow[] = REFUND_REASON_LABELS.map(({ reason, label }) => {
-    const reasonRows = rows.filter((refund) => refund.reason === reason);
+    const reasonRows = rows.filter((refund) =>
+      reason === 'other'
+        ? refund.reason === 'other' || !knownReasons.has(refund.reason)
+        : refund.reason === reason,
+    );
     const reasonTotal = sumAmount(reasonRows);
     const sharePct = total > 0 ? (reasonTotal / total) * 100 : 0;
     return {
@@ -461,7 +469,7 @@ export function refund_summary(dataset: Dataset, query: RefundQuery = {}): Refun
       .map(([key, groupRows]) => {
         const groupTotal = sumAmount(groupRows);
         const sampleId = groupRows[0].practiceId;
-        const label = groupBy === 'region' ? key : byId.get(sampleId)?.name ?? key;
+        const label = groupBy === 'region' ? key : practiceDisplayName(dataset, sampleId);
         const region = groupBy === 'region' ? key : byId.get(sampleId)?.region;
         const groupRevenue =
           groupBy === 'region'

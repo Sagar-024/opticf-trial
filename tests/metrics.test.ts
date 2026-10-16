@@ -41,7 +41,9 @@ describe('query_metrics', () => {
     const practiceSum = byPractice.reduce((n, r) => n + r.metrics.revenue.actual, 0);
     const regionSum = byRegion.reduce((n, r) => n + r.metrics.revenue.actual, 0);
 
-    expect(byPractice).toHaveLength(dataset.practices.length);
+    // Whitefield left the group and has no latest-month row, so the breakdown
+    // covers every practice that reported: one fewer than the roster.
+    expect(byPractice).toHaveLength(dataset.practices.length - 1);
     expect(practiceSum).toBe(group.revenue.actual);
     expect(regionSum).toBe(group.revenue.actual);
   });

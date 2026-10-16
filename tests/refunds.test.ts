@@ -68,7 +68,7 @@ describe('refund summary', () => {
 
   it('defaults to the latest month, whole group, with the full trend', () => {
     expect(summary.monthLabel).toBe('Oct 2026');
-    expect(summary.practiceCount).toBe(40);
+    expect(summary.practiceCount).toBe(42); // the whole group, the divestment included
     expect(summary.trend).toHaveLength(6);
     expect(summary.trend[summary.trend.length - 1].month).toBe('2026-10');
   });

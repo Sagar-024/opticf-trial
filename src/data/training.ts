@@ -1,5 +1,6 @@
 import type { Dataset, Practice, TrainingRecord } from '../domain/types';
 import { formatPercent } from '../lib/format';
+import { practiceDisplayName } from './dataset';
 
 /**
  * `training_status` - per-practice training compliance.
@@ -112,7 +113,7 @@ export function training_status(dataset: Dataset, query: TrainingQuery = {}): Tr
 
     return {
       practiceId: practice.practiceId,
-      name: practice.name,
+      name: practiceDisplayName(dataset, practice.practiceId),
       region: practice.region,
       manager: practice.manager,
       requiredModules: required.length,

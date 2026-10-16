@@ -61,6 +61,8 @@ export interface MapViewProps {
   onToggleFocus?: () => void;
   /** Opens a linked Brain document from the practice panel. */
   onOpenBrain?: (documentTitle: string) => void;
+  /** Opens the Brain's create dialog for a practice with no context yet. */
+  onAddContext?: (practiceId: string) => void;
   /** Hands a compared set to the assistant, for the written explanation. */
   onAsk?: (practiceIds: string[]) => void;
   /** The way back when the page was opened from the task board. */
@@ -90,6 +92,7 @@ export function MapView({
   focus = false,
   onToggleFocus,
   onOpenBrain,
+  onAddContext,
   onAsk,
   onBackToTasks,
 }: MapViewProps) {
@@ -346,6 +349,7 @@ export function MapView({
             }
           }}
           onOpenBrain={onOpenBrain}
+          onAddContext={onAddContext}
           onCompare={(practiceId) => {
             setPageOpen(false);
             setCompareOpen(false);

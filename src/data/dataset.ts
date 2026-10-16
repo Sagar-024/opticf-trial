@@ -70,7 +70,7 @@ const REFUND_HEADER = [
   'escalated',
 ];
 
-const REFUND_REASON_VALUES: RefundReason[] = ['frame-fault', 'lens-fit', 'change-of-mind', 'goodwill'];
+const REFUND_REASON_VALUES: RefundReason[] = ['frame-fault', 'lens-fit', 'change-of-mind', 'goodwill', 'other'];
 
 /** Parse the practices CSV into typed rows. */
 export function parsePractices(csv: string): Practice[] {
@@ -116,14 +116,18 @@ export function parseTraining(csv: string): TrainingRecord[] {
   }));
 }
 
-/** Parse the refunds CSV into typed rows. Unknown reasons fall back to `goodwill`. */
+/**
+ * Parse the refunds CSV into typed rows. This is the boundary for source data:
+ * a reason code the app has never seen becomes `other`, never a guess at a
+ * known reason.
+ */
 export function parseRefunds(csv: string): Refund[] {
   return parseCsvObjects(csv).map((r) => ({
     refundId: r.refund_id,
     practiceId: r.practice_id,
     date: r.date,
     amount: toInt(r.amount),
-    reason: REFUND_REASON_VALUES.includes(r.reason as RefundReason) ? (r.reason as RefundReason) : 'goodwill',
+    reason: REFUND_REASON_VALUES.includes(r.reason as RefundReason) ? (r.reason as RefundReason) : 'other',
     orderRef: r.order_ref ?? '',
     authorisedBy: r.authorised_by ?? '',
     escalated: toBool(r.escalated),
@@ -236,4 +240,18 @@ export function regionsOf(dataset: Dataset): string[] {
     }
   }
   return out;
+}
+
+/**
+ * The name a reader should see: when two practices share a name (two High
+ * Streets), the town is appended so the label is unambiguous. One practice
+ * keeps its plain name, exactly as recorded.
+ */
+export function practiceDisplayName(dataset: Dataset, practiceId: string): string {
+  const practice = dataset.practices.find((p) => p.practiceId === practiceId);
+  if (!practice) return practiceId;
+  const collides = dataset.practices.some(
+    (other) => other.practiceId !== practiceId && other.name === practice.name,
+  );
+  return collides ? `${practice.name} (${practice.town})` : practice.name;
 }

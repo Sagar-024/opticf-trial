@@ -168,7 +168,7 @@ export function createLlmClient(): LlmClient {
               messages: messages as unknown as ChatCompletionMessageParam[],
               tools: tools as unknown as ChatCompletionTool[],
               tool_choice: 'auto',
-              max_tokens: 1400,
+              max_tokens: 2200,
             },
             { signal: signalFor(signal) },
           ),
@@ -198,7 +198,7 @@ export function createLlmClient(): LlmClient {
               messages: messages as unknown as ChatCompletionMessageParam[],
               tools: tools as unknown as ChatCompletionTool[],
               tool_choice: 'auto',
-              max_tokens: 1400,
+              max_tokens: 2200,
               stream: true,
               // Ask for token usage on the final chunk, for cost accounting.
               stream_options: { include_usage: true },

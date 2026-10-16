@@ -58,8 +58,19 @@ describe('map layout', () => {
   it('lays out a single region with one hub and its practices', () => {
     const layout = computeLayout('region', 'North West', items);
     expect(layout.hubs).toHaveLength(1);
-    expect(layout.nodes).toHaveLength(10);
+    expect(layout.nodes).toHaveLength(11); // 10 plus Whitefield, divested but still in the estate
     expect(layout.edges.every((edge) => edge.a === layout.hubs[0].id)).toBe(true);
+  });
+
+  it('mutes a practice that stopped reporting instead of failing it', () => {
+    const whitefield = model.practices.find((p) => p.practiceId === 'P042')!;
+    expect(whitefield.reported).toBe(false);
+    const clLens = lensById(lenses, 'contactLens');
+    const below = filterById(clLens, 'below-90');
+    expect(below.match(whitefield)).toBe(false);
+    expect(clLens.visual(whitefield).colorKey).toBe('muted');
+    // Nothing claims it failed in October: no attention signals at all.
+    expect(whitefield.attentionSignals).toHaveLength(0);
   });
 
   it('separates nodes instead of stacking them', () => {

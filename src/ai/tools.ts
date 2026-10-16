@@ -7,9 +7,11 @@ import {
   refund_findings,
   refund_summary,
   monthsOf,
+  practiceDisplayName,
+  selectPerformance,
 } from '../data/index';
 import type { Dataset, SeriesMetrics, MetricsBreakdownRow } from '../data/index';
-import { formatMoney, formatNumber, formatPercent } from '../lib/format';
+import { formatMoney, formatNumber, formatPercent, formatSignedPercent } from '../lib/format';
 import { monthLabel } from '../lib/months';
 import { buildCompareView } from '../compare/model';
 import { buildMapModel, type MapPractice } from '../data/map-model';
@@ -416,29 +418,76 @@ function runTodayPriorities(ds: Dataset, input: Record<string, unknown>): ToolOu
 }
 
 function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput {
-  const id = String(input.practice_id ?? '');
-  const practice = ds.practices.find((p) => p.practiceId === id || p.name.toLowerCase() === id.toLowerCase());
+  const id = String(input.practice_id ?? '').trim();
+  const matches = ds.practices.filter(
+    (p) =>
+      p.practiceId.toLowerCase() === id.toLowerCase()
+      || p.name.toLowerCase() === id.toLowerCase()
+      || practiceDisplayName(ds, p.practiceId).toLowerCase() === id.toLowerCase(),
+  );
+
+  // Two practices can share a name. Never guess between them: list them and
+  // let the reader pick by town.
+  if (matches.length > 1) {
+    const table: TableWidget = {
+      type: 'table',
+      id: 'practice-table',
+      title: `More than one practice is called ${id}`,
+      columns: ['Practice', 'Town', 'Region', 'Manager'],
+      rows: matches.map((p) => [
+        practiceDisplayName(ds, p.practiceId),
+        p.town,
+        p.region,
+        p.manager || 'No manager recorded',
+      ]),
+    };
+    return withNumbers({
+      summary: `${matches.length} practices are called ${id}: ${matches.map((p) => practiceDisplayName(ds, p.practiceId)).join(' and ')}. Ask about one of them by town.`,
+      widgets: [table],
+      mapHighlight: matches.map((p) => p.practiceId),
+      sources: ['Practice directory'],
+      context: context({ groupBy: 'practice', practiceIds: matches.map((p) => p.practiceId) }),
+    });
+  }
+
+  const practice = matches[0];
   if (!practice) {
     return withNumbers({ summary: `No practice found for "${id}".`, widgets: [], mapHighlight: [], sources: ['Practice directory'] });
   }
-  const latest = monthsOf(ds).at(-1)!;
-  const m = query_metrics(ds, { practiceIds: [practice.practiceId], month: latest });
+  const displayName = practiceDisplayName(ds, practice.practiceId);
+  const months = monthsOf(ds);
+  const latest = months[months.length - 1];
+
+  // A practice with no latest-month row shows its last reported month, never a
+  // month it was not there for: "no data" must never read as a collapse.
+  const reported = selectPerformance(ds, { practiceIds: [practice.practiceId], month: latest }).length > 0;
+  const effective = reported
+    ? latest
+    : [...months].reverse().find((month) => selectPerformance(ds, { practiceIds: [practice.practiceId], month }).length > 0) ?? latest;
+
+  const m = query_metrics(ds, { practiceIds: [practice.practiceId], month: effective });
+  const previousMonth = months[months.indexOf(effective) - 1];
+  const b = previousMonth ? query_metrics(ds, { practiceIds: [practice.practiceId], month: previousMonth }) : null;
+  const momPct = b && b.revenue.actual > 0 ? ((m.revenue.actual - b.revenue.actual) / b.revenue.actual) * 100 : null;
+  const momText = momPct !== null && previousMonth ? `${formatSignedPercent(momPct)} vs ${monthLabel(previousMonth)}` : '';
   const training = training_status(ds, { practiceIds: [practice.practiceId] });
   const t = training.byPractice[0];
-  const refunds = refund_findings(ds, { practiceIds: [practice.practiceId] })[0];
+  const refunds = reported ? refund_findings(ds, { practiceIds: [practice.practiceId] })[0] : undefined;
 
   const table: TableWidget = {
     type: 'table',
     id: 'practice-table',
-    title: `${practice.name} - context`,
+    title: `${displayName} - context`,
     columns: ['Field', 'Value'],
     rows: [
+      ...(reported ? [] : [['Status', `Stopped reporting after ${monthLabel(effective)}`]]),
       ['Region', practice.region],
-      ['Manager', practice.manager],
+      ['Manager', practice.manager || 'No manager recorded'],
       ['Mentor', practice.mentorName],
       ['PMS', practice.pmsSystem],
       ['Revenue', m.revenue.actualDisplay],
       ['Revenue vs target', m.revenue.attainmentDisplay],
+      ['Revenue change', momText || 'n/a'],
       ['Conversion', m.conversion.rateDisplay],
       ['Contact lens', `${m.contactLens.actualDisplay} (${m.contactLens.attainmentDisplay} of target)`],
       ['Training', t ? `${t.completionDisplay}${t.gaps.length ? ` - missing ${t.gaps.map((g) => g.moduleName).join(', ')}` : ''}` : 'n/a'],
@@ -446,18 +495,21 @@ function runGetPractice(ds: Dataset, input: Record<string, unknown>): ToolOutput
         'Refunds',
         refunds
           ? `${refunds.latestTotalDisplay} (${refunds.rateDisplay} of revenue${refunds.momDisplay ? `, ${refunds.momDisplay} vs ${refunds.prevMonthLabel}` : ''})${refunds.findings.length ? ` - ${refunds.findings.map((finding) => finding.label).join('; ')}` : ''}`
-          : 'n/a',
+          : reported ? 'n/a' : 'none after divestment',
       ],
     ],
   };
-  const summary = `${practice.name} (${practice.region}), manager ${practice.manager}, mentor ${practice.mentorName}. Revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target), conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.attainmentDisplay} of target${t ? `, training ${t.completionDisplay} complete` : ''}${refunds ? `, refunds ${refunds.latestTotalDisplay} (${refunds.rateDisplay} of revenue)` : ''}.`;
+  const managerPart = practice.manager ? `manager ${practice.manager}, ` : 'no manager recorded, ';
+  const summary = reported
+    ? `${displayName} (${practice.region}), ${managerPart}mentor ${practice.mentorName}. Revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target)${momText ? `, ${momText}` : ''}, conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.attainmentDisplay} of target${t ? `, training ${t.completionDisplay} complete` : ''}${refunds ? `, refunds ${refunds.latestTotalDisplay} (${refunds.rateDisplay} of revenue)` : ''}.`
+    : `${displayName} (${practice.region}) stopped reporting after ${monthLabel(effective)} and is no longer part of the trading group. Its last reported month: revenue ${m.revenue.actualDisplay} (${m.revenue.attainmentDisplay} of target)${momText ? `, ${momText}` : ''}, conversion ${m.conversion.rateDisplay}, contact lens ${m.contactLens.attainmentDisplay} of target${t ? `, training ${t.completionDisplay} complete` : ''}.`;
 
   return withNumbers({
     summary,
-    widgets: [kpiWidget('practice-kpi', `${practice.name} - ${monthLabel(latest)}`, m), table],
+    widgets: [kpiWidget('practice-kpi', reported ? `${displayName} - ${monthLabel(effective)}` : `${displayName} - ${monthLabel(effective)} (last reported)`, m), table],
     mapHighlight: [practice.practiceId],
-    sources: ['Practice directory', `Monthly performance, ${monthLabel(latest)}`, 'Training records'],
-    context: context({ metric: 'revenue+conversion', groupBy: 'practice', practiceIds: [practice.practiceId], month: latest }),
+    sources: ['Practice directory', `Monthly performance, ${monthLabel(effective)}`, 'Training records'],
+    context: context({ metric: 'revenue+conversion', groupBy: 'practice', practiceIds: [practice.practiceId], month: effective }),
   });
 }
 
@@ -508,10 +560,10 @@ function runHighlightOnMap(ds: Dataset, input: Record<string, unknown>): ToolOut
     id: 'highlight-table',
     title: 'Highlighted on the map',
     columns: ['Practice', 'Region', 'Manager'],
-    rows: practices.map((p) => [p.name, p.region, p.manager]),
+    rows: practices.map((p) => [practiceDisplayName(ds, p.practiceId), p.region, p.manager || 'No manager recorded']),
   };
   return withNumbers({
-    summary: `Highlighted ${practices.length} practices on the map: ${practices.map((p) => p.name).join(', ')}.`,
+    summary: `Highlighted ${practices.length} practices on the map: ${practices.map((p) => practiceDisplayName(ds, p.practiceId)).join(', ')}.`,
     widgets: [table],
     mapHighlight: practices.map((p) => p.practiceId),
     sources: ['Practice directory'],
@@ -750,13 +802,44 @@ function searchBrain(documents: BrainDocument[], query: string, limit: number): 
     .slice(0, limit);
 }
 
-function runSearchBrain(_ds: Dataset, input: Record<string, unknown>, ctx?: ToolContext): ToolOutput {
+/**
+ * The practice ids a search is about. The model's input is untrusted: it may
+ * pass an id, a name, or nothing at all, so ids are resolved from the values
+ * given and from the question text itself. A question that names a practice
+ * must never miss that practice's recorded context because of a bad argument.
+ */
+function resolveSearchPracticeIds(ds: Dataset, raw: unknown, query: string): string[] {
+  const found = new Set<string>();
+  const add = (value: string): void => {
+    const needle = value.trim().toLowerCase();
+    if (needle.length === 0) return;
+    for (const practice of ds.practices) {
+      if (
+        practice.practiceId.toLowerCase() === needle ||
+        practice.name.toLowerCase() === needle ||
+        practiceDisplayName(ds, practice.practiceId).toLowerCase() === needle
+      ) {
+        found.add(practice.practiceId);
+      }
+    }
+  };
+  if (Array.isArray(raw)) {
+    for (const value of raw) if (typeof value === 'string') add(value);
+  }
+  // The question itself may name a practice even when the model forgets to.
+  for (const practice of ds.practices) {
+    const name = practiceDisplayName(ds, practice.practiceId);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(query)) found.add(practice.practiceId);
+  }
+  return [...found];
+}
+
+function runSearchBrain(ds: Dataset, input: Record<string, unknown>, ctx?: ToolContext): ToolOutput {
   const query = String(input.query ?? '').trim();
   const limit = Math.min(6, Math.max(1, Number(input.limit) || 3));
   const documents = ctx?.brainDocuments ?? BRAIN_DOCUMENTS;
-  const practiceIds = Array.isArray(input.practiceIds)
-    ? input.practiceIds.filter((id): id is string => typeof id === 'string')
-    : [];
+  const practiceIds = resolveSearchPracticeIds(ds, input.practiceIds, query);
 
   if (query.length === 0) {
     return withNumbers({

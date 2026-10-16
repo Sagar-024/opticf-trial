@@ -2,8 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FileText, MapPin, Pencil, RotateCcw, Search, Sparkles, TriangleAlert } from 'lucide-react';
-import { BRAIN_DOCUMENTS, BRAIN_SECTIONS, type BrainDocument } from '@/content/brain';
+import { Clock, FileText, MapPin, Pencil, Plus, RotateCcw, Search, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
+import {
+  BRAIN_AS_OF,
+  BRAIN_SECTIONS,
+  EMPTY_BRAIN_STATE,
+  isReviewDue,
+  mergeBrainDocuments,
+  newBrainDocumentId,
+  type BrainDocument,
+  type BrainOverride,
+  type BrainState,
+} from '@/content/brain';
+import { readBrainState, writeBrainState } from '@/lib/brain-store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,15 +27,23 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-const STORAGE_KEY = 'opticf-brain-v1';
+/** The fields the create dialog collects, before the document is saved. */
+interface CreateDraft {
+  section: string;
+  title: string;
+  scope: string;
+  /** The linked practice id, or '' for whole group guidance. */
+  relatedPracticeId: string;
+  owner: string;
+  content: string;
+}
 
-interface Override {
-  content?: string;
-  owner?: string;
-  conflict?: boolean;
+function defaultCreateDraft(section: string): CreateDraft {
+  return { section, title: '', scope: 'Group guidance', relatedPracticeId: '', owner: 'Sara Kelly', content: '' };
 }
 
 /**
@@ -68,46 +87,50 @@ export function BrainView({
   onOpened,
   onOpenPractice,
   practiceName,
+  practices,
+  composeFor,
+  onComposeHandled,
 }: {
   openDocumentTitle?: string | null;
   onOpened?: () => void;
   onOpenPractice?: (practiceId: string) => void;
   practiceName?: (practiceId: string) => string;
+  /** Practices for the new document scope select. */
+  practices?: Array<{ practiceId: string; name: string }>;
+  /** A practice the reader asked to add context for; opens the create dialog prefilled. */
+  composeFor?: string | null;
+  onComposeHandled?: () => void;
 } = {}) {
   const [section, setSection] = useState<string>('all');
   const [query, setQuery] = useState('');
-  const [overrides, setOverrides] = useState<Record<string, Override>>({});
+  const [brainState, setBrainState] = useState<BrainState>(EMPTY_BRAIN_STATE);
   const [reading, setReading] = useState<BrainDocument | null>(null);
   const [editing, setEditing] = useState<BrainDocument | null>(null);
-  const [draft, setDraft] = useState<Override>({});
+  const [draft, setDraft] = useState<BrainOverride>({});
+  const [creating, setCreating] = useState(false);
+  const [createDraft, setCreateDraft] = useState<CreateDraft>(() => defaultCreateDraft('Operations'));
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setOverrides(JSON.parse(raw) as Record<string, Override>);
-    } catch {
-      // ignore unreadable storage
-    }
+    setBrainState(readBrainState());
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-    } catch {
-      // storage unavailable
-    }
-  }, [overrides, hydrated]);
+    writeBrainState(brainState);
+  }, [brainState, hydrated]);
 
-  const documents = useMemo(
-    () =>
-      BRAIN_DOCUMENTS.map((document) => ({
-        ...document,
-        ...overrides[document.id],
-      })),
-    [overrides],
+  const documents = useMemo(() => mergeBrainDocuments(brainState), [brainState]);
+
+  const reviewDueCount = useMemo(
+    () => documents.filter((document) => isReviewDue(document.reviewed)).length,
+    [documents],
+  );
+
+  const sortedPractices = useMemo(
+    () => [...(practices ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [practices],
   );
 
   const filtered = useMemo(() => {
@@ -132,6 +155,25 @@ export function BrainView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDocumentTitle]);
 
+  // A practice page can ask for a new context document: the create dialog
+  // opens prefilled for that practice.
+  useEffect(() => {
+    if (!composeFor) return;
+    const name = practices?.find((practice) => practice.practiceId === composeFor)?.name
+      ?? practiceName?.(composeFor)
+      ?? composeFor;
+    setCreateDraft({
+      section: 'Practice context',
+      title: `${name}: `,
+      scope: name,
+      relatedPracticeId: composeFor,
+      owner: 'Sara Kelly',
+      content: '',
+    });
+    setCreating(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composeFor]);
+
   function openEditor(document: BrainDocument): void {
     setEditing(document);
     setDraft({ content: document.content, owner: document.owner, conflict: Boolean(document.conflict) });
@@ -139,23 +181,77 @@ export function BrainView({
 
   function saveEdit(): void {
     if (!editing) return;
-    setOverrides((current) => ({
+    setBrainState((current) => ({
       ...current,
-      [editing.id]: {
-        content: draft.content ?? editing.content,
-        owner: draft.owner ?? editing.owner,
-        conflict: Boolean(draft.conflict),
+      overrides: {
+        ...current.overrides,
+        [editing.id]: {
+          content: draft.content ?? editing.content,
+          owner: draft.owner ?? editing.owner,
+          conflict: Boolean(draft.conflict),
+        },
       },
     }));
     setEditing(null);
   }
 
   function resetDocument(id: string): void {
-    setOverrides((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
+    setBrainState((current) => {
+      const overrides = { ...current.overrides };
+      delete overrides[id];
+      return { ...current, overrides };
     });
+  }
+
+  function openCreate(): void {
+    setCreateDraft(defaultCreateDraft(section === 'all' ? 'Operations' : section));
+    setCreating(true);
+  }
+
+  /** Closing the dialog also clears any compose request from a practice page. */
+  function closeCreate(): void {
+    setCreating(false);
+    if (composeFor) onComposeHandled?.();
+  }
+
+  function chooseScope(value: string): void {
+    if (value === 'group') {
+      setCreateDraft((current) => ({ ...current, relatedPracticeId: '', scope: 'Group guidance' }));
+      return;
+    }
+    const name = practices?.find((practice) => practice.practiceId === value)?.name ?? value;
+    setCreateDraft((current) => ({ ...current, relatedPracticeId: value, scope: name }));
+  }
+
+  function saveNewDocument(): void {
+    const title = createDraft.title.trim();
+    const content = createDraft.content.trim();
+    if (!title || !content) return;
+    const practice = practices?.find((entry) => entry.practiceId === createDraft.relatedPracticeId);
+    setBrainState((current) => ({
+      ...current,
+      created: [
+        ...current.created,
+        {
+          id: newBrainDocumentId(),
+          section: createDraft.section,
+          title,
+          owner: createDraft.owner.trim() || 'Sara Kelly',
+          reviewed: BRAIN_AS_OF,
+          scope: practice?.name ?? createDraft.scope,
+          content,
+          ...(practice ? { relatedPracticeIds: [practice.practiceId] } : {}),
+        },
+      ],
+    }));
+    closeCreate();
+  }
+
+  function deleteDocument(id: string): void {
+    setBrainState((current) => ({
+      ...current,
+      created: current.created.filter((document) => document.id !== id),
+    }));
   }
 
   return (
@@ -168,6 +264,12 @@ export function BrainView({
           <span className="text-[11px] text-muted-foreground">
             {documents.length} documents
           </span>
+          {reviewDueCount > 0 ? (
+            <span className="text-[11px] text-muted-foreground">{reviewDueCount} needs review</span>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={openCreate}>
+            <Plus className="size-3.5" /> New document
+          </Button>
           <div className="relative ml-auto w-[220px]">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -229,7 +331,15 @@ export function BrainView({
                       <TriangleAlert className="size-3" /> Needs clarification
                     </Badge>
                   ) : null}
-                  {overrides[document.id] ? (
+                  {isReviewDue(document.reviewed) ? (
+                    <Badge variant="outline" className="gap-1 text-[10px]">
+                      <Clock className="size-3" /> Review due
+                    </Badge>
+                  ) : null}
+                  {document.origin === 'yours' ? (
+                    <Badge variant="outline" className="text-[10px]">Yours</Badge>
+                  ) : null}
+                  {brainState.overrides[document.id] ? (
                     <Badge variant="outline" className="text-[10px]">Edited</Badge>
                   ) : null}
                 </div>
@@ -249,14 +359,27 @@ export function BrainView({
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => setReading(document)}>Read</Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEditor(document)}>
-                    <Pencil className="size-3.5" /> Edit
-                  </Button>
-                  {overrides[document.id] ? (
-                    <Button size="sm" variant="ghost" onClick={() => resetDocument(document.id)}>
-                      <RotateCcw className="size-3.5" /> Reset
+                  {document.origin === 'yours' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => deleteDocument(document.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="size-3.5" /> Delete
                     </Button>
-                  ) : null}
+                  ) : (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => openEditor(document)}>
+                        <Pencil className="size-3.5" /> Edit
+                      </Button>
+                      {brainState.overrides[document.id] ? (
+                        <Button size="sm" variant="ghost" onClick={() => resetDocument(document.id)}>
+                          <RotateCcw className="size-3.5" /> Reset
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
                 </div>
                   </CardContent>
                 </Card>
@@ -278,6 +401,8 @@ export function BrainView({
                   <Badge variant="secondary" className="text-[10px]">{reading.scope}</Badge>
                   <span className="text-[10px] uppercase tracking-[1.3px] text-muted-foreground">{reading.section}</span>
                   {reading.conflict ? <Badge variant="destructive" className="text-[10px]">Needs clarification</Badge> : null}
+                  {isReviewDue(reading.reviewed) ? <Badge variant="outline" className="gap-1 text-[10px]"><Clock className="size-3" /> Review due</Badge> : null}
+                  {reading.origin === 'yours' ? <Badge variant="outline" className="text-[10px]">Yours</Badge> : null}
                 </div>
                 <DialogTitle className="mt-2">{reading.title}</DialogTitle>
                 <DialogDescription>
@@ -296,7 +421,9 @@ export function BrainView({
                 <Sparkles className="size-3 text-[var(--accent-600)]" /> Ask in chat and this guidance is cited in the sources.
               </p>
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setReading(null); openEditor(reading); }}>Edit this guidance</Button>
+                {reading.origin === 'yours' ? null : (
+                  <Button variant="outline" onClick={() => { setReading(null); openEditor(reading); }}>Edit this guidance</Button>
+                )}
                 <Button onClick={() => setReading(null)}>Close</Button>
               </DialogFooter>
             </>
@@ -360,6 +487,89 @@ export function BrainView({
               </DialogFooter>
             </>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create your own guidance */}
+      <Dialog open={creating} onOpenChange={(open) => !open && closeCreate()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>New document</DialogTitle>
+            <DialogDescription>
+              Your own guidance, saved in this browser only. Chat answers cite it like any other document.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label-caps mb-1 block" htmlFor="brain-new-section">Section</label>
+                <Select
+                  value={createDraft.section}
+                  onValueChange={(value) => setCreateDraft((current) => ({ ...current, section: value }))}
+                >
+                  <SelectTrigger id="brain-new-section" className="text-xs" aria-label="Section">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BRAIN_SECTIONS.map((name) => (
+                      <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="label-caps mb-1 block" htmlFor="brain-new-scope">Scope</label>
+                <Select value={createDraft.relatedPracticeId || 'group'} onValueChange={chooseScope}>
+                  <SelectTrigger id="brain-new-scope" className="text-xs" aria-label="Scope">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="group" className="text-xs">Whole group</SelectItem>
+                    {sortedPractices.map((practice) => (
+                      <SelectItem key={practice.practiceId} value={practice.practiceId} className="text-xs">
+                        {practice.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="label-caps mb-1 block" htmlFor="brain-new-title">Title</label>
+              <Input
+                id="brain-new-title"
+                value={createDraft.title}
+                onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label className="label-caps mb-1 block" htmlFor="brain-new-owner">Owner</label>
+              <Input
+                id="brain-new-owner"
+                value={createDraft.owner}
+                onChange={(event) => setCreateDraft((current) => ({ ...current, owner: event.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label-caps mb-1 block" htmlFor="brain-new-content">Guidance</label>
+              <Textarea
+                id="brain-new-content"
+                rows={7}
+                value={createDraft.content}
+                onChange={(event) => setCreateDraft((current) => ({ ...current, content: event.target.value }))}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCreate}>Cancel</Button>
+            <Button onClick={saveNewDocument} disabled={!createDraft.title.trim() || !createDraft.content.trim()}>
+              Save document
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

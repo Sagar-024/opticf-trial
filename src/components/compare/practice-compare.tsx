@@ -228,7 +228,16 @@ export function PracticeCompare({
         {view.sides.map((side, index) => (
           <span key={side.practiceId} className="inline-flex items-center gap-1.5">
             <span aria-hidden className="size-1.5 rounded-full" style={{ background: ink(sideToken(index)) }} />
-            <span className={cn('tabular-nums font-medium', changeRow.bars[index].leftward ? 'text-[var(--bad)]' : 'text-[var(--good)]')}>
+            <span
+              className={cn(
+                'tabular-nums font-medium',
+                changeRow.bars[index].leftward
+                  ? 'text-[var(--bad)]'
+                  : changeRow.bars[index].neutral
+                    ? 'text-muted-foreground'
+                    : 'text-[var(--good)]',
+              )}
+            >
               {changeRow.bars[index].display}
             </span>
           </span>

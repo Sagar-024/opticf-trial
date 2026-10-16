@@ -48,6 +48,7 @@ const cache = new ResponseCache<RunChatResult>(10 * 60_000);
 interface ChatRequestBody {
   messages?: unknown;
   context?: unknown;
+  /** Untrusted Brain state from the browser: edits plus the reader's own documents. */
   brainOverrides?: unknown;
 }
 
@@ -95,8 +96,12 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError('Ask a question before sending.', 400);
   }
 
-  const context = sanitizeContext(body.context, getDataset());
-  const brainOverrides = sanitizeBrainOverrides(body.brainOverrides);
+  const dataset = getDataset();
+  const context = sanitizeContext(body.context, dataset);
+  const brainOverrides = sanitizeBrainOverrides(
+    body.brainOverrides,
+    new Set(dataset.practices.map((practice) => practice.practiceId)),
+  );
   const encoder = new TextEncoder();
   const traceId = globalThis.crypto?.randomUUID?.() ?? `t-${Date.now().toString(36)}`;
 

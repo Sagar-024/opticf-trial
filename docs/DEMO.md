@@ -37,7 +37,7 @@ npm run llm:check
 
 ### Today (30 seconds)
 
-1. The app opens on **Today**. Five priorities for Oct 2026, across 40 practices.
+1. The app opens on **Today**. Five priorities for Oct 2026, across 42 practices.
 2. Point at the first card: North West, revenue and conversion both falling.
 3. Click **Open region** on that card. You land on the map, region set to North West.
 4. Go back to Today, click **Open practice** on the Chorlton card. Map opens with 1 highlighted.
@@ -60,18 +60,24 @@ npm run llm:check
     - Expect: ranked practices with the evidence behind each score.
 12. Click **Show N practices on the map** on that answer.
 12b. Ask **Show me refunds**.
-    - Expect: the figure (£10,648 across 90 payments in October), the rate (0.3% of revenue), the month-on-month change, net revenue, the reason mix, the six month trend, and a note that three practices look unusual.
+    - Expect: the figure (£10,946 across 92 payments in October), the rate (0.3% of revenue), the month-on-month change, net revenue, the reason mix, the six month trend, and a note that three practices look unusual.
 12c. Ask **Which practices have unusual refunds?**
     - Expect: Chorlton (a spike against its own usual level, and 2.6% of revenue), Liverpool (a goodwill gesture above £50 with no regional lead recorded) and Plymouth (gestures clustered just under £50), each with its evidence and the policy quoted from the Brain.
+12d. Ask **What happened to Whitefield?**
+    - Expect: divested at the end of August, it stopped reporting, and the map keeps it muted rather than failing.
+12e. Ask **Why is Bristol's revenue down?**
+    - Expect: the fall (-13.4%), then the refit closure recorded in the Brain, quoted as context, never as a measured cause.
+12f. Ask **How is High Street doing?**
+    - Expect: a clean disambiguation. Two practices share the name; it lists both towns and asks which one.
 
 ### The map (2 minutes)
 
 13. You arrive with the matches highlighted and everything else dimmed. The lens has auto-selected.
 14. Click the **lens** dropdown and step through: Region, Sales, Refunds, Contact lens, Training, Mentors.
     - Each one recolours, relabels the legend, and offers its own filters.
-15. On **Refunds**, click **Unusual refunds**. Expect **3 of 40 matching**: Chorlton coral (spiking), Liverpool and Plymouth amber (policy flags). Open Chorlton: the Refunds tile reads £2,007 and the evidence names the spike against its usual £396.
-16. On **Contact lens**, click **Below 90% of target**. Expect **8 of 40 matching**.
-17. On **Training**, click **Training incomplete**. Expect **9 of 40**. Overdue gives 4.
+15. On **Refunds**, click **Unusual refunds**. Expect **3 of 42 matching**: Chorlton coral (spiking), Liverpool and Plymouth amber (policy flags). Open Chorlton: the Refunds tile reads £2,007 and the evidence names the spike against its usual £396.
+16. On **Contact lens**, click **Below 90% of target**. Expect **8 of 42 matching**.
+17. On **Training**, click **Training incomplete**. Expect **10 of 42**. Overdue gives 4.
 18. On **Mentors**, the strip becomes **Mentor portfolios**: four mentors, each with revenue, conversion
     change and how many practices grew. Click one to highlight their practices.
 19. Click a single practice node to open the inspector: metrics (now including refunds), six month trend, the evidence behind its
@@ -82,12 +88,19 @@ npm run llm:check
 
 ### The Brain (1 minute)
 
-22. Go to **Brain**. Six sections, 17 documents, each with an owner, a review date and a scope.
+22. Go to **Brain**. Six sections, 19 documents, each with an owner, a review date and a scope. One is past
+    its 90 day review window: its card shows **Review due** and the header counts it.
 23. Search **warranty** and open the procedure. Note it says guidance is cited in chat sources.
 24. Click **Edit** on that document, change the wording, and **Save**. The card shows an **Edited** badge.
+24b. Click **New document**, pick a section, give it a title and a line of guidance, and **Save**. The card
+    shows a **Yours** badge and can be deleted from the card. Ask about it in Chat and the answer cites it
+    like any other document.
 25. Go back to **Chat** and ask **How do we handle a frame warranty claim?**
     - Expect: it quotes **your edited wording**, and the source chip opens the document in the Brain.
     - That is the proof that guidance edits reach the AI.
+25b. Open a practice with no notes (for example Altrincham) and scroll to **Context from the Brain**: it
+    reads **No context recorded yet** with **Add context for this practice**. The Brain opens with the
+    create dialog prefilled for that practice.
 26. Ask **What do we know about Chorlton?**
     - Expect: it searches the Brain, returns the **Practice context** documents and cites them.
     - This is the knowledge layer working alongside the numbers, for one specific practice.

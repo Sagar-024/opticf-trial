@@ -5,7 +5,7 @@ import {
   formatSignedPp,
 } from '../lib/format';
 import { monthLabel, previousMonth } from '../lib/months';
-import { monthsOf, practicesById } from './dataset';
+import { monthsOf, practicesById, practiceDisplayName } from './dataset';
 
 /**
  * `query_metrics` - aggregate the trading numbers for a slice of the group.
@@ -241,7 +241,7 @@ export function query_metrics(dataset: Dataset, query: MetricsQuery = {}): Metri
   // Region groups are labelled by the region itself, not by a practice name.
   const labelOf = groupBy === 'region'
     ? (key: string) => key
-    : (key: string, samplePracticeId: string) => byId.get(samplePracticeId)?.name ?? key;
+    : (key: string, samplePracticeId: string) => practiceDisplayName(dataset, samplePracticeId);
 
   return { ...base, breakdown: groupRows(rows, keyOfRow, keyOfPractice, labelOf, practiceIds, dataset) };
 }

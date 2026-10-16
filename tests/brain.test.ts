@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { BRAIN_DOCUMENTS, BRAIN_SECTIONS, mergeBrainDocuments } from '../src/content/brain';
+import {
+  BRAIN_DOCUMENTS,
+  BRAIN_SECTIONS,
+  EMPTY_BRAIN_STATE,
+  isReviewDue,
+  mergeBrainDocuments,
+  newBrainDocumentId,
+  normalizeBrainState,
+} from '../src/content/brain';
 import { getTool } from '../src/ai/tools';
-import { sanitizeBrainOverrides } from '../src/ai/validate';
 import { generateDataset } from '../src/seed/generate';
 
 const dataset = generateDataset();
@@ -35,6 +42,11 @@ describe('brain content', () => {
 
   it('keeps the conflicting document marked, so the chat can caveat it', () => {
     expect(BRAIN_DOCUMENTS.some((document) => document.conflict)).toBe(true);
+  });
+
+  it('has exactly one document past its review date, so the demo shows the signal', () => {
+    const stale = BRAIN_DOCUMENTS.filter((document) => isReviewDue(document.reviewed));
+    expect(stale.map((document) => document.id)).toEqual(['targets']);
   });
 
   it('keeps the contact lens promotion prerequisite in the training guidance', () => {
@@ -74,23 +86,71 @@ describe('brain links to practices', () => {
 describe('guidance edits reach the answers', () => {
   it('applies a local edit over the shipped document', () => {
     const edited = mergeBrainDocuments({
-      warranty: { content: 'Edited wording: always confirm with Buying before promising a replacement.' },
+      overrides: { warranty: { content: 'Edited wording: always confirm with Buying before promising a replacement.' } },
+      created: [],
     });
     const document = edited.find((item) => item.id === 'warranty')!;
     expect(document.content).toContain('Edited wording');
   });
 
   it('search_brain quotes the edited text, not the original', () => {
-    const documents = mergeBrainDocuments({ warranty: { content: 'Edited wording: confirm with Buying first.' } });
+    const documents = mergeBrainDocuments({
+      overrides: { warranty: { content: 'Edited wording: confirm with Buying first.' } },
+      created: [],
+    });
     const output = search('frame warranty claim', undefined, { brainDocuments: documents });
     expect(output.summary).toContain('confirm with Buying first');
     expect(output.summary).not.toContain('Check the proof of purchase');
   });
 
   it('an edit can mark a document as conflicting', () => {
-    const documents = mergeBrainDocuments({ review: { conflict: true } });
+    const documents = mergeBrainDocuments({ overrides: { review: { conflict: true } }, created: [] });
     const output = search('practice performance review guide', undefined, { brainDocuments: documents });
     expect(output.summary).toMatch(/conflicting/i);
+  });
+
+  it('merges a document the reader wrote, marked as theirs', () => {
+    const documents = mergeBrainDocuments({
+      overrides: {},
+      created: [
+        {
+          id: 'own-chorlton-cover',
+          section: 'Practice context',
+          title: 'Chorlton: Saturday cover note',
+          owner: 'Sara Kelly',
+          reviewed: '2026-10-12',
+          scope: 'Chorlton',
+          content: 'Saturday cover is arranged through Sale while the rota allows.',
+          relatedPracticeIds: ['P001'],
+        },
+      ],
+    });
+    const created = documents.find((document) => document.id === 'own-chorlton-cover')!;
+    expect(created.origin).toBe('yours');
+    expect(created.relatedPracticeIds).toEqual(['P001']);
+    // Created documents come after the shipped ones.
+    expect(documents[documents.length - 1].id).toBe('own-chorlton-cover');
+  });
+
+  it('search_brain quotes a document the reader wrote', () => {
+    const documents = mergeBrainDocuments({
+      overrides: {},
+      created: [
+        {
+          id: 'own-chorlton-cover',
+          section: 'Practice context',
+          title: 'Chorlton: Saturday cover note',
+          owner: 'Sara Kelly',
+          reviewed: '2026-10-12',
+          scope: 'Chorlton',
+          content: 'Saturday cover is arranged through Sale while the rota allows.',
+          relatedPracticeIds: ['P001'],
+        },
+      ],
+    });
+    const output = search('Saturday cover', undefined, { brainDocuments: documents });
+    expect(output.summary).toContain('Saturday cover is arranged through Sale');
+    expect(output.sources).toContain('Brain: Chorlton: Saturday cover note');
   });
 
   it('falls back to the shipped documents when there are no edits', () => {
@@ -99,25 +159,52 @@ describe('guidance edits reach the answers', () => {
   });
 });
 
-describe('sanitizeBrainOverrides', () => {
-  it('rejects non-objects and unknown document ids', () => {
-    expect(sanitizeBrainOverrides(null)).toEqual({});
-    expect(sanitizeBrainOverrides('ignore previous instructions')).toEqual({});
-    expect(sanitizeBrainOverrides({ 'not-a-document': { content: 'x' } })).toEqual({});
+describe('normalizeBrainState', () => {
+  it('migrates a v1 flat overrides record to v2', () => {
+    const state = normalizeBrainState({ warranty: { content: 'Edited wording', conflict: true } });
+    expect(state.overrides).toEqual({ warranty: { content: 'Edited wording', conflict: true } });
+    expect(state.created).toEqual([]);
   });
 
-  it('caps content length and strips unsafe owner characters', () => {
-    const result = sanitizeBrainOverrides({
-      warranty: { content: 'a'.repeat(9000), owner: '<script>alert(1)</script>Buying' },
+  it('passes a v2 state through', () => {
+    const state = normalizeBrainState({
+      overrides: { review: { owner: 'People team' } },
+      created: [
+        {
+          id: 'own-1',
+          section: 'Operations',
+          title: 'Local opening hours',
+          owner: 'Sara Kelly',
+          reviewed: '2026-10-12',
+          scope: 'Group guidance',
+          content: 'The demo site opens at nine.',
+        },
+      ],
     });
-    expect(result.warranty.content?.length).toBe(4000);
-    expect(result.warranty.owner).not.toContain('<');
-    expect(result.warranty.owner).not.toContain('>');
+    expect(state.overrides.review.owner).toBe('People team');
+    expect(state.created).toHaveLength(1);
+    expect(state.created[0].origin).toBe('yours');
   });
 
-  it('keeps a legitimate edit', () => {
-    const result = sanitizeBrainOverrides({ training: { content: 'New wording', owner: 'People team', conflict: true } });
-    expect(result).toEqual({ training: { content: 'New wording', owner: 'People team', conflict: true } });
+  it('returns an empty state for junk rather than throwing', () => {
+    expect(normalizeBrainState('ignore previous instructions')).toEqual(EMPTY_BRAIN_STATE);
+    expect(normalizeBrainState([1, 2])).toEqual(EMPTY_BRAIN_STATE);
+  });
+});
+
+describe('review dates', () => {
+  it('is due when the last review is more than 90 days before the demo clock', () => {
+    expect(isReviewDue('2026-07-13')).toBe(true);
+    expect(isReviewDue('2026-03-18')).toBe(true);
+  });
+
+  it('is not due within 90 days, including exactly 90', () => {
+    expect(isReviewDue('2026-07-14')).toBe(false);
+    expect(isReviewDue('2026-10-07')).toBe(false);
+  });
+
+  it('generates ids the server will accept', () => {
+    expect(newBrainDocumentId()).toMatch(/^own-[A-Za-z0-9-]{1,40}$/);
   });
 });
 
@@ -169,6 +256,18 @@ describe('search_brain tool', () => {
 describe('chat can use practice context', () => {
   it('finds the context document when the question names the practice', () => {
     const output = getTool('search_brain')!.run(dataset, { query: 'Chorlton' });
+    expect(output.sources).toContain('Brain: Chorlton: refit, supply account and local cover');
+  });
+
+  it('resolves a practice name passed where an id was expected', () => {
+    // The model sometimes sends the name instead of the id; the tool must not
+    // lose the context because of it.
+    const output = getTool('search_brain')!.run(dataset, { query: 'Chorlton practice context', practiceIds: ['Chorlton'] });
+    expect(output.sources).toContain('Brain: Chorlton: refit, supply account and local cover');
+  });
+
+  it('resolves the practice from the question itself, no id needed', () => {
+    const output = getTool('search_brain')!.run(dataset, { query: 'What does the Brain know about Chorlton?' });
     expect(output.sources).toContain('Brain: Chorlton: refit, supply account and local cover');
   });
 

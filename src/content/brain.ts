@@ -26,6 +26,23 @@ export interface BrainDocument {
    * practice.
    */
   relatedPracticeIds?: string[];
+  /** 'yours' marks a document the reader wrote themselves. Absent means shipped guidance. */
+  origin?: 'yours';
+}
+
+/** A field edit over one shipped document. */
+export interface BrainOverride {
+  content?: string;
+  owner?: string;
+  conflict?: boolean;
+}
+
+/** Everything the reader has changed about the Brain, as one typed state. */
+export interface BrainState {
+  /** Field edits over shipped documents, keyed by document id. */
+  overrides: Record<string, BrainOverride>;
+  /** Documents the user wrote themselves. */
+  created: BrainDocument[];
 }
 
 export const BRAIN_SECTIONS = [
@@ -93,7 +110,7 @@ export const BRAIN_DOCUMENTS: BrainDocument[] = [
     section: 'Finance & Claims',
     title: 'Setting and revising practice targets',
     owner: 'Finance Support',
-    reviewed: '2026-09-28',
+    reviewed: '2026-03-18',
     scope: 'Group guidance',
     content:
       'Revenue, conversion and contact lens targets are set once a year as part of the plan and are not revised mid quarter without Finance approval. A shortfall against target is a prompt to investigate, not by itself evidence of poor performance. Seasonality and one off local events should be considered before conclusions are drawn.',
@@ -221,6 +238,28 @@ export const BRAIN_DOCUMENTS: BrainDocument[] = [
     content:
       'Warwick is used as the reference site for contact lens growth coaching. Required training is complete and mentor Priya Nair runs quarterly sessions here. The visits are descriptive: Warwick being a reference site does not make its figures a target for any other practice.',
   },
+  {
+    id: 'ctx-bristol',
+    section: 'Practice context',
+    title: 'Bristol: refit closure and reopening',
+    owner: 'Practice Mentoring',
+    reviewed: '2026-10-14',
+    scope: 'Bristol',
+    relatedPracticeIds: ['P020'],
+    content:
+      'Bristol closed the shop floor for a three week refit in October and reopened at the end of the month. Trading during the closure was limited to collections and repairs. The closure is recorded as local context only: the performance data does not measure how much of the October movement it explains.',
+  },
+  {
+    id: 'ctx-whitefield',
+    section: 'Practice context',
+    title: 'Whitefield: divestment',
+    owner: 'Finance Support',
+    reviewed: '2026-09-02',
+    scope: 'Whitefield',
+    relatedPracticeIds: ['P042'],
+    content:
+      'Whitefield was sold at the end of August as part of the estate review. The practice stopped reporting from September; no further trading data is expected. Any month on month comparison for the North West should read the exit as a change in the estate, not as lost trading.',
+  },
 ];
 
 /** Documents keyed by id, with local edits applied. */
@@ -228,15 +267,95 @@ export function brainDocumentById(id: string): BrainDocument | undefined {
   return BRAIN_DOCUMENTS.find((document) => document.id === id);
 }
 
+export const BRAIN_REVIEW_DAYS = 90;
+/** The demo clock, matching the training layer's default as-of date. */
+export const BRAIN_AS_OF = '2026-10-12';
+
+export const EMPTY_BRAIN_STATE: BrainState = { overrides: {}, created: [] };
+
+/** A storage-safe id for a document the reader wrote. */
+export function newBrainDocumentId(): string {
+  return `own-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** True when a review is more than BRAIN_REVIEW_DAYS old at the demo clock.
+    Exactly 90 days still counts as current. */
+export function isReviewDue(reviewed: string, asOf: string = BRAIN_AS_OF): boolean {
+  const reviewedMs = Date.parse(`${reviewed}T00:00:00Z`);
+  const asOfMs = Date.parse(`${asOf}T00:00:00Z`);
+  if (!Number.isFinite(reviewedMs) || !Number.isFinite(asOfMs)) return false;
+  return asOfMs - reviewedMs > BRAIN_REVIEW_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function normalizeOverride(value: unknown): BrainOverride | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const override: BrainOverride = {};
+  if (typeof source.content === 'string') override.content = source.content;
+  if (typeof source.owner === 'string') override.owner = source.owner;
+  if (typeof source.conflict === 'boolean') override.conflict = source.conflict;
+  return Object.keys(override).length > 0 ? override : null;
+}
+
+function normalizeCreatedDocument(value: unknown): BrainDocument | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  for (const key of ['id', 'section', 'title', 'owner', 'reviewed', 'scope', 'content'] as const) {
+    if (typeof source[key] !== 'string') return null;
+  }
+  const links = Array.isArray(source.relatedPracticeIds)
+    ? source.relatedPracticeIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  return {
+    id: source.id as string,
+    section: source.section as string,
+    title: source.title as string,
+    owner: source.owner as string,
+    reviewed: source.reviewed as string,
+    scope: source.scope as string,
+    content: source.content as string,
+    ...(links.length > 0 ? { relatedPracticeIds: links } : {}),
+    origin: 'yours',
+  };
+}
+
 /**
- * Apply the user's local edits over the shipped guidance, so the AI answers
- * from the current wording rather than the original text.
+ * Normalise either storage shape to v2. v1 was a flat overrides record keyed
+ * by document id; v2 carries overrides plus the reader's own documents.
  */
-export function mergeBrainDocuments(
-  overrides: Record<string, { content?: string; owner?: string; conflict?: boolean }>,
-): BrainDocument[] {
-  return BRAIN_DOCUMENTS.map((document) => {
-    const override = overrides[document.id];
+export function normalizeBrainState(raw: unknown): BrainState {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return EMPTY_BRAIN_STATE;
+  const record = raw as Record<string, unknown>;
+  const isV2 = 'overrides' in record || 'created' in record;
+
+  const overrides: Record<string, BrainOverride> = {};
+  const overrideSource = isV2 ? record.overrides : raw;
+  if (overrideSource && typeof overrideSource === 'object' && !Array.isArray(overrideSource)) {
+    for (const [id, value] of Object.entries(overrideSource as Record<string, unknown>)) {
+      const override = normalizeOverride(value);
+      if (override) overrides[id] = override;
+    }
+  }
+
+  const created: BrainDocument[] = [];
+  if (isV2 && Array.isArray(record.created)) {
+    for (const value of record.created) {
+      const document = normalizeCreatedDocument(value);
+      if (document) created.push(document);
+    }
+  }
+
+  return { overrides, created };
+}
+
+/**
+ * Apply the reader's local edits over the shipped guidance, and append the
+ * documents they wrote, so the AI answers from the current wording rather
+ * than the original text.
+ */
+export function mergeBrainDocuments(state: BrainState): BrainDocument[] {
+  const merged = BRAIN_DOCUMENTS.map((document) => {
+    const override = state.overrides[document.id];
     if (!override) return document;
     return {
       ...document,
@@ -245,4 +364,5 @@ export function mergeBrainDocuments(
       conflict: override.conflict ?? document.conflict,
     };
   });
+  return [...merged, ...state.created.map((document) => ({ ...document, origin: 'yours' as const }))];
 }

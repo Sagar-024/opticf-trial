@@ -1,7 +1,7 @@
 import type { Dataset } from '../domain/types';
 import { formatMoney, formatPercent, formatSignedPp, formatSignedPercent } from '../lib/format';
 import { monthLabel } from '../lib/months';
-import { monthsOf } from './dataset';
+import { monthsOf, practiceDisplayName } from './dataset';
 import { aggregateMetrics, selectPerformance } from './metrics';
 import { refund_findings, REFUND_WEIGHTS } from './refunds';
 import { training_status } from './training';
@@ -144,6 +144,12 @@ export function rank_attention(dataset: Dataset, options: AttentionOptions = {})
 
   for (const practice of scoped) {
     const latestRows = selectPerformance(dataset, { practiceIds: [practice.practiceId], month: latest });
+
+    // A practice with no row in the latest month is not part of the reporting
+    // estate (opened later, or left the group). "No data" must never read as a
+    // collapse or a shortfall, so it produces no signals at all.
+    if (latestRows.length === 0) continue;
+
     const previousRows = previous === latest
       ? latestRows
       : selectPerformance(dataset, { practiceIds: [practice.practiceId], month: previous });
@@ -263,7 +269,7 @@ export function rank_attention(dataset: Dataset, options: AttentionOptions = {})
 
     rows.push({
       practiceId: practice.practiceId,
-      name: practice.name,
+      name: practiceDisplayName(dataset, practice.practiceId),
       region: practice.region,
       manager: practice.manager,
       mentorId: practice.mentorId,

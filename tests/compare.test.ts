@@ -68,9 +68,13 @@ describe('compare', () => {
     expect(others.some((r) => r.delta >= 0)).toBe(true);
   });
 
-  it('the single biggest practice revenue drop is in the North West', () => {
+  it('the single biggest practice revenue drop is the planted Bristol collapse', () => {
     const dataset = generateDataset();
     const result = compare_latest_month(dataset, 'revenue', 'practice', { sort: 'delta-asc' });
-    expect(result.rows[0].region).toBe(NORTH_WEST_REGION);
+    // Bristol closed for a refit in October; its recorded context lives in the
+    // Brain. The North West remains the weakest region (see above); this is
+    // the largest single practice movement.
+    expect(result.rows[0].label).toBe('Bristol');
+    expect(result.rows[0].region).toBe('South West');
   });
 });

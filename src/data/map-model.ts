@@ -1,7 +1,7 @@
 import type { Dataset } from '../domain/types';
 import { formatMoney, formatPercent, formatSignedPercent, formatSignedPp } from '../lib/format';
 import { monthLabel } from '../lib/months';
-import { monthsOf } from './dataset';
+import { monthsOf, practiceDisplayName } from './dataset';
 import { aggregateMetrics, selectPerformance } from './metrics';
 import { refund_findings } from './refunds';
 import { training_status } from './training';
@@ -23,6 +23,8 @@ export interface MapPractice {
   mentorId: string;
   mentorName: string;
   pmsSystem: string;
+  /** True when the practice has a row in the latest month. False when it opened later or has left. */
+  reported: boolean;
 
   revenue: number;
   revenueDisplay: string;
@@ -51,6 +53,7 @@ export interface MapPractice {
 
   /** Refunds for the latest month, with the rate and the movement. */
   refundTotal: number;
+  refundCount: number;
   refundLatestDisplay: string;
   refundRatePct: number;
   refundRateDisplay: string;
@@ -61,8 +64,10 @@ export interface MapPractice {
   /** The evidence behind this practice's position on the map, plain sentences. */
   attentionSignals: string[];
 
-  /** Revenue for the last six months, oldest first. Used by the inspector. */
-  revenueTrend: number[];
+  /** Revenue for the last six months, oldest first. Null where no row exists. */
+  revenueTrend: Array<number | null>;
+  /** The month this practice last reported. For a practice that has left, its last real numbers. */
+  lastReportedLabel: string;
 }
 
 export interface MapModel {
@@ -91,9 +96,25 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
   const refundByPractice = new Map(refunds.map((row) => [row.practiceId, row]));
 
   const practices: MapPractice[] = dataset.practices.map((practice) => {
-    const currentRows = selectPerformance(dataset, { practiceIds: [practice.practiceId], month: target });
-    const previousRows = selectPerformance(dataset, { practiceIds: [practice.practiceId], month: previous });
-    const now = aggregateMetrics(currentRows, 1);
+    const rowsFor = (month: string): ReturnType<typeof selectPerformance> =>
+      selectPerformance(dataset, { practiceIds: [practice.practiceId], month });
+
+    const currentRows = rowsFor(target);
+    const reported = currentRows.length > 0;
+
+    // A practice that stopped reporting (opened later, or left the group)
+    // shows its last reported month instead of a month it was not there for.
+    const lastReported = reported
+      ? target
+      : [...months].reverse().find((month) => rowsFor(month).length > 0) ?? target;
+    const lastIndex = months.indexOf(lastReported);
+    const previousRows = reported
+      ? rowsFor(previous)
+      : lastIndex > 0
+        ? rowsFor(months[lastIndex - 1])
+        : [];
+
+    const now = aggregateMetrics(currentRows.length > 0 ? currentRows : rowsFor(lastReported), 1);
     const before = aggregateMetrics(previousRows, 1);
 
     const revenueMoMPct = before.revenue.actual > 0
@@ -103,8 +124,10 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
 
     const trend = months
       .slice(0, targetIndex + 1)
-      .map((m) => selectPerformance(dataset, { practiceIds: [practice.practiceId], month: m }))
-      .map((rows) => aggregateMetrics(rows, 1).revenue.actual);
+      .map((month) => {
+        const rows = rowsFor(month);
+        return rows.length > 0 ? aggregateMetrics(rows, 1).revenue.actual : null;
+      });
 
     const t = trainingByPractice.get(practice.practiceId);
     const a = attentionByPractice.get(practice.practiceId);
@@ -112,12 +135,13 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
 
     return {
       practiceId: practice.practiceId,
-      name: practice.name,
+      name: practiceDisplayName(dataset, practice.practiceId),
       region: practice.region,
       manager: practice.manager,
       mentorId: practice.mentorId,
       mentorName: practice.mentorName,
       pmsSystem: practice.pmsSystem,
+      reported,
 
       revenue: now.revenue.actual,
       revenueDisplay: now.revenue.actualDisplay,
@@ -145,6 +169,7 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
       trainingStatus: t?.status ?? 'complete',
 
       refundTotal: r?.latestTotal ?? 0,
+      refundCount: r?.latestCount ?? 0,
       refundLatestDisplay: r?.latestTotalDisplay ?? formatMoney(0),
       refundRatePct: r?.ratePct ?? 0,
       refundRateDisplay: r?.rateDisplay ?? formatPercent(0),
@@ -154,6 +179,7 @@ export function buildMapModel(dataset: Dataset, month?: string): MapModel {
       attentionSignals: a?.signals.map((signal) => signal.evidence) ?? [],
 
       revenueTrend: trend,
+      lastReportedLabel: monthLabel(lastReported),
     };
   });
 
@@ -216,35 +242,39 @@ export interface MentorPortfolio {
 export function mentor_portfolios(model: MapModel): MentorPortfolio[] {
   return model.mentors.map((mentor) => {
     const practices = model.practices.filter((practice) => practice.mentorId === mentor.mentorId);
+    // A practice that stopped reporting keeps its place in the portfolio (the
+    // map still highlights it) but its current numbers are not counted:
+    // counting them would read as a collapse.
+    const reported = practices.filter((practice) => practice.reported);
 
-    const revenue = practices.reduce((total, practice) => total + practice.revenue, 0);
-    const previousRevenue = practices.reduce((total, practice) => {
+    const revenue = reported.reduce((total, practice) => total + practice.revenue, 0);
+    const previousRevenue = reported.reduce((total, practice) => {
       // Recover the previous month from the published change.
       const factor = 1 + practice.revenueMoMPct / 100;
       return total + (factor > 0.01 ? practice.revenue / factor : practice.revenue);
     }, 0);
     const revenueChangePct = previousRevenue > 0 ? ((revenue - previousRevenue) / previousRevenue) * 100 : 0;
 
-    const conversion = practices.length
-      ? practices.reduce((total, practice) => total + practice.conversionPct, 0) / practices.length
+    const conversion = reported.length
+      ? reported.reduce((total, practice) => total + practice.conversionPct, 0) / reported.length
       : 0;
-    const conversionChangePp = practices.length
-      ? practices.reduce((total, practice) => total + practice.conversionMoMPp, 0) / practices.length
+    const conversionChangePp = reported.length
+      ? reported.reduce((total, practice) => total + practice.conversionMoMPp, 0) / reported.length
       : 0;
 
     return {
       mentorId: mentor.mentorId,
       name: mentor.name,
-      practiceCount: practices.length,
+      practiceCount: reported.length,
       revenueDisplay: formatMoney(revenue),
       revenueChangePct,
       revenueChangeDisplay: formatSignedPercent(revenueChangePct),
       conversionDisplay: formatPercent(conversion),
       conversionChangePp,
       conversionChangeDisplay: formatSignedPp(conversionChangePp),
-      practicesImproving: practices.filter((practice) => practice.revenueMoMPct > 0).length,
-      belowTargetCount: practices.filter((practice) => practice.revenueAttainmentPct < 95).length,
-      trainingGaps: practices.filter((practice) => practice.trainingCompletionPct < 100).length,
+      practicesImproving: reported.filter((practice) => practice.revenueMoMPct > 0).length,
+      belowTargetCount: reported.filter((practice) => practice.revenueAttainmentPct < 95).length,
+      trainingGaps: reported.filter((practice) => practice.trainingCompletionPct < 100).length,
       practiceIds: practices.map((practice) => practice.practiceId),
     };
   });

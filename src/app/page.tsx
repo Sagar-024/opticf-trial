@@ -10,12 +10,14 @@ export default function Page() {
   const today = today_priorities(dataset);
   const mapModel = buildMapModel(dataset);
   const regionCount = new Set(dataset.practices.map((p) => p.region)).size;
+  const reportingCount = mapModel.practices.filter((practice) => practice.reported).length;
 
   return (
     <Workspace
       today={today}
       mapModel={mapModel}
       practiceCount={dataset.practices.length}
+      reportingCount={reportingCount}
       regionCount={regionCount}
       latestMonth={today.monthLabel}
     />

@@ -1,5 +1,11 @@
 import type { Dataset } from '../data/index';
-import { BRAIN_DOCUMENTS } from '../content/brain';
+import {
+  BRAIN_DOCUMENTS,
+  BRAIN_SECTIONS,
+  normalizeBrainState,
+  type BrainDocument,
+  type BrainState,
+} from '../content/brain';
 import type { ChatContext, ChatMessage } from './types';
 
 /**
@@ -51,13 +57,6 @@ export function validateMessages(raw: unknown): ValidationResult {
 /** Metrics are single tokens like `revenue+conversion`; nothing else is allowed. */
 function safeMetric(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z+]{1,40}$/.test(value) ? value : undefined;
-}
-
-/** A local edit to a guidance document, sent from the Brain tab. */
-export interface BrainOverride {
-  content?: string;
-  owner?: string;
-  conflict?: boolean;
 }
 
 /** Reject anything that is not a JSON body, and anything unreasonably large. */
@@ -124,38 +123,64 @@ export function sanitizeMonth(value: unknown): string | undefined {
   return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value) ? value : undefined;
 }
 
+const MAX_BRAIN_OVERRIDES = 50;
+const MAX_CREATED_DOCUMENTS = 20;
+const CREATED_ID = /^own-[A-Za-z0-9-]{1,40}$/;
+
 /**
- * Guidance edits are the one piece of user content that reaches the model, so
- * they are treated as untrusted: ids must exist, text is capped, and the owner
- * field is restricted to a safe character set.
+ * Guidance edits and the reader's own documents are the one piece of user
+ * content that reaches the model, so they are treated as untrusted: ids must
+ * exist, text is capped, owner fields are restricted to a safe character set,
+ * and practice links must point at real practices in the loaded dataset.
  */
-export function sanitizeBrainOverrides(raw: unknown): Record<string, BrainOverride> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+export function sanitizeBrainOverrides(raw: unknown, validPracticeIds: ReadonlySet<string>): BrainState {
+  const state = normalizeBrainState(raw);
   const known = new Set(BRAIN_DOCUMENTS.map((document) => document.id));
 
-  const out: Record<string, BrainOverride> = {};
+  const overrides: BrainState['overrides'] = {};
   let accepted = 0;
-
-  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (accepted >= 50) break;
+  for (const [id, source] of Object.entries(state.overrides)) {
+    if (accepted >= MAX_BRAIN_OVERRIDES) break;
     if (!known.has(id)) continue;
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-
-    const source = value as Record<string, unknown>;
-    const override: BrainOverride = {};
+    const override: BrainState['overrides'][string] = {};
     if (typeof source.content === 'string') override.content = source.content.slice(0, 4000);
     if (typeof source.owner === 'string') {
-      override.owner = source.owner.replace(/[^\w\s&.,'-]/g, '').trim().slice(0, 100);
+      override.owner = source.owner.replace(/[^\w\s&.,'-]/g, '').trim().slice(0, 120);
     }
     if (typeof source.conflict === 'boolean') override.conflict = source.conflict;
-
     if (Object.keys(override).length > 0) {
-      out[id] = override;
+      overrides[id] = override;
       accepted += 1;
     }
   }
 
-  return out;
+  const created: BrainDocument[] = [];
+  for (const document of state.created) {
+    if (created.length >= MAX_CREATED_DOCUMENTS) break;
+    if (!CREATED_ID.test(document.id)) continue;
+    if (!(BRAIN_SECTIONS as readonly string[]).includes(document.section)) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(document.reviewed)) continue;
+    const owner = document.owner.replace(/[^\w\s&.,'-]/g, '').trim().slice(0, 120);
+    if (owner.length === 0) continue;
+    const title = document.title.slice(0, 160);
+    const scope = document.scope.slice(0, 120);
+    const content = document.content.slice(0, 4000);
+    if (title.trim().length === 0 || scope.trim().length === 0 || content.trim().length === 0) continue;
+    const links = (document.relatedPracticeIds ?? []).filter((id) => validPracticeIds.has(id));
+    created.push({
+      id: document.id,
+      section: document.section,
+      title,
+      owner,
+      reviewed: document.reviewed,
+      scope,
+      content,
+      ...(links.length > 0 ? { relatedPracticeIds: links } : {}),
+      origin: 'yours',
+    });
+  }
+
+  return { overrides, created };
 }
 
 /** Drop anything that is not a known region or practice id in the dataset. */

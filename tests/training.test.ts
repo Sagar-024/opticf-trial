@@ -27,7 +27,9 @@ describe('training_status', () => {
     const dataset = generateDataset();
     const result = training_status(dataset);
 
-    expect(result.summary.practicesWithGaps).toBe(TRAINING_GAP_PRACTICES.length);
+    // The planted gaps, plus Leek: a new practice mid onboarding with three
+    // required modules still to complete.
+    expect(result.summary.practicesWithGaps).toBe(TRAINING_GAP_PRACTICES.length + 1);
 
     for (const id of TRAINING_GAP_PRACTICES) {
       const row = result.byPractice.find((p) => p.practiceId === id)!;
@@ -37,7 +39,7 @@ describe('training_status', () => {
     }
 
     const flagged = new Set(result.byPractice.filter((p) => !p.compliant).map((p) => p.practiceId));
-    expect([...flagged].sort()).toEqual([...TRAINING_GAP_PRACTICES].sort());
+    expect([...flagged].sort()).toEqual([...TRAINING_GAP_PRACTICES, 'P041'].sort());
   });
 
   it('completion percentage is consistent with module counts', () => {

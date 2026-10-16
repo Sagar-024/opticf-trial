@@ -4,7 +4,7 @@ import { getDataset } from './dataset';
 import { buildSystemPrompt } from './system-prompt';
 import { getTool, llmToolDefinitions, type ToolContext } from './tools';
 import { sanitizeToolInput } from './validate';
-import { mergeBrainDocuments } from '../content/brain';
+import { EMPTY_BRAIN_STATE, mergeBrainDocuments, type BrainState } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
 import { extractLeakedToolCalls, MarkupStreamFilter, stripModelMarkup } from './markup';
 import { validateWidgets } from './widgets';
@@ -37,8 +37,8 @@ export interface RunChatInput {
   context?: ChatContext | null;
   client?: LlmClient;
   model?: string;
-  /** Local guidance edits from the Brain tab, applied over the shipped documents. */
-  brainOverrides?: Record<string, { content?: string; owner?: string; conflict?: boolean }>;
+  /** Local guidance edits and the reader's own documents, sent from the Brain tab. */
+  brainOverrides?: BrainState;
   /** Client abort signal, so Stop also cancels the provider request. */
   signal?: AbortSignal;
   /** Correlates every log line for one request. */
@@ -183,7 +183,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   const question = lastUser?.content ?? '';
   const system = buildSystemPrompt(latest, input.context ?? null, months[0]);
   const toolContext: ToolContext = {
-    brainDocuments: mergeBrainDocuments(input.brainOverrides ?? {}),
+    brainDocuments: mergeBrainDocuments(input.brainOverrides ?? EMPTY_BRAIN_STATE),
   };
   const messages: LlmMessage[] = [
     { role: 'system', content: system },
@@ -199,6 +199,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   let explicitHighlight: string[] | null = null;
   let largestHighlight: string[] = [];
   let text = '';
+  let cutShort = false;
   let executed = 0;
   let iterations = 0;
   let budgetExceeded = false;
@@ -221,6 +222,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     if (Date.now() - started > totalBudgetMs()) {
       const final = await client.chat({ model, messages, tools: [], signal: input.signal }).catch(() => null);
       text = text || final?.text || 'Stopped: this question took longer than the budget allows. The figures already returned come from the loaded data.';
+      if (final?.finishReason === 'length') cutShort = true;
       budgetExceeded = true;
       break;
     }
@@ -236,6 +238,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     const streamTail = streamFilter.flush();
     if (streamTail) handlers.onDelta?.(streamTail);
     if (streamFilter.stripped) markupEvents += 1;
+    if (response.finishReason === 'length') cutShort = true;
     usage = addUsage(usage, response.usage);
 
     // A gateway sometimes returns the model's tool call markup as plain text
@@ -330,6 +333,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     if (executed >= MAX_TOOL_CALLS) {
       const final = await client.chat({ model, messages, tools: [] });
       text = text || final.text;
+      if (final.finishReason === 'length') cutShort = true;
       break;
     }
   }
@@ -337,6 +341,13 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   if (!text) {
     const final = await client.chat({ model, messages, tools: [], signal: input.signal });
     text = final.text;
+    if (final.finishReason === 'length') cutShort = true;
+  }
+
+  // The model hit the output limit mid-answer: say so plainly, so a sentence
+  // that stops mid-thought is never presented as a finished answer.
+  if (cutShort) {
+    text = `${text.trimEnd()} The answer hit the length limit and stopped early. Ask again to continue it.`;
   }
 
   // ── Guarding ───────────────────────────────────────────────────────────────

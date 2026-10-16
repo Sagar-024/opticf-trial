@@ -21,7 +21,7 @@ export interface Practice {
   region: string;
   town: string;
   postcode: string;
-  /** Practice manager (person responsible locally). */
+  /** Practice manager. Empty when no manager is recorded. */
   manager: string;
   /** Group mentor who supports this practice. */
   mentorId: string;
@@ -60,9 +60,10 @@ export interface MonthlyPerformance {
 
 /**
  * Why a refund or goodwill payment was made. A closed vocabulary: reporting
- * by reason relies on every row using one of these values.
+ * by reason relies on every row using one of these values. The parser maps any
+ * unrecognised source value to `other`, so a row is never silently relabelled.
  */
-export type RefundReason = 'frame-fault' | 'lens-fit' | 'change-of-mind' | 'goodwill';
+export type RefundReason = 'frame-fault' | 'lens-fit' | 'change-of-mind' | 'goodwill' | 'other';
 
 /**
  * One refund or goodwill payment against an order.
@@ -81,9 +82,9 @@ export interface Refund {
   /** Whole GBP. */
   amount: number;
   reason: RefundReason;
-  /** The order the payment relates to. */
+  /** The order the payment relates to. Empty when the source record lost it. */
   orderRef: string;
-  /** Who authorised it (normally the practice manager). */
+  /** Who authorised it (normally the practice manager). Empty when not recorded. */
   authorisedBy: string;
   /** True when the regional lead's approval is recorded (needed above £50). */
   escalated: boolean;
@@ -97,7 +98,7 @@ export interface TrainingRecord {
   /** Required modules count towards compliance; optional ones do not. */
   required: boolean;
   completed: boolean;
-  /** ISO date (`YYYY-MM-DD`) or empty string when not completed. */
+  /** ISO date (`YYYY-MM-DD`), or empty when not completed or the date was not recorded. */
   completedDate: string;
   /** ISO date by which the module was due. */
   dueDate: string;

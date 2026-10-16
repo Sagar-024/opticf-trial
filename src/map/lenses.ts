@@ -48,6 +48,13 @@ export interface Lens {
 const REGION_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4', 'chart5'];
 const MENTOR_COLOR_KEYS: PaletteKey[] = ['chart1', 'chart2', 'chart3', 'chart4'];
 
+/**
+ * A practice that stopped reporting (opened later, or left the group) can never
+ * match a performance lens, and never reads as failing on one. The map still
+ * shows it, muted, so the estate change is visible.
+ */
+const NO_DATA_VISUAL: LensVisual = { colorKey: 'muted', opacity: 0.55, sizeFactor: 0.8 };
+
 const ALL_FILTER: LensFilter = { id: 'all', label: 'All practices', match: () => true };
 /**
  * The one cross-cutting question, so every lens can answer "where is hot".
@@ -59,11 +66,14 @@ const ATTENTION_FILTER: LensFilter = {
   id: 'attention',
   label: 'Needs attention',
   match: (p) =>
-    p.revenueMoMPct <= -3
-    || p.revenueAttainmentPct < 95
-    || p.clAttainmentPct < 90
-    || p.trainingOverdue > 0
-    || p.refundFlags.length > 0,
+    p.reported
+    && (
+      p.revenueMoMPct <= -3
+      || p.revenueAttainmentPct < 95
+      || p.clAttainmentPct < 90
+      || p.trainingOverdue > 0
+      || p.refundFlags.length > 0
+    ),
 };
 
 export interface LensContext {
@@ -85,7 +95,9 @@ export function buildLenses(context: LensContext): Lens[] {
       label: 'Region',
       legend: regions.map((region) => ({ colorKey: regionColorKey(region, regions), label: region })),
       filters: [ALL_FILTER, ATTENTION_FILTER],
-      visual: (practice) => ({ colorKey: regionColorKey(practice.region, regions), opacity: 1, sizeFactor: 1 }),
+      visual: (practice) => practice.reported
+        ? { colorKey: regionColorKey(practice.region, regions), opacity: 1, sizeFactor: 1 }
+        : NO_DATA_VISUAL,
       valueLabel: (practice) => practice.region,
     },
     {
@@ -99,10 +111,11 @@ export function buildLenses(context: LensContext): Lens[] {
       filters: [
         ALL_FILTER,
         ATTENTION_FILTER,
-        { id: 'declining', label: 'Revenue falling', match: (p) => p.revenueMoMPct <= -3 },
-        { id: 'below-target', label: 'Below revenue target', match: (p) => p.revenueAttainmentPct < 95 },
+        { id: 'declining', label: 'Revenue falling', match: (p) => p.reported && p.revenueMoMPct <= -3 },
+        { id: 'below-target', label: 'Below revenue target', match: (p) => p.reported && p.revenueAttainmentPct < 95 },
       ],
       visual: (practice) => {
+        if (!practice.reported) return NO_DATA_VISUAL;
         if (practice.revenueMoMPct <= -3 || practice.revenueAttainmentPct < 85) {
           return { colorKey: 'coral', opacity: 1, sizeFactor: 1 };
         }
@@ -124,18 +137,21 @@ export function buildLenses(context: LensContext): Lens[] {
       filters: [
         ALL_FILTER,
         ATTENTION_FILTER,
-        { id: 'flagged', label: 'Unusual refunds', match: (p) => p.refundFlags.length > 0 },
-        { id: 'above-authority', label: 'Above authority', match: (p) => p.refundFlags.includes('goodwill-above-authority') },
-        { id: 'near-threshold', label: 'Under the line', match: (p) => p.refundFlags.includes('goodwill-near-threshold') },
+        { id: 'flagged', label: 'Unusual refunds', match: (p) => p.reported && p.refundFlags.length > 0 },
+        { id: 'above-authority', label: 'Above authority', match: (p) => p.reported && p.refundFlags.includes('goodwill-above-authority') },
+        { id: 'near-threshold', label: 'Under the line', match: (p) => p.reported && p.refundFlags.includes('goodwill-near-threshold') },
       ],
       visual: (practice) => {
+        if (!practice.reported) return NO_DATA_VISUAL;
         if (practice.refundFlags.some((code) => code === 'refund-spike' || code === 'refund-rate-high')) {
           return { colorKey: 'coral', opacity: 1, sizeFactor: 1.15 };
         }
         if (practice.refundFlags.length > 0) return { colorKey: 'amber', opacity: 1, sizeFactor: 1.1 };
         return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
       },
-      valueLabel: (practice) => `${practice.refundLatestDisplay} refunded (${practice.refundRateDisplay} of revenue)`,
+      valueLabel: (practice) => practice.refundCount === 0
+        ? 'no refunds recorded'
+        : `${practice.refundLatestDisplay} refunded (${practice.refundRateDisplay} of revenue)`,
     },
     {
       id: 'contactLens',
@@ -148,10 +164,11 @@ export function buildLenses(context: LensContext): Lens[] {
       filters: [
         ALL_FILTER,
         ATTENTION_FILTER,
-        { id: 'below-90', label: 'Below 90% of target', match: (p) => p.clAttainmentPct < 90 },
-        { id: 'just-below', label: 'Just below target', match: (p) => p.clAttainmentPct >= 90 && p.clAttainmentPct < 100 },
+        { id: 'below-90', label: 'Below 90% of target', match: (p) => p.reported && p.clAttainmentPct < 90 },
+        { id: 'just-below', label: 'Just below target', match: (p) => p.reported && p.clAttainmentPct >= 90 && p.clAttainmentPct < 100 },
       ],
       visual: (practice) => {
+        if (!practice.reported) return NO_DATA_VISUAL;
         if (practice.clAttainmentPct < 90) return { colorKey: 'coral', opacity: 1, sizeFactor: 1.15 };
         if (practice.clAttainmentPct < 100) return { colorKey: 'amber', opacity: 1, sizeFactor: 1 };
         return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
@@ -169,10 +186,11 @@ export function buildLenses(context: LensContext): Lens[] {
       filters: [
         ALL_FILTER,
         ATTENTION_FILTER,
-        { id: 'incomplete', label: 'Training incomplete', match: (p) => p.trainingCompletionPct < 100 },
-        { id: 'overdue', label: 'Training overdue', match: (p) => p.trainingOverdue > 0 },
+        { id: 'incomplete', label: 'Training incomplete', match: (p) => p.reported && p.trainingCompletionPct < 100 },
+        { id: 'overdue', label: 'Training overdue', match: (p) => p.reported && p.trainingOverdue > 0 },
       ],
       visual: (practice) => {
+        if (!practice.reported) return NO_DATA_VISUAL;
         if (practice.trainingStatus === 'overdue') return { colorKey: 'coral', opacity: 1, sizeFactor: 1.2 };
         if (practice.trainingStatus === 'incomplete') return { colorKey: 'amber', opacity: 1, sizeFactor: 1.1 };
         return { colorKey: 'green', opacity: 1, sizeFactor: 1 };
@@ -196,6 +214,7 @@ export function buildLenses(context: LensContext): Lens[] {
         })),
       ],
       visual: (practice) => {
+        if (!practice.reported) return NO_DATA_VISUAL;
         const index = mentors.findIndex((mentor) => mentor.mentorId === practice.mentorId);
         if (index < 0) return { colorKey: 'muted', opacity: 0.8, sizeFactor: 1 };
         return { colorKey: MENTOR_COLOR_KEYS[index % MENTOR_COLOR_KEYS.length], opacity: 1, sizeFactor: 1 };

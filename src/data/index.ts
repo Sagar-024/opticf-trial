@@ -23,6 +23,7 @@ export {
   parsePerformance,
   parsePractices,
   parseTraining,
+  practiceDisplayName,
   practicesById,
   regionsOf,
   serializeDataset,

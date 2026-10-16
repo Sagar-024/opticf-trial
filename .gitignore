@@ -17,3 +17,8 @@ data/*.csv
 chat-test-output.txt
 .vercel
 .env*
+
+# local agent skills/config — personal tooling, never pushed
+.agents/
+.opencode/
+.claude/

@@ -30,6 +30,8 @@ export interface CompareBar {
   origin: number;
   /** True when the bar grows left of its origin (a fall). */
   leftward?: boolean;
+  /** True when there is no change at all; neither up nor down. */
+  neutral?: boolean;
   /** Where this side's hairline sits, 0 to 1. Each bar carries its own target. */
   targetAt?: number;
 }
@@ -183,9 +185,10 @@ function changeRow(practices: MapPractice[]): CompareRow {
     bars: values.map((value) => ({
       fraction: Math.min(1, Math.abs(value) / (limit * 2)),
       display: value > 0 ? `+${value.toFixed(1)}%` : `${value.toFixed(1)}%`,
-      detail: value >= 0 ? 'up on last month' : 'down on last month',
+      detail: value > 0 ? 'up on last month' : value < 0 ? 'down on last month' : 'unchanged on last month',
       origin: 0.5,
       leftward: value < 0,
+      neutral: value === 0,
     })),
     lead: leaderOf(values),
     gap: pp(Math.max(...values) - Math.min(...values)),
@@ -301,7 +304,7 @@ function changeLine(row: CompareRow, sides: CompareSide[]): string {
     .join(', ');
   const suffix = sides.length > NAMES_IN_PROSE ? `, and ${sides.length - NAMES_IN_PROSE} more` : '';
   const allDown = row.bars.every((bar) => bar.leftward);
-  const allUp = row.bars.every((bar) => !bar.leftward);
+  const allUp = row.bars.every((bar) => !bar.leftward && !bar.neutral);
   if (allDown) return `Revenue fell at every practice since last month: ${list}${suffix}.`;
   if (allUp) return `Revenue rose at every practice since last month: ${list}${suffix}.`;
   return `Since last month: ${list}${suffix}.`;

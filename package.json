@@ -11,6 +11,7 @@
     "start": "next start -p 3000",
     "seed": "tsx src/seed/index.ts",
     "demo": "tsx src/scripts/demo.ts",
+    "invariants": "tsx scripts/invariants.ts",
     "llm:check": "tsx scripts/check-llm.ts",
     "chat:test": "tsx scripts/chat-test.ts",
     "test": "vitest run",

@@ -37,22 +37,26 @@ import { LEADERSHIP } from '@/lib/people';
 import { WaveText } from '@/components/wave-text';
 import { Logo } from '@/components/logo';
 import { forceVisibleIfStuck } from '@/lib/anim';
+import { readBrainState } from '@/lib/brain-store';
 import { getSession, migrateLegacy, newSessionId, setTurnFeedback, titleFromQuestion, upsertSession, type StoredTurn } from '@/lib/chat-store';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
 import { toolLabel } from '@/lib/tool-labels';
 
 /**
- * The four questions leadership actually opens with, shown as a tidy two by
- * two: the pulse check first, then who needs help, what moved, and how the
- * regions sit. Each one maps to real tools, so none of them is filler. The
- * first is the hero: the only chip that carries the orange.
+ * The six questions leadership actually opens with, shown as a tidy grid: the
+ * pulse check first, then who needs help, what moved, and how the regions sit.
+ * The last two carry the new stories: a collapse with its recorded context,
+ * and the knowledge layer. Each one maps to real tools, so none is filler.
+ * The first is the hero: the only chip that carries the orange.
  */
 const SUGGESTIONS: Array<{ text: string; icon: LucideIcon; hero?: boolean }> = [
   { text: 'How is the group doing this month?', icon: Sparkles, hero: true },
   { text: 'Which practices need attention, and why?', icon: Eye },
   { text: 'Which practices dropped the most since last month?', icon: TrendingDown },
   { text: 'How do the regions compare?', icon: Map },
+  { text: "Why is Bristol's revenue down?", icon: TriangleAlert },
+  { text: 'What does the Brain know about Chorlton?', icon: FileText },
 ];
 
 /** Shared easing so every chat animation feels like one system. */
@@ -381,15 +385,9 @@ export function ChatView({
       const messages = history.map((turn) => ({ role: turn.role, content: turn.text }));
 
       try {
-        // Guidance edits live in this browser, so send them with the question.
-        // The server validates them before they reach the model.
-        let brainOverrides: unknown = {};
-        try {
-          const raw = localStorage.getItem('opticf-brain-v1');
-          if (raw) brainOverrides = JSON.parse(raw);
-        } catch {
-          brainOverrides = {};
-        }
+        // Guidance edits and the reader's own documents live in this browser,
+        // so send them with the question. The server validates them first.
+        const brainOverrides = readBrainState();
 
         const response = await fetch('/api/chat', {
           method: 'POST',

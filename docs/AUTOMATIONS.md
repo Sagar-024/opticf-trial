@@ -12,13 +12,15 @@ Every step after "understand" used to be manual: remember to look, assemble
 the numbers, decide who needs them, chase the follow-up. A skill kills those
 four taxes with one loop:
 
-> **Detect → Compose → Review → Approve → Record** — on a cadence, without a
-> human starting it.
+> **Detect → Compose → Queue → Record** — on a cadence, without a human
+> starting it.
 
 Three hard rules, inherited from the product's trust architecture:
 
-1. **Nothing is sent automatically.** Every output lands in a review inbox
-   and a person approves it.
+1. **Results queue themselves.** A run composes for the right people and is on
+   the record the moment it lands. Nothing needs approving by hand, and watch
+   findings also create the follow-up task straight away. The delivery pipe
+   itself is labelled on screen until the backend lands.
 2. **Nothing acts alone.** No target changes, no refunds, no messages to
    patients. Notify and create tasks only. A wrong alert is annoying; a wrong
    action is an incident.
@@ -35,38 +37,42 @@ Our version of ChatGPT skills. A **skill** is a saved piece of recurring work:
 
 **job + trigger + scope + recipients + on/off switch + visible run history.**
 
-- **Jobs are real.** Six ship in the catalogue, each wired to a tested
-  engine: the Monday brief (scheduled, from `today_priorities`), and five
-  watches (triggered, from `rank_attention` signals): contact lens below 90%
-  of target, conversion down 2pp month on month, revenue down 3% month on
-  month, refunds out of the ordinary (a spike against the practice's own
-  level, a rate past 1% of revenue, or goodwill across the authority line),
-  and required training overdue.
-- **Scope is real.** Watches can be narrowed to any set of the five regions;
-  an empty scope means the whole group.
-- **Recipients are real people.** Resolved from the seed directory: group
-  leadership (Sara Kelly), the five region leads (Emma Lawson and the rest),
-  the four mentors. A skill scoped to North West goes to Emma Lawson.
-- **Results are checkable.** Every run is on the record, and each enabled
-  watch shows a live "8 matching right now" the moment the tab opens.
+Two kinds live on the page:
+
+- **The shipped checks.** Six jobs, each wired to a tested engine: the Monday
+  brief (scheduled, from `today_priorities`), and five watches (triggered,
+  from `rank_attention` signals): contact lens below 90% of target, conversion
+  down 2pp month on month, revenue down 3% month on month, refunds out of the
+  ordinary (a spike against the practice's own level, a rate past 1% of
+  revenue, or goodwill across the authority line), and required training
+  overdue.
+- **Your own questions.** A saved question in your own words runs through the
+  same assistant the chat uses, on the clock you choose (daily, weekly,
+  monthly and a time), and its answer queues for the recipients. This is the
+  part the CEO asked for: users create their own skills, not just pick ours.
+
+Scope is real. Watches can be narrowed to any set of the five regions; an
+empty scope means the whole group. Recipients are real people, resolved from
+the seed directory: group leadership (Sara Kelly), the five region leads
+(Emma Lawson and the rest), the four mentors. A skill scoped to North West
+goes to Emma Lawson. Results are checkable: every run is on the record, and
+each enabled watch shows a live "8 matching right now" the moment the tab
+opens.
 
 ## The page
 
 1. **Skills** — one card per skill: the switch, the job sentence, where it
-   looks, who it goes to, the last run, a live count, and Run now.
-2. **New skill** — the builder: pick the job, name it, pick regions, pick
-   recipient groups. No blank prompt boxes; every choice is a real one.
-3. **Review inbox** — brief runs land as the five priorities with their real
-   figures; watch runs land as per-practice hits, each with the evidence
-   sentence from the attention engine and the headline figure. Approve,
-   discard, or approve all. An individual hit can be asked about in chat or
-   shown on the map without leaving the review.
-4. **Tasks** — approving a hit creates one: the practice manager as owner, a
-   review date (default +7 days, editable), a done box. One action, one
-   owner, one review date. If a practice already has an open task for the
-   same watch, the row says **Task open** instead of creating a duplicate.
-5. **Activity** — the ledger: runs, approvals, tasks and dismissals, newest
-   first. "Check results from your skills" is exactly this plus the inbox.
+   looks, who it goes to, the last run, the next run, a live count, and
+   delete.
+2. **Your skills** — your own saved questions, newest first. A new one runs
+   its first answer immediately and queues it for the recipients.
+3. **New skill** — two doors. Start from a proven check, or write your own
+   question. No blank prompt boxes; every choice is a real one.
+4. **Tasks** — a watch finding creates its task immediately: the right owner
+   (the practice manager, or the regional lead when the guidance says so), a
+   due date, and the source it came from. One board, closed with an outcome.
+5. **Activity** — the ledger: runs, queues, tasks and dismissals, newest
+   first. **Reset** restores the demo state and re-seeds the history.
 
 Runs, tasks, skills and the ledger live in this browser for now (like chat
 history); a real run backend replaces the store, not the page.
@@ -75,58 +81,50 @@ history); a real run backend replaces the store, not the page.
 
 **Real:** the conditions (evaluated server-side against the live dataset
 through the same `rank_attention` as the map), every figure, the live counts,
-the composition of the brief, the inbox, approve and discard, tasks with
-owners and dates, the duplicate guard, on/off, the activity ledger, and the
-state surviving a reload.
+the composition of the brief, the question runs through the live assistant,
+the queueing, tasks with owners and dates, on/off, the activity ledger, and
+the state surviving a reload.
 
-**Labelled:** the delivery itself. "Queued for … Sending connects when the
-backend lands." No model runs inside a skill; every run is deterministic and
-free, which is also why runs work with no LLM key configured.
+**Labelled:** the delivery itself and the clock. "Queued for … Sending
+connects when the backend lands", and schedules run while this tab is open
+until the scheduler lands. The shipped checks are deterministic and free, so
+they work with no LLM key configured; only your own questions use the model.
 
 ## Acceptance (two minutes)
 
-1. Open **Automations** on a clean browser. Four skills, all on. Contact
-   lens watch reads **8 matching right now**, training **4**, refunds **3** —
-   the planted stories, live.
-2. **Run now** on the Monday brief. The inbox shows five priorities with real
-   figures. Approve: it reads Approved, "Queued for Sara Kelly". Reload: it
-   is still there.
-3. **Run now** on the Contact lens watch. Eight hits with evidence. Approve
-   Chorlton: a task appears — owner Rachel Doyle, due a week out — the hit row
-   reads "Task for Rachel Doyle", Tasks shows 1 open, the ledger has the line.
-   Mark it done.
-4. **Run now** on the Refund watch. Three hits: Chorlton (refunds well above
-   its usual level), Plymouth (gestures under the £50 line) and Liverpool
-   (a gesture above it with no regional lead recorded). Approve Liverpool: the
-   task owner is **Emma Lawson, North West lead**, not the practice manager —
-   the guidance decides the owner. Approve Chorlton: Rachel Doyle.
-5. **New skill** → Revenue watch → Where: North West → Create. The card shows
-   its own live count scoped to the region, and Goes to Emma Lawson.
-6. Toggle any watch off: Paused, no runs. On again: it checks.
-7. **All 202 tests pass** (`npm test`), including `tests/automations.test.ts`:
+1. Open **Automations** on a clean browser. Four skills, all on, each with its
+   last run and next run. The live counts read **8** (contact lens), **4**
+   (training overdue) and **3** (refunds), the planted stories, live.
+2. The ledger already shows the seeded history: the Monday brief queued for
+   Sara Kelly, the watches with their flagged counts, and two tasks created
+   from findings.
+3. Open **Tasks** on the rail: the watch findings are there with owners and
+   due dates. Close one with an outcome and it leaves the open count.
+4. **New skill** → **Your own question** → ask something like "Which
+   practices are below their contact lens target?" → it runs once, the answer
+   queues for the recipients, and the skill appears first under **Your
+   skills**.
+5. **Reset** restores the demo state and re-seeds the history.
+6. **All 239 tests pass** (`npm test`), including `tests/automations.test.ts`:
    the brief is the Today list verbatim, contact lens finds exactly 8,
    training overdue exactly 4, the refund watch finds exactly 3 and routes
    Liverpool's hit to the regional lead, region scoping holds, and the route
-   sanitiser rejects the brief, unknown jobs and malformed scopes.
+   sanitiser rejects unknown jobs and malformed scopes.
 
 ## Where this goes next, in order
 
-1. **Assistant-run skills.** A skill that asks the chat engine a saved
-   question and lands the guarded answer plus its widgets in review. The
-   pipeline (tools, number guard, trace) already exists; runs would be real,
-   bounded and costed.
-2. **Skills from chat.** After a good answer: "Run this every Monday" — the
+1. **Skills from chat.** After a good answer: "Run this every Monday" — the
    saved question becomes a skill with one tap, and chat becomes the place
    skills are born.
-3. **Delivery, when the backend lands.** Email/Slack/WhatsApp per recipient,
+2. **Delivery, when the backend lands.** Email/Slack/WhatsApp per recipient,
    with per-recipient formatting. The routing is already modelled; only the
    pipe is missing.
-4. **Admin tasks beyond alerts.** Recall campaigns, stock and order checks,
+3. **Admin tasks beyond alerts.** Recall campaigns, stock and order checks,
    holiday cover: anything with a cadence, a manager and a review date fits
    the same loop.
-5. **Escalation.** A task that goes overdue nudges the region lead — one
+4. **Escalation.** A task that goes overdue nudges the region lead — one
    escalation, not a nag.
-6. **Thursday's question.** Ask the managers: "What do you check every week,
+5. **Thursday's question.** Ask the managers: "What do you check every week,
    and what do you forget?" Their answer decides the next job in the
    catalogue, not our guesses.
 
@@ -136,6 +134,7 @@ free, which is also why runs work with no LLM key configured.
 |---|---|
 | `src/automations/types.ts` | Shared shapes (client-safe, types only) |
 | `src/automations/catalog.ts` | Jobs, recipient directory, brief composer, labels |
+| `src/automations/history.ts` | The seeded run history, composed from the same live data as real runs |
 | `src/automations/engine.ts` | Watch evaluation and request sanitiser (server-only) |
 | `src/app/api/automations/run/route.ts` | POST: evaluate a watch; content type, size and rate guards |
 | `src/lib/automations-store.ts` | This-browser persistence (skills, runs, tasks, ledger) |

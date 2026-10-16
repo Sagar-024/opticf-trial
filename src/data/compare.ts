@@ -1,7 +1,7 @@
 import type { Dataset } from '../domain/types';
 import { formatMoney, formatPercent, formatSignedPp, formatSignedPercent } from '../lib/format';
 import { monthLabel } from '../lib/months';
-import { monthsOf, practicesById } from './dataset';
+import { monthsOf, practicesById, practiceDisplayName } from './dataset';
 import { aggregateMetrics, selectPerformance } from './metrics';
 
 /**
@@ -202,7 +202,7 @@ export function compare(dataset: Dataset, query: CompareQuery): CompareResult {
       : (id: string) => id;
     const labelOf = groupBy === 'region'
       ? (id: string) => byId.get(id)?.region ?? 'Unknown'
-      : (id: string) => byId.get(id)?.name ?? id;
+      : (id: string) => practiceDisplayName(dataset, id);
     const regionOf = groupBy === 'region'
       ? () => undefined
       : (id: string) => byId.get(id)?.region;

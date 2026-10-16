@@ -3,17 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, type Variants } from 'framer-motion';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { ArrowLeft, ArrowLeftRight, ArrowUp, FileText, ListPlus, Square, TrendingDown, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, ArrowUp, FileText, ListPlus, Plus, Square, TrendingDown, TriangleAlert, X } from 'lucide-react';
 import type { Widget } from '@/ai/types';
 import { containsModelMarkup, stripModelMarkup, trimTrailingPartialTag } from '@/ai/markup';
 import type { MapPractice } from '@/data/map-model';
-import { BRAIN_DOCUMENTS } from '@/content/brain';
+import { mergeBrainDocuments, type BrainDocument } from '@/content/brain';
 import { AssignTaskDialog } from '@/components/tasks/assign-task-dialog';
 import { Badge } from '@/components/ui/badge';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Textarea } from '@/components/ui/textarea';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { forceVisibleIfStuck } from '@/lib/anim';
+import { readBrainState } from '@/lib/brain-store';
 import { toolLabel } from '@/lib/tool-labels';
 import { cn } from '@/lib/utils';
 
@@ -99,11 +100,13 @@ function niceTicks(values: number[]): { domain: [number, number]; ticks: number[
 const revenueConfig = { revenue: { label: 'Revenue', color: 'oklch(var(--chart-1))' } } satisfies ChartConfig;
 
 /** The six month revenue trend, with a real scale and a formatted tooltip. */
-function RevenueChart({ values, month }: { values: number[]; month: string }) {
-  if (values.length < 2) return null;
+function RevenueChart({ values, month }: { values: Array<number | null>; month: string }) {
+  // A month with no row is a gap, not a zero: the line simply does not exist there.
+  const points = values.filter((value): value is number => value !== null);
+  if (points.length < 2) return null;
   const months = monthLabels(month, values.length);
   const data = values.map((value, index) => ({ month: months[index], revenue: value }));
-  const scale = niceTicks(values);
+  const scale = niceTicks(points);
   return (
     <ChartContainer config={revenueConfig} className="h-[240px] w-full">
       <AreaChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
@@ -119,7 +122,15 @@ function RevenueChart({ values, month }: { values: number[]; month: string }) {
           tickFormatter={(value) => `£${Math.round(Number(value) / 1000)}k`}
         />
         <ChartTooltip
-          content={<ChartTooltipContent formatter={(value) => `£${Number(value).toLocaleString('en-GB')}`} />}
+          content={
+            <ChartTooltipContent
+              formatter={(value) =>
+                value === null || value === undefined || !Number.isFinite(Number(value))
+                  ? 'No data'
+                  : `£${Number(value).toLocaleString('en-GB')}`
+              }
+            />
+          }
         />
         <Area
           dataKey="revenue"
@@ -128,6 +139,7 @@ function RevenueChart({ values, month }: { values: number[]; month: string }) {
           fill="var(--color-revenue)"
           fillOpacity={0.12}
           strokeWidth={2}
+          connectNulls={false}
           isAnimationActive={false}
         />
       </AreaChart>
@@ -151,6 +163,7 @@ export function PracticePanel({
   onClose,
   onOpenBrain,
   onCompare,
+  onAddContext,
   backLabel = 'Map',
 }: {
   practice: MapPractice;
@@ -160,6 +173,8 @@ export function PracticePanel({
   onOpenBrain?: (documentTitle: string) => void;
   /** Hands this practice to the map's compare picker as the first side. */
   onCompare?: (practiceId: string) => void;
+  /** Opens the Brain's create dialog prefilled for this practice. */
+  onAddContext?: (practiceId: string) => void;
   /** Where the way back leads, when the panel was opened from somewhere else. */
   backLabel?: string;
 }) {
@@ -203,9 +218,16 @@ export function PracticePanel({
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   }, [input]);
 
-  const contextDocuments = BRAIN_DOCUMENTS.filter((document) =>
-    (document.relatedPracticeIds ?? []).includes(practice.practiceId),
-  );
+  // The context list reads the merged documents, so a note the user writes
+  // from this page appears here as soon as it is saved.
+  const [contextDocuments, setContextDocuments] = useState<BrainDocument[]>([]);
+  useEffect(() => {
+    setContextDocuments(
+      mergeBrainDocuments(readBrainState()).filter((document) =>
+        (document.relatedPracticeIds ?? []).includes(practice.practiceId),
+      ),
+    );
+  }, [practice.practiceId]);
 
   async function send(question: string): Promise<void> {
     const text = question.trim();
@@ -227,15 +249,10 @@ export function PracticePanel({
       content: turn.role === 'user' ? `${turn.text}\n\n${scope}` : turn.text,
     }));
 
-    // Guidance edits live in this browser, so send them with the question,
-    // exactly as the chat does. The server validates them.
-    let brainOverrides: unknown = {};
-    try {
-      const raw = localStorage.getItem('opticf-brain-v1');
-      if (raw) brainOverrides = JSON.parse(raw);
-    } catch {
-      brainOverrides = {};
-    }
+    // Guidance edits and the reader's own documents live in this browser, so
+    // send them with the question, exactly as the chat does. The server
+    // validates them.
+    const brainOverrides = readBrainState();
 
     const patch = (p: Partial<AskTurn>): void =>
       setThread((prev) => {
@@ -377,7 +394,7 @@ export function PracticePanel({
               Assign task
             </button>
             <span className="text-xs text-muted-foreground">
-              {practice.manager} · practice manager · supported by {practice.mentorName}
+              {practice.manager || 'No manager recorded'} · practice manager · supported by {practice.mentorName}
             </span>
             <button
               onClick={onClose}
@@ -389,6 +406,16 @@ export function PracticePanel({
           </motion.div>
 
           {/* The numbers, at a glance. */}
+          {!practice.reported ? (
+            <motion.div
+              variants={fadeUp}
+              data-anim
+              className="mt-5 rounded-lg border border-[color:var(--line)] bg-secondary/50 px-3.5 py-2.5 text-xs text-muted-foreground"
+            >
+              {practice.name} stopped reporting after {practice.lastReportedLabel}. The figures below are its last
+              reported month, and the map keeps it muted.
+            </motion.div>
+          ) : null}
           <motion.div variants={fadeUp} data-anim className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-6">
             <Metric label="Revenue" value={practice.revenueDisplay} sub={`${practice.revenueAttainmentDisplay} of ${practice.revenueTargetDisplay}`} />
             <Metric label="Revenue change" value={practice.revenueMoMDisplay} sub="vs last month" />
@@ -409,9 +436,11 @@ export function PracticePanel({
               label="Refunds"
               value={practice.refundLatestDisplay}
               sub={
-                practice.refundFlags.length > 0
-                  ? `${practice.refundRateDisplay} of revenue, flagged`
-                  : `${practice.refundRateDisplay} of revenue`
+                practice.refundCount === 0
+                  ? 'no refunds recorded'
+                  : practice.refundFlags.length > 0
+                    ? `${practice.refundRateDisplay} of revenue, flagged`
+                    : `${practice.refundRateDisplay} of revenue`
               }
             />
           </motion.div>
@@ -467,7 +496,21 @@ export function PracticePanel({
                     ))}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div>
+                  <p className="label-caps mb-2">Context from the Brain</p>
+                  <p className="text-xs text-muted-foreground">No context recorded yet.</p>
+                  {onAddContext ? (
+                    <button
+                      onClick={() => onAddContext(practice.practiceId)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <Plus className="size-3" />
+                      Add context for this practice
+                    </button>
+                  ) : null}
+                </div>
+              )}
             </div>
           </motion.div>
 
@@ -593,7 +636,7 @@ export function PracticePanel({
           finding: practice.attentionSignals[0],
         }}
         assignees={[
-          { name: practice.manager, role: 'practice manager' },
+          ...(practice.manager ? [{ name: practice.manager, role: 'practice manager' }] : []),
           { name: practice.mentorName, role: 'mentor' },
           { name: 'Sara Kelly', role: 'group leadership' },
         ]}

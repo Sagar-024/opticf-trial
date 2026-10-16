@@ -145,12 +145,14 @@ export function Workspace({
   today,
   mapModel,
   practiceCount,
+  reportingCount,
   regionCount,
   latestMonth,
 }: {
   today: TodayPriorities;
   mapModel: MapModel;
   practiceCount: number;
+  reportingCount: number;
   regionCount: number;
   latestMonth: string;
 }) {
@@ -166,6 +168,8 @@ export function Workspace({
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [mapIntent, setMapIntent] = useState<MapIntent | null>(null);
   const [brainDocument, setBrainDocument] = useState<string | null>(null);
+  /** A practice whose context is being written: the Brain opens on the create dialog. */
+  const [brainComposeFor, setBrainComposeFor] = useState<string | null>(null);
   const [homeOpen, setHomeOpen] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -233,7 +237,15 @@ export function Workspace({
 
   /** Clicking a Brain source in chat opens that document. */
   function openBrainDocument(title: string): void {
+    setBrainComposeFor(null);
     setBrainDocument(title);
+    setView('brain');
+  }
+
+  /** A practice with no context yet: the Brain opens ready to write one. */
+  function addContextFor(practiceId: string): void {
+    setBrainDocument(null);
+    setBrainComposeFor(practiceId);
     setView('brain');
   }
 
@@ -861,7 +873,9 @@ export function Workspace({
                   room and the two side tracks stay even. */}
               <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground lg:flex">
                 <span className="size-1.5 rounded-full bg-positive" />
-                {practiceCount} practices connected
+                {reportingCount < practiceCount
+                  ? `${reportingCount} of ${practiceCount} practices reporting`
+                  : `${practiceCount} practices connected`}
               </span>
               <span className="hidden text-[11px] tabular-nums text-muted-foreground lg:block">{latestMonth}</span>
               {/* The way back to the briefing after its once-per-session popup. */}
@@ -913,6 +927,7 @@ export function Workspace({
               focus={mapFocus}
               onToggleFocus={() => setMapFocus((value) => !value)}
               onOpenBrain={openBrainDocument}
+              onAddContext={addContextFor}
               onAsk={askAboutPractices}
               onBackToTasks={() => setView('tasks')}
             />
@@ -924,6 +939,9 @@ export function Workspace({
               onOpened={() => setBrainDocument(null)}
               onOpenPractice={openPracticeOnMap}
               practiceName={(practiceId) => mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId}
+              practices={mapModel.practices}
+              composeFor={brainComposeFor}
+              onComposeHandled={() => setBrainComposeFor(null)}
             />
           ) : null}
 

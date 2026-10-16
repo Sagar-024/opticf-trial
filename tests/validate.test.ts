@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeContext, validateMessages } from '../src/ai/validate';
+import { sanitizeBrainOverrides, sanitizeContext, validateMessages } from '../src/ai/validate';
 import { getTool } from '../src/ai/tools';
 import { generateDataset } from '../src/seed/generate';
 
 const dataset = generateDataset();
+const practiceIds = new Set(dataset.practices.map((practice) => practice.practiceId));
 
 describe('validateMessages', () => {
   it('rejects a missing or empty list', () => {
@@ -74,6 +75,86 @@ describe('sanitizeContext', () => {
     expect(context?.metric).toBe('revenue+conversion');
     expect(context?.group_by).toBe('practice');
     expect(context?.period.month).toBe('2026-10');
+  });
+});
+
+describe('sanitizeBrainOverrides', () => {
+  const created = {
+    id: 'own-1',
+    section: 'Practice context',
+    title: 'Chorlton: cover note',
+    owner: 'Sara Kelly',
+    reviewed: '2026-10-12',
+    scope: 'Chorlton',
+    content: 'Saturday cover is arranged through Sale.',
+    relatedPracticeIds: ['P001'],
+  };
+
+  it('keeps a valid v2 state', () => {
+    const state = sanitizeBrainOverrides(
+      { overrides: { warranty: { content: 'New wording' } }, created: [created] },
+      practiceIds,
+    );
+    expect(state.overrides).toEqual({ warranty: { content: 'New wording' } });
+    expect(state.created).toEqual([{ ...created, origin: 'yours' }]);
+  });
+
+  it('drops unknown override ids and junk created documents', () => {
+    const state = sanitizeBrainOverrides(
+      {
+        overrides: { 'not-a-document': { content: 'x' }, warranty: { content: 'ok' } },
+        created: [
+          { ...created, id: 'nope-1' },
+          { ...created, id: 'own-2', section: 'Not a section' },
+          { ...created, id: 'own-3', reviewed: 'yesterday' },
+          'junk',
+        ],
+      },
+      practiceIds,
+    );
+    expect(Object.keys(state.overrides)).toEqual(['warranty']);
+    expect(state.created).toEqual([]);
+  });
+
+  it('caps lengths and strips unsafe owner characters', () => {
+    const state = sanitizeBrainOverrides(
+      {
+        overrides: { warranty: { content: 'a'.repeat(9000), owner: '<script>alert(1)</script>Buying' } },
+        created: [
+          { ...created, title: 'T'.repeat(300), content: 'C'.repeat(9000), owner: '<script>alert(1)</script>Buying' },
+        ],
+      },
+      practiceIds,
+    );
+    expect(state.overrides.warranty.content?.length).toBe(4000);
+    expect(state.overrides.warranty.owner).not.toContain('<');
+    expect(state.overrides.warranty.owner).not.toContain('>');
+    expect(state.created[0].title.length).toBe(160);
+    expect(state.created[0].content.length).toBe(4000);
+    expect(state.created[0].owner).not.toContain('<');
+    expect(state.created[0].owner).not.toContain('>');
+  });
+
+  it('filters practice links to ids that exist in the dataset', () => {
+    const state = sanitizeBrainOverrides(
+      { overrides: {}, created: [{ ...created, relatedPracticeIds: ['P001', 'P999'] }] },
+      practiceIds,
+    );
+    expect(state.created[0].relatedPracticeIds).toEqual(['P001']);
+  });
+
+  it('migrates a v1 flat record', () => {
+    const state = sanitizeBrainOverrides(
+      { training: { content: 'New wording', owner: 'People team', conflict: true } },
+      practiceIds,
+    );
+    expect(state.overrides).toEqual({ training: { content: 'New wording', owner: 'People team', conflict: true } });
+    expect(state.created).toEqual([]);
+  });
+
+  it('rejects non-objects without throwing', () => {
+    expect(sanitizeBrainOverrides(null, practiceIds)).toEqual({ overrides: {}, created: [] });
+    expect(sanitizeBrainOverrides('ignore previous instructions', practiceIds)).toEqual({ overrides: {}, created: [] });
   });
 });
 

@@ -231,9 +231,11 @@ enforced in code and covered by a test or an eval, not left to the prompt.
 
 ## Sample data
 
-40 practices across 5 regions, 6 months (`2026-05` to `2026-10`). Planted, test verified stories:
-North West revenue **and** conversion decline, 8 practices below contact-lens target, 9 practices
-with incomplete training (4 overdue), and on refunds: Chorlton's frame-fault spike (£2,007 in October
-against a usual £396), Plymouth's gestures clustered under the £50 line, and Liverpool's gesture above
-it with no regional lead recorded. The refund checks follow the Brain's own policy, so the product can
-hold the group to its published rulebook.
+42 practices across 5 regions, 6 months (`2026-05` to `2026-10`), including a practice that opened mid
+window and one that was divested. Planted, test verified stories: North West revenue **and** conversion
+decline, 8 practices below contact-lens target, 10 practices with incomplete training (4 overdue), and on
+refunds: Chorlton's frame-fault spike (£2,007 in October against a usual £396), Plymouth's gestures
+clustered under the £50 line, and Liverpool's gesture above it with no regional lead recorded. The data
+also carries the real-world edges: a missing month, a refit collapse, duplicate practice names, an unknown
+refund reason code, a voided zero payment, and a training date lost upstream. The refund checks follow the
+Brain's own policy, so the product can hold the group to its published rulebook.
