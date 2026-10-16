@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { Widget } from '../src/ai/types';
 import { getTool } from '../src/ai/tools';
 import { query_metrics } from '../src/data/metrics';
+import { DENSE_CHART_THRESHOLD, isDenseChart } from '../src/lib/widgets';
 import { generateDataset } from '../src/seed/generate';
 
 /**
@@ -93,5 +95,48 @@ describe('dashboard widgets', () => {
     });
     const kpi = output.widgets.find((w) => w.type === 'kpi');
     if (kpi?.type === 'kpi') expect(kpi.title).toBe('North West dashboard - Oct 2026');
+  });
+});
+
+/**
+ * A dense chart is one the side panel cannot show legibly, so the dashboard
+ * opens over the chat instead. These tests pin the threshold and the shape
+ * checks that decide it.
+ */
+describe('isDenseChart', () => {
+  const points = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({ label: `Practice ${index + 1}`, value: index, display: `${index}` }));
+
+  const chart = (seriesLengths: number[]): Widget => ({
+    type: 'chart',
+    id: 'chart-1',
+    title: 'Revenue by practice',
+    chart: 'bar',
+    valueType: 'currency',
+    series: seriesLengths.map((count, index) => ({ name: `Series ${index + 1}`, points: points(count) })),
+  });
+
+  it('treats a chart with more than 24 points as dense, and 24 or fewer as not', () => {
+    expect(isDenseChart(chart([DENSE_CHART_THRESHOLD + 1]))).toBe(true);
+    expect(isDenseChart(chart([DENSE_CHART_THRESHOLD]))).toBe(false);
+  });
+
+  it('treats a chart with six points as not dense', () => {
+    expect(isDenseChart(chart([6]))).toBe(false);
+  });
+
+  it('never treats a table as dense', () => {
+    const table: Widget = {
+      type: 'table',
+      id: 'table-1',
+      title: 'Revenue by practice',
+      columns: ['Practice', 'Revenue'],
+      rows: [['Chorlton', '1200']],
+    };
+    expect(isDenseChart(table)).toBe(false);
+  });
+
+  it('looks at the longest series when a chart carries more than one', () => {
+    expect(isDenseChart(chart([4, 42]))).toBe(true);
   });
 });

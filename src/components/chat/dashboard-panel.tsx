@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Send, X } from 'lucide-react';
+import { Download, Maximize2, Send, X } from 'lucide-react';
 import type { Widget } from '@/ai/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,8 +23,10 @@ import { cn } from '@/lib/utils';
 /**
  * The dashboard, on the side. The chat keeps its column, the BI opens beside
  * it, and the divider between them is draggable: hover the line and it shows
- * itself, drag it and the two columns trade space. The panel is the only thing
- * on the page when it is exported to PDF, buttons and notes included out.
+ * itself, drag it and the two columns trade space. A dense chart is too cramped
+ * for that column, so the panel takes the whole content area instead: the cross
+ * and Escape return it to the side, exactly as it was. The panel is the only
+ * thing on the page when it is exported to PDF, buttons and notes included out.
  */
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -38,12 +40,21 @@ export function DashboardPanel({
   widgets,
   sources,
   onClose,
+  full = false,
+  onExitFull,
+  onEnterFull,
 }: {
   title: string;
   widgets: Widget[];
   /** Where the numbers come from; shown as a quiet line at the foot. */
   sources: string[];
   onClose: () => void;
+  /** A dense chart opens the panel over the chat, filling the content area. */
+  full?: boolean;
+  /** The way back from full view: the cross and Escape both use it. */
+  onExitFull?: () => void;
+  /** The way in, for a reader who wants any dashboard full, dense or not. */
+  onEnterFull?: () => void;
 }) {
   const [sendOpen, setSendOpen] = useState(false);
   const [recipient, setRecipient] = useState(LEADERSHIP[0]?.name ?? '');
@@ -66,6 +77,17 @@ export function DashboardPanel({
   useEffect(() => {
     setReceipt(null);
   }, [title]);
+
+  // Escape leaves full view, the map's focus-mode pattern; a dialog on top
+  // (Send) takes the key first and marks it handled.
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onExitFull?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [full, onExitFull]);
 
   function confirmSend(): void {
     const person = LEADERSHIP.find((candidate) => candidate.name === recipient) ?? LEADERSHIP[0];
@@ -144,38 +166,44 @@ export function DashboardPanel({
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.28, ease: EASE }}
       aria-label="Dashboard"
-      style={{ width: width ? `${width}px` : '44%' }}
-      className="print-area relative flex h-full min-w-[360px] max-w-[760px] shrink-0 flex-col border-l border-border bg-card"
+      style={full ? undefined : { width: width ? `${width}px` : '44%' }}
+      className={cn(
+        'print-area relative flex h-full flex-col bg-card',
+        full ? 'min-w-0 flex-1' : 'min-w-[360px] max-w-[760px] shrink-0 border-l border-border',
+      )}
     >
-      {/* The divider: quiet at rest, a line and a grip when you reach for it. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize dashboard"
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onDoubleClick={() => setWidth(null)}
-        onKeyDown={onHandleKey}
-        className="group absolute inset-y-0 left-0 z-20 w-2 -translate-x-1/2 cursor-col-resize focus-visible:outline-none"
-      >
-        <span
-          aria-hidden
-          className={cn(
-            'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors',
-            dragging ? 'bg-[var(--accent-500)]' : 'bg-transparent group-hover:bg-[var(--accent-500)] group-focus-visible:bg-[var(--accent-500)]',
-          )}
-        />
-        <span
-          aria-hidden
-          className={cn(
-            'absolute left-1/2 top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent-500)] transition-opacity',
-            dragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100',
-          )}
-        />
-      </div>
+      {/* The divider: quiet at rest, a line and a grip when you reach for it.
+          Full view has no chat column to trade space with. */}
+      {full ? null : (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize dashboard"
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onDoubleClick={() => setWidth(null)}
+          onKeyDown={onHandleKey}
+          className="group absolute inset-y-0 left-0 z-20 w-2 -translate-x-1/2 cursor-col-resize focus-visible:outline-none"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors',
+              dragging ? 'bg-[var(--accent-500)]' : 'bg-transparent group-hover:bg-[var(--accent-500)] group-focus-visible:bg-[var(--accent-500)]',
+            )}
+          />
+          <span
+            aria-hidden
+            className={cn(
+              'absolute left-1/2 top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent-500)] transition-opacity',
+              dragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100',
+            )}
+          />
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
@@ -194,13 +222,36 @@ export function DashboardPanel({
             <Send className="size-3.5" />
             Send
           </Button>
-          <button
-            onClick={onClose}
-            aria-label="Close dashboard"
-            className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
+          {/* Full view swaps the close for a way back to the chat, where the
+              panel waits on the side as it was. */}
+          {full ? (
+            <button
+              onClick={onExitFull}
+              aria-label="Back to chat"
+              title="Back to chat (Esc)"
+              className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onEnterFull}
+                aria-label="Expand to full view"
+                title="Expand to full view"
+                className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Maximize2 className="size-4" />
+              </button>
+              <button
+                onClick={onClose}
+                aria-label="Close dashboard"
+                className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 

@@ -42,6 +42,7 @@ import { getSession, migrateLegacy, newSessionId, setTurnFeedback, titleFromQues
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
 import { toolLabel } from '@/lib/tool-labels';
+import { isDenseChart } from '@/lib/widgets';
 
 /**
  * The six questions leadership actually opens with, shown as a tidy grid: the
@@ -270,6 +271,8 @@ export function ChatView({
   const [dangling, setDangling] = useState(false);
   /** The dashboard, open beside the chat, built by the build_dashboard tool. */
   const [dashboard, setDashboard] = useState<{ title: string; widgets: Widget[]; sources: string[] } | null>(null);
+  /** A dense chart opens that dashboard over the chat instead of beside it. */
+  const [dashboardFull, setDashboardFull] = useState(false);
   /** The answer a task is being written from: title and finding prefilled. */
   const [assignTask, setAssignTask] = useState<{ title: string; note: string } | null>(null);
 
@@ -288,6 +291,15 @@ export function ChatView({
   const sessionIdRef = useRef<string | null>(null);
   /** A session created by this view, so the loader does not wipe its first turn. */
   const createdRef = useRef<string | null>(null);
+
+  /** One door for the BI panel: opening it also picks side or full view. */
+  const showDashboard = useCallback(
+    (next: { title: string; widgets: Widget[]; sources: string[] } | null): void => {
+      setDashboard(next);
+      setDashboardFull(next !== null && next.widgets.some(isDenseChart));
+    },
+    [],
+  );
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -310,7 +322,7 @@ export function ChatView({
       return;
     }
     abortRef.current?.abort();
-    setDashboard(null);
+    showDashboard(null);
     if (!sessionId) {
       contextRef.current = null;
       setTurns([]);
@@ -325,7 +337,7 @@ export function ChatView({
     // off (a reload or a closed tab), so that question is flagged for retry.
     setDangling(loaded.length > 0 && loaded[loaded.length - 1].role === 'user');
     setError(null);
-  }, [sessionId, hydrated]);
+  }, [sessionId, hydrated, showDashboard]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -432,9 +444,9 @@ export function ChatView({
             } else if (event.type === 'widgets') {
               draft.widgets = event.widgets;
               patch({ widgets: event.widgets, phase: 'working' });
-              // The BI goes up on the side as it is built; the chat keeps prose.
+              // The BI goes up as it is built; the chat keeps prose.
               const canvas = canvasWidgets(event.widgets);
-              if (canvas.length > 0) setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: [] });
+              if (canvas.length > 0) showDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: [] });
             } else if (event.type === 'done') {
               contextRef.current = event.context;
               patch({
@@ -449,10 +461,10 @@ export function ChatView({
                 withdrawn: event.withdrawn ?? false,
                 tools: draft.tools,
               });
-              // The answer settles: the side panel takes the final widgets and
-              // the sources that back them.
+              // The answer settles: the panel takes the final widgets and the
+              // sources that back them.
               const canvas = canvasWidgets(event.widgets);
-              if (canvas.length > 0) setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: event.sources });
+              if (canvas.length > 0) showDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: event.sources });
             } else if (event.type === 'error') {
               setError(event.message);
             }
@@ -475,7 +487,7 @@ export function ChatView({
         }
       }
     },
-    [patchLast, saveSession],
+    [patchLast, saveSession, showDashboard],
   );
 
   function send(question: string): void {
@@ -594,8 +606,9 @@ export function ChatView({
 
   return (
     <div className="flex h-full min-h-0 min-w-0">
-      {/* The chat keeps its column; a dashboard opens beside it. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* The chat keeps its column; a dashboard opens beside it, or takes the
+          whole area when a dense chart needs the room. */}
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', dashboardFull && 'hidden')}>
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-3xl px-6">
           {empty ? (
@@ -721,7 +734,7 @@ export function ChatView({
                           transition={{ duration: 0.32, ease: EASE }}
                           onClick={() => {
                             const canvas = canvasWidgets(turn.widgets);
-                            setDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: turn.sources });
+                            showDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: turn.sources });
                           }}
                           whileTap={{ scale: 0.99 }}
                           className="lift flex w-full items-center gap-2.5 rounded-xl border border-[color:var(--line)] bg-card px-4 py-3 text-left [box-shadow:var(--hi),var(--shadow-raised)] hover:bg-accent"
@@ -1014,7 +1027,10 @@ export function ChatView({
           title={dashboard.title}
           widgets={dashboard.widgets}
           sources={dashboard.sources}
-          onClose={() => setDashboard(null)}
+          full={dashboardFull}
+          onExitFull={() => setDashboardFull(false)}
+          onEnterFull={() => setDashboardFull(true)}
+          onClose={() => showDashboard(null)}
         />
       ) : null}
 
