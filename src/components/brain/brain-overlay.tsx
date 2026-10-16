@@ -549,7 +549,7 @@ export function BrainOverlay({
                   <button
                     type="submit"
                     disabled={question.trim().length === 0}
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:opacity-50 disabled:[box-shadow:none]"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:opacity-85"
                   >
                     Ask the Brain <ArrowRight className="size-3.5" />
                   </button>

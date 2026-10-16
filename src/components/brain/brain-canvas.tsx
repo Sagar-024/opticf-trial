@@ -69,12 +69,21 @@ interface TooltipState {
   lines: string[];
 }
 
-/** One drawn line of a node label: its own font and colour. */
+/** One node's label line: its own font and colour. */
 interface LabelLine {
   text: string;
   font: string;
   color: string;
 }
+
+/**
+ * The document and team discs keep the reference's paper white in both
+ * themes: a light disc with quiet ink reads on cream paper and on near black.
+ */
+const NODE_SURFACE = 'rgba(255, 255, 255, 0.96)';
+const NODE_EDGE = 'rgba(24, 20, 16, 0.12)';
+const DOC_INK = '#8B857C';
+const TEAM_INK = '#4E5566';
 
 const VIEWPORT_PADDING = { top: 16, right: 20, bottom: 64, left: 20 };
 const FIT_PADDING = 26;
@@ -96,10 +105,10 @@ const MAX_DOTS = 5000;
 /** Smallest screen radius each role keeps, so a node never becomes a speck.
     The hub floor also keeps the sparkle legible at the resting fit. */
 function radiusOf(role: BrainGraphNode['role'], screenR: number): number {
-  if (role === 'hub') return Math.max(30, screenR);
-  if (role === 'section') return Math.max(7, screenR);
-  if (role === 'owner') return Math.max(6, screenR);
-  return Math.max(5.5, screenR);
+  if (role === 'hub') return Math.max(32, screenR);
+  if (role === 'section') return Math.max(12, screenR);
+  if (role === 'owner') return Math.max(9, screenR);
+  return Math.max(7, screenR);
 }
 
 function collides(box: { x: number; y: number; w: number; h: number }, others: Array<{ x: number; y: number; w: number; h: number }>): boolean {
@@ -447,16 +456,16 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.globalAlpha = alpha;
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fillStyle = palette.background;
+      context.fillStyle = NODE_SURFACE;
       context.fill();
       context.lineWidth = 1;
-      context.strokeStyle = palette.border;
+      context.strokeStyle = NODE_EDGE;
       context.stroke();
       if (radius >= 8) {
         context.font = '500 11px Inter, sans-serif';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillStyle = palette.labelStrong;
+        context.fillStyle = TEAM_INK;
         context.fillText(node.initials ?? initialsOf(node.label), point.x, point.y + 0.5);
       }
     }
@@ -472,16 +481,15 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       discBox(point, radius);
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.globalAlpha = alpha * 0.2;
+      context.globalAlpha = alpha * 0.85;
       context.fillStyle = palette.colors.coral;
       context.fill();
-      context.globalAlpha = alpha * 0.55;
-      context.lineWidth = 1;
+      context.globalAlpha = alpha;
+      context.lineWidth = 1.5;
       context.strokeStyle = palette.colors.coral;
       context.stroke();
-      context.globalAlpha = alpha;
       if (count) {
-        context.font = `600 ${Math.max(12, Math.round(radius * 0.95))}px Inter, sans-serif`;
+        context.font = `600 ${Math.max(12, Math.round(radius * 0.9))}px Inter, sans-serif`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillStyle = palette.labelStrong;
@@ -501,16 +509,16 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.globalAlpha = alpha;
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fillStyle = palette.background;
+      context.fillStyle = NODE_SURFACE;
       context.fill();
       // A conflict takes over the border: one coral ring, nothing added outside.
       context.lineWidth = flags?.conflict ? 1.5 : 1;
-      context.strokeStyle = flags?.conflict ? palette.colors.coral : palette.border;
+      context.strokeStyle = flags?.conflict ? palette.colors.coral : NODE_EDGE;
       context.stroke();
 
       if (radius >= 5.5) {
-        context.globalAlpha = alpha * 0.55;
-        drawPageGlyph(context, point.x, point.y, radius, palette.label);
+        context.globalAlpha = alpha * 0.8;
+        drawPageGlyph(context, point.x, point.y, radius, DOC_INK);
       }
 
       if (flags?.reviewDue) {

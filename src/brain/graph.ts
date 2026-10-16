@@ -167,7 +167,7 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
     sub: `${documents.length} documents${stats.reviewDue > 0 ? ` · ${stats.reviewDue} review${stats.reviewDue === 1 ? '' : 's'} due` : ''}`,
     x: 0,
     y: 0,
-    r: 26,
+    r: 32,
   });
 
   const sections = orderedSections(documents);
@@ -188,7 +188,7 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
       sub: `${members.length} documents`,
       x: Math.cos(angle) * distance,
       y: Math.sin(angle) * distance,
-      r: 12 + 2.6 * Math.sqrt(members.length),
+      r: 14 + 2.6 * Math.sqrt(members.length),
       section: name,
       initials: initialsOf(name),
     });
@@ -230,7 +230,7 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
         label: document.title,
         x: Math.cos(angle) * distance,
         y: Math.sin(angle) * distance,
-        r: 8 + 4.5 * Math.pow((document.content.length - minLen) / span, 0.75),
+        r: 10 + 5 * Math.pow((document.content.length - minLen) / span, 0.75),
         section: name,
         documentId: document.id,
         ...(Object.keys(flags).length > 0 ? { flags } : {}),
@@ -290,7 +290,7 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
       sub: `${group.count} documents`,
       x: 320 + column * 150 + (row % 2) * 75,
       y: -560 + row * 120,
-      r: 15 + Math.min(3, Math.log2(1 + group.count)),
+      r: 18 + Math.min(3, Math.log2(1 + group.count)),
       ownerKey: group.key,
       initials: ownerInitials(group.key),
     });
@@ -324,7 +324,7 @@ export function buildBrainGraph(documents: BrainDocument[], asOf?: string): Brai
         const dx = other.x - doc.x;
         const dy = other.y - doc.y;
         const distance = Math.hypot(dx, dy);
-        const clearance = 34;
+        const clearance = 72;
         if (distance >= clearance) continue;
         const split = other.role === 'document' ? 2 : 1;
         const push = (clearance - distance) / split;
