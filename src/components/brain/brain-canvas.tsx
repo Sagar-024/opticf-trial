@@ -12,7 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Frame, Minus, Plus } from 'lucide-react';
+import { Frame, Maximize2, Minimize2, Minus, Plus } from 'lucide-react';
 import type { BrainGraph, BrainGraphNode } from '@/brain/graph';
 import { initialsOf } from '@/components/canvas/ink';
 import { readPalette, type Palette } from '@/components/map/palette';
@@ -45,6 +45,9 @@ export interface BrainCanvasProps {
   selectedId: string | null;
   onSelectNode: (nodeId: string | null) => void;
   practiceName?: (practiceId: string) => string;
+  /** Focus mode: the page chrome hides and the graph owns the surface. */
+  focus?: boolean;
+  onToggleFocus?: () => void;
   className?: string;
 }
 
@@ -254,7 +257,7 @@ function clampLine(text: string): string {
 }
 
 export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(function BrainCanvas(
-  { graph, highlighted, selectedId, onSelectNode, practiceName, className },
+  { graph, highlighted, selectedId, onSelectNode, practiceName, focus = false, onToggleFocus, className },
   ref,
 ) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -828,6 +831,12 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
     draw();
   }, [draw]);
 
+  // Focus mode hands the keyboard to the canvas: +/- and F work at once, and
+  // Escape stays inside the dialog so Radix still closes it on the next press.
+  useEffect(() => {
+    if (focus) canvasRef.current?.focus();
+  }, [focus]);
+
   // Redraw whenever the element is resized (container size, panel open, tab
   // switch). The first draw can happen before the surface has settled, so a
   // size change also re-applies the last fly-to: otherwise a highlight opened
@@ -1060,6 +1069,11 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
     if (event.key === '0') {
       event.preventDefault();
       applyFit();
+      return;
+    }
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();
+      onToggleFocus?.();
     }
   }
 
@@ -1145,6 +1159,21 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
         >
           <Frame className="size-3.5" /> Fit
         </Button>
+        {onToggleFocus ? (
+          <>
+            <span className="mx-1 h-4 w-px bg-border" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 transition-transform active:scale-90"
+              aria-label={focus ? 'Exit focus mode' : 'Focus on the graph'}
+              title={focus ? 'Exit focus (F)' : 'Focus (F)'}
+              onClick={onToggleFocus}
+            >
+              {focus ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            </Button>
+          </>
+        ) : null}
       </div>
     </div>
   );

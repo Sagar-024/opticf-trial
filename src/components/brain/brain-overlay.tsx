@@ -226,6 +226,8 @@ export function BrainOverlay({
   const [turn, setTurn] = useState<BrainTurn | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<string[]>([]);
+  /** Focus mode: the graph owns the surface, chrome steps aside. */
+  const [focused, setFocused] = useState(false);
 
   const canvasRef = useRef<BrainCanvasHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -254,6 +256,28 @@ export function BrainOverlay({
     setSelectedId(null);
     setHighlighted([]);
   }, []);
+
+  // Escape peels layers before Radix can dismiss the whole page. The listener
+  // sits on window capture, ahead of Radix's own document listener, and
+  // consumes the event only when a layer actually closed.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      if (focused) {
+        event.preventDefault();
+        event.stopPropagation();
+        setFocused(false);
+        return;
+      }
+      if (selectedId) {
+        event.preventDefault();
+        event.stopPropagation();
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [clearSelection, focused, selectedId]);
 
   /** A canvas node click: select it, highlight its knowledge, and fly to it. */
   const selectNode = useCallback(
@@ -301,6 +325,17 @@ export function BrainOverlay({
     setTurn((current) => (current && current.status === 'streaming' ? { ...current, status: 'stopped' } : current));
     abortRef.current?.abort();
   }, []);
+
+  /** The graph's Focus toggle, from the cluster or the F key. */
+  const toggleFocus = useCallback(() => {
+    setFocused((value) => !value);
+  }, []);
+
+  // Leaving focus hands the caret back to the ask bar, so the next Escape is
+  // heard inside the dialog and closes the page as expected.
+  useEffect(() => {
+    if (!focused) inputRef.current?.focus();
+  }, [focused]);
 
   const askBrain = useCallback(
     async (raw: string) => {
@@ -486,13 +521,6 @@ export function BrainOverlay({
           event.preventDefault();
           inputRef.current?.focus();
         }}
-        onEscapeKeyDown={(event) => {
-          // The panel is a layer: the first Escape closes it, not the page.
-          if (selectedId) {
-            event.preventDefault();
-            clearSelection();
-          }
-        }}
       >
           <motion.div
             className="flex h-full min-h-0 flex-col overflow-y-auto"
@@ -500,8 +528,13 @@ export function BrainOverlay({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.28, ease: EASE }}
           >
-            {/* 1. Header */}
-            <header className="mx-auto flex w-full max-w-[1120px] shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-5 md:px-8 md:pt-7">
+            {/* 1. Header (hidden in focus mode; Escape or the cluster brings it back) */}
+            <header
+              className={cn(
+                'mx-auto flex w-full max-w-[1120px] shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-5 md:px-8 md:pt-7',
+                focused && 'hidden',
+              )}
+            >
               <div className="min-w-0">
                 <p className="text-[11px] text-[color:var(--ink-3)]">Home / Behind your answers</p>
                 <DialogPrimitive.Title className="mt-1.5 text-2xl font-semibold tracking-tight md:text-3xl">
@@ -516,8 +549,13 @@ export function BrainOverlay({
               </Button>
             </header>
 
-            {/* 2. Ask bar and the chips derived from the real documents */}
-            <div className="mx-auto w-full max-w-[1120px] shrink-0 px-4 md:px-8">
+            {/* 2. The ask bar */}
+            <div
+              className={cn(
+                'mx-auto w-full max-w-[1120px] shrink-0 px-4 md:px-8',
+                focused && 'hidden',
+              )}
+            >
               <form
                 onSubmit={submitAsk}
                 className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2 [box-shadow:var(--shadow-floating)]"
@@ -558,7 +596,7 @@ export function BrainOverlay({
             </div>
 
             {/* 3. The answer strip, only when a turn exists */}
-            {turn ? (
+            {turn && !focused ? (
               <section
                 aria-label="Answer from the Practice Brain"
                 className="mx-auto mt-3 w-full max-w-[1120px] shrink-0 px-4 md:px-8"
@@ -652,7 +690,7 @@ export function BrainOverlay({
             ) : null}
 
             {/* 4. The graph, the hero of the page */}
-            <div className="mt-3 flex min-h-[260px] flex-1 flex-col">
+            <div className={cn('flex min-h-[260px] flex-1 flex-col', focused ? 'mt-0' : 'mt-3')}>
               <div className="relative min-h-[220px] flex-1 px-2 md:px-4">
                 <BrainCanvas
                   ref={canvasRef}
@@ -661,6 +699,8 @@ export function BrainOverlay({
                   selectedId={selectedId}
                   onSelectNode={selectNode}
                   practiceName={practiceName}
+                  focus={focused}
+                  onToggleFocus={toggleFocus}
                 />
                 {selectedDocument && selectedNode ? (
                   <DocumentPanel
