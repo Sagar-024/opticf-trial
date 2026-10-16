@@ -346,6 +346,16 @@ export function PracticePanel({
   }
 
   const hasText = input.trim().length > 0;
+
+  // The send button follows the text, not a blank line under it: while the
+  // trailing line is empty the button stays on the last line that has words.
+  // 20 is the textarea's line height; one step per blank trailing line.
+  const trailingBlankLines = (() => {
+    const lines = input.split('\n');
+    let blank = 0;
+    for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ''; i -= 1) blank += 1;
+    return Math.min(blank, Math.max(0, lines.length - 1));
+  })();
   const latestTool = thread[thread.length - 1]?.tools?.slice(-1)[0];
 
   return (
@@ -608,6 +618,7 @@ export function PracticePanel({
                 aria-label={loading ? 'Stop generating' : 'Ask'}
                 whileTap={loading || hasText ? { scale: 0.96 } : undefined}
                 transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+                style={{ marginBottom: trailingBlankLines * 20 }}
                 className={cn(
                   'inline-flex size-9 shrink-0 items-center justify-center rounded-full transition-[color,filter,box-shadow] duration-[160ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:pointer-events-none',
                   loading || hasText
