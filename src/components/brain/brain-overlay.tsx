@@ -557,7 +557,7 @@ export function BrainOverlay({
             {/* 1. Header (hidden in focus mode; Escape or the cluster brings it back) */}
             <header
               className={cn(
-                'mx-auto flex w-full max-w-[1120px] shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-3 md:px-8 md:pt-4',
+                'flex w-full shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-3 md:px-8 md:pt-4',
                 focused && 'hidden',
               )}
             >
@@ -583,11 +583,12 @@ export function BrainOverlay({
               </Button>
             </header>
 
-            {/* 2. The ask bar, always on top. The conversation opens beside
-                the graph only after the first question is asked. */}
+            {/* 2. The ask bar, always on top, held to a reading width at the
+                page's left. The conversation opens beside the graph only after
+                the first question is asked. */}
             <div
               className={cn(
-                'mx-auto w-full max-w-[1120px] shrink-0 px-4 md:px-8',
+                'w-full max-w-[720px] shrink-0 px-4 md:px-8',
                 focused && 'hidden',
               )}
             >
