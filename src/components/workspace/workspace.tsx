@@ -914,6 +914,7 @@ export function Workspace({
               onPendingHandled={() => setPendingQuestion(null)}
               sessionId={chatSessionId}
               onSessionChange={setChatSessionId}
+              practiceName={(practiceId) => mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId}
             />
           ) : null}
 

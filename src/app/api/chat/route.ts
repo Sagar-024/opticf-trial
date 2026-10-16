@@ -20,11 +20,11 @@ import { MAX_BODY_BYTES } from '@/ai/validate';
  * Body:  { messages: {role,content}[], context?: ChatContext, brainOverrides? }
  * Reply: newline-delimited JSON events, in order:
  *   { type: 'delta',   text }        prose chunks, streamed
- *   { type: 'tool',    name }        a tool ran
+ *   { type: 'tool',    name, detail, items }  a tool ran, with what it found
  *   { type: 'widgets', widgets }     widget list grew
  *   { type: 'done',    text, widgets, mapHighlight, context, sources, flagged,
  *                      flagReason, withdrawn, durationMs, traceId, promptVersion,
- *                      usage, cached }
+ *                      usage, cached, trace }
  *   { type: 'error',   message, status? }
  *
  * Guards, in order: content type, body size, rate limit, message shape, context
@@ -134,6 +134,7 @@ export async function POST(request: Request): Promise<Response> {
           promptVersion: result.promptVersion,
           usage: result.usage,
           cached,
+          trace: result.trace,
         });
       };
 
@@ -160,7 +161,9 @@ export async function POST(request: Request): Promise<Response> {
           { messages: validated.messages, context, brainOverrides, signal: request.signal, traceId },
           {
             onDelta: (text) => send({ type: 'delta', text }),
-            onTool: (record) => send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed) }),
+            onReasoning: (text) => send({ type: 'reasoning', text }),
+            onTool: (record) =>
+              send({ type: 'tool', name: record.name, malformed: Boolean(record.malformed), detail: record.detail, items: record.items }),
             onWidgets: (widgets) => send({ type: 'widgets', widgets }),
           },
         );

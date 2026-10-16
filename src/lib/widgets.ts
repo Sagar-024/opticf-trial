@@ -1,7 +1,7 @@
 import type { Widget } from '@/ai/types';
 
-/** The side panel holds roughly two dozen bars legibly; past that the full view reads better. */
-export const DENSE_CHART_THRESHOLD = 24;
+/** The side panel stays legible to about three dozen bars; past that the full view reads better. */
+export const DENSE_CHART_THRESHOLD = 38;
 
 /** A chart whose longest series runs past what the side panel can hold. */
 export function isDenseChart(widget: Widget): boolean {

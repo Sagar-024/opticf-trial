@@ -207,6 +207,7 @@ describe('chat orchestration guards', () => {
     const result = await runChat({ messages: ask('How is revenue this month?'), client, model: 'mock' });
     expect(rounds).toBeGreaterThan(2);
     expect(result.toolCalls.length).toBeGreaterThan(0);
+    expect(result.trace?.some((entry) => entry.kind === 'step' && entry.name === 'query_metrics')).toBe(true);
     expect(result.flagged).toBeFalsy();
   });
 

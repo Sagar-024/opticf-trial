@@ -74,7 +74,10 @@ export function ChartWidget({ widget }: { widget: ChartWidgetType }) {
     <div className="surface-card rounded-xl border border-border bg-card p-4">
       <p className="label-caps mb-3">{widget.title}</p>
       <div className="h-60 w-full">
-        <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover>
+        {/* The legend overlays the plot's top edge, and on a change chart zero
+            sits at the top, so every bar touched it. The margin keeps the plot
+            clear of the legend band. */}
+        <BarChart data={prepared.data} config={prepared.config} bloom="aura" bloomOnHover margins={{ top: 30 }}>
           <XAxis dataKey="label" maxTicks={6} />
           <YAxis tickFormatter={compactAxis} />
           {widget.series.map((series, index) => (

@@ -118,8 +118,24 @@ function dashSafe(text: string): string {
 }
 
 /** The no-match answer, served without a model call. */
+/**
+ * A greeting or a courtesy is answered in one friendly line. Retrieval cannot
+ * help here, and calling the model for "hi" would spend money to say less.
+ */
+const SMALL_TALK =
+  /^(hi|hii+|hey+|hello|yo|sup|good (morning|afternoon|evening)|how are you|how's it going|whats up|what's up|thanks|thank you|ty)\b/i;
+
+export function isSmallTalk(question: string): boolean {
+  return SMALL_TALK.test(question.trim());
+}
+
+/** The greeting reply, written here so it costs no model call. */
+export function cannedGreeting(): string {
+  return 'Hello. I answer from the group\'s written guidance, the Practice Brain. Ask me about a procedure, a policy or what the Brain knows about a practice, and I will answer from the documents behind it.';
+}
+
 export function cannedNoMatch(): string {
-  return 'Nothing in the Brain covers that yet. The guidance may simply not exist. Try one of the suggested questions, or add a document in the Brain tab.';
+  return 'Nothing in the Brain covers that yet. The guidance may simply not exist. Try naming a procedure, a policy or a practice, or add a document in the Brain tab.';
 }
 
 /** Citation chips derived from the retrieval: id, title, section. */
@@ -190,7 +206,7 @@ export async function answerFromBrain(
       ...(input.traceId !== undefined ? { traceId: input.traceId } : {}),
     });
     return {
-      text: cannedNoMatch(),
+      text: isSmallTalk(input.question) ? cannedGreeting() : cannedNoMatch(),
       citations: [],
       docs,
       flagged: false,

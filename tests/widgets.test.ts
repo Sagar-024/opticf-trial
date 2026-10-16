@@ -116,7 +116,7 @@ describe('isDenseChart', () => {
     series: seriesLengths.map((count, index) => ({ name: `Series ${index + 1}`, points: points(count) })),
   });
 
-  it('treats a chart with more than 24 points as dense, and 24 or fewer as not', () => {
+  it('treats a chart just past the threshold as dense, and the threshold itself as not', () => {
     expect(isDenseChart(chart([DENSE_CHART_THRESHOLD + 1]))).toBe(true);
     expect(isDenseChart(chart([DENSE_CHART_THRESHOLD]))).toBe(false);
   });

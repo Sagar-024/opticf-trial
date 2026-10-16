@@ -354,7 +354,9 @@ export function PracticePanel({
     const lines = input.split('\n');
     let blank = 0;
     for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ''; i -= 1) blank += 1;
-    return Math.min(blank, Math.max(0, lines.length - 1));
+    // The cap keeps the button inside the pill: it may never ride above the
+    // second line from the top, or it would poke out of the rounded corner.
+    return Math.min(blank, Math.max(0, lines.length - 2));
   })();
   const latestTool = thread[thread.length - 1]?.tools?.slice(-1)[0];
 

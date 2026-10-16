@@ -35,6 +35,8 @@ export interface BrainOverride {
   content?: string;
   owner?: string;
   conflict?: boolean;
+  /** ISO date the reader recorded a fresh review on. */
+  reviewed?: string;
 }
 
 /** Everything the reader has changed about the Brain, as one typed state. */
@@ -294,6 +296,7 @@ function normalizeOverride(value: unknown): BrainOverride | null {
   if (typeof source.content === 'string') override.content = source.content;
   if (typeof source.owner === 'string') override.owner = source.owner;
   if (typeof source.conflict === 'boolean') override.conflict = source.conflict;
+  if (typeof source.reviewed === 'string') override.reviewed = source.reviewed;
   return Object.keys(override).length > 0 ? override : null;
 }
 
@@ -362,6 +365,7 @@ export function mergeBrainDocuments(state: BrainState): BrainDocument[] {
       content: override.content ?? document.content,
       owner: override.owner ?? document.owner,
       conflict: override.conflict ?? document.conflict,
+      reviewed: override.reviewed ?? document.reviewed,
     };
   });
   return [...merged, ...state.created.map((document) => ({ ...document, origin: 'yours' as const }))];

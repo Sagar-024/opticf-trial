@@ -3,6 +3,7 @@ import {
   answerFromBrain,
   BRAIN_ASK_PROMPT_VERSION,
   buildBrainAskMessages,
+  cannedGreeting,
   cannedNoMatch,
   citationsOf,
 } from '../src/brain/ask';
@@ -221,7 +222,7 @@ describe('answerFromBrain', () => {
 
     expect(calls).toBe(0);
     expect(result.text).toBe(
-      'Nothing in the Brain covers that yet. The guidance may simply not exist. Try one of the suggested questions, or add a document in the Brain tab.',
+      'Nothing in the Brain covers that yet. The guidance may simply not exist. Try naming a procedure, a policy or a practice, or add a document in the Brain tab.',
     );
     expect(result.text).toBe(cannedNoMatch());
     expect(result.citations).toEqual([]);
@@ -232,6 +233,26 @@ describe('answerFromBrain', () => {
     expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
     expect(result.promptVersion).toBe(BRAIN_ASK_PROMPT_VERSION);
     expect(meta).toEqual([[]]);
+  });
+
+  it('greets back without a model call instead of claiming the Brain is empty', async () => {
+    let calls = 0;
+    const result = await answerFromBrain(
+      {
+        question: 'hi',
+        documents: docs,
+        practices,
+        client: client('', () => { calls += 1; }),
+        model: 'mock',
+      },
+      {},
+    );
+
+    expect(calls).toBe(0);
+    expect(result.text).toBe(cannedGreeting());
+    expect(result.text).not.toBe(cannedNoMatch());
+    expect(result.citations).toEqual([]);
+    expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
   it('keeps only citations that map back to retrieved documents', async () => {

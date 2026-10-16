@@ -116,7 +116,20 @@ export interface ToolCallRecord {
   input: unknown;
   widgetTypes: WidgetType[];
   mapHighlight: string[];
+  /** What this step found, in the reader's words, from the real output. */
+  detail?: string;
+  /** Up to three real names the step returned, shown as chips. */
+  items?: string[];
   /** True when the model sent arguments that were not valid JSON. */
   malformed?: boolean;
   error?: string;
 }
+
+/**
+ * One entry of a run's reasoning and steps, in arrival order. Kept on the
+ * result so a cached answer can replay the same live trace, since a cache hit
+ * never sends tool or reasoning events.
+ */
+export type RunTraceEntry =
+  | { kind: 'reasoning'; text: string }
+  | { kind: 'step'; name: string; detail?: string; items?: string[] };

@@ -6,6 +6,12 @@
  * are replaced and every caller (the rail list, the chat view) stays the same.
  */
 
+/** One entry of a run's live thinking trace, kept so the settled record can
+ *  show the real reasoning and what each step found. */
+export type StoredTraceEntry =
+  | { kind: 'reasoning'; text: string }
+  | { kind: 'step'; name: string; detail?: string; items?: string[] };
+
 export interface StoredTurn {
   role: 'user' | 'assistant';
   text: string;
@@ -13,6 +19,10 @@ export interface StoredTurn {
   mapHighlight: string[];
   sources: string[];
   tools?: string[];
+  /** The run's real thinking, so the settled trace can replay it after reload. */
+  trace?: StoredTraceEntry[];
+  /** How long the run worked before the first words; drives the settled trace summary. */
+  thinkingMs?: number;
   flagged?: boolean;
   flagReason?: 'leak' | 'ungrounded' | 'numbers' | null;
   withdrawn?: boolean;

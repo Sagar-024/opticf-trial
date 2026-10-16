@@ -58,8 +58,11 @@ export interface LlmResponse {
 export interface LlmClient {
   /** Non-streaming completion. */
   chat(params: LlmChatParams): Promise<LlmResponse>;
-  /** Streaming completion; `onDelta` receives prose chunks as they arrive. */
-  stream(params: LlmChatParams, onDelta: (text: string) => void): Promise<LlmResponse>;
+  /**
+   * Streaming completion; `onDelta` receives prose chunks as they arrive, and
+   * `onReasoning` the model's thinking when the provider reports it.
+   */
+  stream(params: LlmChatParams, onDelta: (text: string) => void, onReasoning?: (text: string) => void): Promise<LlmResponse>;
 }
 
 export class LlmError extends Error {
@@ -169,6 +172,7 @@ export function createLlmClient(): LlmClient {
               tools: tools as unknown as ChatCompletionTool[],
               tool_choice: 'auto',
               max_tokens: 2200,
+              temperature: 0,
             },
             { signal: signalFor(signal) },
           ),
@@ -189,7 +193,7 @@ export function createLlmClient(): LlmClient {
       }
     },
 
-    async stream({ model, messages, tools, signal }: LlmChatParams, onDelta): Promise<LlmResponse> {
+    async stream({ model, messages, tools, signal }: LlmChatParams, onDelta, onReasoning): Promise<LlmResponse> {
       try {
         const stream = await withTransientRetry(() =>
           client.chat.completions.create(
@@ -199,6 +203,7 @@ export function createLlmClient(): LlmClient {
               tools: tools as unknown as ChatCompletionTool[],
               tool_choice: 'auto',
               max_tokens: 2200,
+              temperature: 0,
               stream: true,
               // Ask for token usage on the final chunk, for cost accounting.
               stream_options: { include_usage: true },
@@ -225,6 +230,10 @@ export function createLlmClient(): LlmClient {
             text += delta.content;
             onDelta(delta.content);
           }
+
+          // Some providers stream the model's thinking alongside the answer.
+          const reasoning = (delta as { reasoning_content?: string | null } | null | undefined)?.reasoning_content;
+          if (reasoning) onReasoning?.(reasoning);
 
           for (const call of delta?.tool_calls ?? []) {
             const index = call.index ?? 0;

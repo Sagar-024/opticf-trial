@@ -128,6 +128,18 @@ export function BrainView({
     [documents],
   );
 
+  /** Clear the review-due badge: record today's review against this document. */
+  function markReviewed(document: BrainDocument): void {
+    setBrainState((state) => ({
+      ...state,
+      overrides: {
+        ...state.overrides,
+        [document.id]: { ...state.overrides[document.id], reviewed: BRAIN_AS_OF },
+      },
+    }));
+    setReading({ ...document, reviewed: BRAIN_AS_OF });
+  }
+
   const sortedPractices = useMemo(
     () => [...(practices ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [practices],
@@ -421,6 +433,9 @@ export function BrainView({
                 <Sparkles className="size-3 text-[var(--accent-600)]" /> Ask in chat and this guidance is cited in the sources.
               </p>
               <DialogFooter>
+                {isReviewDue(reading.reviewed) ? (
+                  <Button variant="outline" onClick={() => markReviewed(reading)}>Mark reviewed</Button>
+                ) : null}
                 {reading.origin === 'yours' ? null : (
                   <Button variant="outline" onClick={() => { setReading(null); openEditor(reading); }}>Edit this guidance</Button>
                 )}

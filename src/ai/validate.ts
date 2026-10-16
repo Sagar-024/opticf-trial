@@ -148,6 +148,9 @@ export function sanitizeBrainOverrides(raw: unknown, validPracticeIds: ReadonlyS
       override.owner = source.owner.replace(/[^\w\s&.,'-]/g, '').trim().slice(0, 120);
     }
     if (typeof source.conflict === 'boolean') override.conflict = source.conflict;
+    if (typeof source.reviewed === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(source.reviewed)) {
+      override.reviewed = source.reviewed;
+    }
     if (Object.keys(override).length > 0) {
       overrides[id] = override;
       accepted += 1;

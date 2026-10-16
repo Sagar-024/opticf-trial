@@ -93,6 +93,13 @@ describe('guidance edits reach the answers', () => {
     expect(document.content).toContain('Edited wording');
   });
 
+  it('clears the review-due flag when a fresh review is recorded', () => {
+    const merged = mergeBrainDocuments({ overrides: { targets: { reviewed: '2026-10-12' } }, created: [] });
+    const targets = merged.find((document) => document.id === 'targets')!;
+    expect(targets.reviewed).toBe('2026-10-12');
+    expect(isReviewDue(targets.reviewed)).toBe(false);
+  });
+
   it('search_brain quotes the edited text, not the original', () => {
     const documents = mergeBrainDocuments({
       overrides: { warranty: { content: 'Edited wording: confirm with Buying first.' } },

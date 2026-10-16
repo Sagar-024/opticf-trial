@@ -223,7 +223,8 @@ export function BrainOverlay({
 
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
-  const [turn, setTurn] = useState<BrainTurn | null>(null);
+  /** The sidebar conversation: every asked question with its answer. */
+  const [turns, setTurns] = useState<BrainTurn[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<string[]>([]);
   /** Focus mode: the graph owns the surface, chrome steps aside. */
@@ -255,6 +256,27 @@ export function BrainOverlay({
   const clearSelection = useCallback(() => {
     setSelectedId(null);
     setHighlighted([]);
+  }, []);
+
+  /** Update the turn the answer is streaming into. */
+  const patchLast = useCallback((patch: Partial<BrainTurn>) => {
+    setTurns((list) => {
+      if (list.length === 0) return list;
+      return [...list.slice(0, -1), { ...list[list.length - 1], ...patch }];
+    });
+  }, []);
+
+  const stopLast = useCallback(() => {
+    setTurns((list) => {
+      const last = list[list.length - 1];
+      if (!last || last.status !== 'streaming') return list;
+      return [...list.slice(0, -1), { ...last, status: 'stopped' }];
+    });
+  }, []);
+
+  const clearTurns = useCallback(() => {
+    setTurns([]);
+    historyRef.current = [];
   }, []);
 
   // Escape peels layers before Radix can dismiss the whole page. The listener
@@ -711,21 +733,4 @@ export function BrainOverlay({
                 />
                 {selectedDocument && selectedNode ? (
                   <DocumentPanel
-                    document={selectedDocument}
-                    node={selectedNode}
-                    practiceName={practiceName}
-                    onAskAbout={() => {
-                      setQuestion(`What does the ${selectedDocument.title} say?`);
-                      clearSelection();
-                      inputRef.current?.focus();
-                    }}
-                    onOpen={onOpenDocument ? () => onOpenDocument(selectedDocument.title) : null}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </motion.div>
-      </DialogPrimitive.Content>
-    </DialogPrimitive.Root>
-  );
-}
+           

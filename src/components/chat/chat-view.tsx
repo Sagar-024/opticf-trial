@@ -3,20 +3,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
+  ArrowLeftRight,
   ArrowUp,
+  BookOpen,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
   Eye,
   FileText,
+  GraduationCap,
+  LayoutDashboard,
+  ListOrdered,
   ListPlus,
   Map,
   MapPin,
   PanelRight,
   RefreshCw,
+  Search,
   Sparkles,
   Square,
+  Target,
   ThumbsDown,
   ThumbsUp,
   TrendingDown,
@@ -28,20 +36,21 @@ import { containsModelMarkup, stripModelMarkup, trimTrailingPartialTag } from '@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { DashboardPanel } from '@/components/chat/dashboard-panel';
 import { AssignTaskDialog } from '@/components/tasks/assign-task-dialog';
+import { BrainPill } from '@/components/chat/brain-pill';
+import { BrainOverlay } from '@/components/brain/brain-overlay';
 import { LEADERSHIP } from '@/lib/people';
 import { WaveText } from '@/components/wave-text';
 import { Logo } from '@/components/logo';
 import { forceVisibleIfStuck } from '@/lib/anim';
 import { readBrainState } from '@/lib/brain-store';
-import { getSession, migrateLegacy, newSessionId, setTurnFeedback, titleFromQuestion, upsertSession, type StoredTurn } from '@/lib/chat-store';
+import { getSession, migrateLegacy, newSessionId, setTurnFeedback, titleFromQuestion, upsertSession, type StoredTraceEntry, type StoredTurn } from '@/lib/chat-store';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { cn } from '@/lib/utils';
-import { toolLabel } from '@/lib/tool-labels';
+import { sourcePhrase, toolLabel } from '@/lib/tool-labels';
 import { isDenseChart } from '@/lib/widgets';
 
 /**
@@ -62,6 +71,21 @@ const SUGGESTIONS: Array<{ text: string; icon: LucideIcon; hero?: boolean }> = [
 
 /** Shared easing so every chat animation feels like one system. */
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+/** Each step shows what it actually did; anything unknown falls back to the spark. */
+const STEP_ICONS: Record<string, LucideIcon> = {
+  search_brain: BookOpen,
+  query_metrics: FileText,
+  compare: ArrowLeftRight,
+  compare_practices: ArrowLeftRight,
+  get_practice: Search,
+  rank_attention: ListOrdered,
+  training_status: GraduationCap,
+  below_cl_target: Target,
+  today_priorities: CalendarDays,
+  highlight_on_map: MapPin,
+  build_dashboard: LayoutDashboard,
+};
 
 /**
  * The interface never shows raw model markup. The server strips it, and this is
@@ -90,6 +114,8 @@ function toStoredTurn(turn: Turn): StoredTurn {
     mapHighlight: turn.mapHighlight,
     sources: turn.sources,
     tools: turn.tools,
+    trace: turn.trace,
+    thinkingMs: turn.thinkingMs,
     flagged: turn.flagged,
     flagReason: turn.flagReason ?? null,
     withdrawn: turn.withdrawn,
@@ -108,6 +134,9 @@ function toTurn(stored: StoredTurn): Turn {
     mapHighlight: stored.mapHighlight ?? [],
     sources: stored.sources ?? [],
     tools: stored.tools,
+    // Only renderable kinds come back, so a corrupted store cannot crash the view.
+    trace: (stored.trace ?? []).filter((entry) => entry?.kind === 'reasoning' || entry?.kind === 'step'),
+    thinkingMs: stored.thinkingMs,
     flagged: stored.flagged,
     flagReason: stored.flagReason ?? null,
     withdrawn: stored.withdrawn,
@@ -187,6 +216,190 @@ function WorkingIndicator({ label }: { label: string }) {
   );
 }
 
+/** The run's steps in plain words: repeats merged, first letter capitalised. */
+function traceSteps(tools: string[]): string[] {
+  return tools
+    .filter((tool, index) => tool !== tools[index - 1])
+    .map((tool) => {
+      const label = toolLabel(tool);
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    });
+}
+
+/**
+ * The real steps of the run, streamed from the server, in a fixed-height window
+ * so a long run never pushes the answer down. The reasoning and the tool steps
+ * interleave in arrival order, live and settled alike; a settled run without a
+ * stored trace falls back to plain step labels. While a run is live the window
+ * streams open until the first words arrive, then folds to the header line,
+ * which stays clickable; a click wins over the auto state from then on.
+ */
+function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText = false, trace }: {
+  tools: string[];
+  startedAt?: number;
+  thinkingMs?: number;
+  active?: boolean;
+  /** True once any answer text has arrived, so a live run can auto collapse. */
+  hasText?: boolean;
+  trace?: StoredTraceEntry[];
+}) {
+  const reduceMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // The clock ticks from the run's real start, not from when this mounted.
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setSeconds(startedAt === undefined ? 0 : Math.max(0, Math.round((Date.now() - startedAt) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [active, startedAt]);
+
+  // Open while the run works with no words yet; the first words fold it to the
+  // header line until the reader clicks, and a click then sticks.
+  const open = expanded ?? (active && !hasText);
+
+  const steps = traceSteps(tools);
+  const sources = sourcePhrase(tools);
+  const rows = steps;
+  // The ordered trace renders in both states; the plain rows are the
+  // older-history fallback when a settled turn has no stored trace.
+  const entries = trace ?? [];
+  const lastEntry = entries[entries.length - 1];
+  const lastReasoningLength = lastEntry?.kind === 'reasoning' ? lastEntry.text.length : 0;
+
+  // The newest entry stays in view while the run streams, and when it opens.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [tools.length, expanded, entries.length, lastReasoningLength]);
+
+  const list = entries.length === 0 && rows.length === 0 ? null : (
+    <div ref={listRef} className="mt-2.5 max-h-[150px] overflow-y-auto overscroll-contain">
+      {entries.length > 0 ? (
+        // The rail spans the rows behind the icons, from first to last centre.
+        <div className="relative">
+          <span aria-hidden className="absolute bottom-2 left-[7px] top-2 w-px bg-border" />
+          <div className="space-y-2.5">
+            {entries.map((entry, index) => {
+              if (entry.kind === 'reasoning') {
+                return (
+                  <p key={index} className="mb-2 whitespace-pre-wrap pl-[22px] text-[13px] leading-5 text-muted-foreground">
+                    {entry.text}
+                  </p>
+                );
+              }
+              // The step row names what it found; the plain label is the fallback.
+              const label = entry.detail ?? toolLabel(entry.name);
+              const text = label.charAt(0).toUpperCase() + label.slice(1);
+              const StepIcon = STEP_ICONS[entry.name] ?? Sparkles;
+              const running = active && index === entries.length - 1;
+              return (
+                <div key={index} className="flex items-start gap-2.5">
+                  <span className="relative z-10 flex size-3.5 shrink-0 items-center justify-center bg-background">
+                    {running ? (
+                      <span
+                        className={cn(
+                          'block size-3 rounded-full border-2 border-[color:var(--accent-500)] border-t-transparent',
+                          !reduceMotion && 'animate-spin',
+                        )}
+                      />
+                    ) : (
+                      <StepIcon className="size-3.5 text-muted-foreground" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <span className={cn('text-[13px] leading-5', running ? 'text-foreground' : 'text-muted-foreground')}>{text}</span>
+                    {entry.items && entry.items.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {entry.items.slice(0, 3).map((item) => (
+                          <span
+                            key={item}
+                            className="inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                        {entry.items.length > 3 ? (
+                          <span className="text-[10px] text-muted-foreground">+{entry.items.length - 3} more</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <ol className="space-y-2.5">
+          {rows.map((row, index) => {
+            const current = active && index === rows.length - 1;
+            return (
+              <li key={index} className="flex items-start gap-2.5">
+                <span className="mt-px flex size-3.5 shrink-0 items-center justify-center">
+                  {current ? (
+                    <span
+                      className={cn(
+                        'block size-3 rounded-full border-2 border-[color:var(--accent-500)] border-t-transparent',
+                        !reduceMotion && 'animate-spin',
+                      )}
+                    />
+                  ) : (
+                    <Check className="size-3.5 text-[var(--accent-600)]" />
+                  )}
+                </span>
+                <span className={cn('text-[13px] leading-5', current ? 'text-foreground' : 'text-muted-foreground')}>{row}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+
+  // While the run is live, one calm line names what is happening, and the
+  // window below it streams the reasoning and steps as they arrive.
+  if (active) {
+    return (
+      <motion.div
+        data-anim
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: EASE }}
+      >
+        <button
+          onClick={() => setExpanded(!open)}
+          aria-expanded={open}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <WorkingIndicator label={`${sources ? `Checking ${sources}` : 'Looking into it'} · ${seconds}s`} />
+          <ChevronDown className={cn('size-3.5 transition-transform duration-200', open && 'rotate-180')} />
+        </button>
+        {open ? list : null}
+      </motion.div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!open)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Check className="size-3.5 text-[var(--accent-600)]" />
+        {sources ? `From ${sources}` : `Worked through ${steps.length} step${steps.length === 1 ? '' : 's'}`}
+        {thinkingMs !== undefined ? ` · ${Math.max(1, Math.round(thinkingMs / 1000))}s` : null}
+        <ChevronDown className={cn('size-3.5 transition-transform duration-200', open && 'rotate-180')} />
+      </button>
+      {open ? list : null}
+    </div>
+  );
+}
+
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE } },
@@ -202,6 +415,8 @@ interface Turn {
   text: string;
   /** Streamed pieces, used only while the answer is arriving. */
   chunks?: string[];
+  /** The run's thinking trace, streamed live and kept in history for the settled view. */
+  trace?: StoredTraceEntry[];
   widgets: Widget[];
   mapHighlight: string[];
   sources: string[];
@@ -212,6 +427,9 @@ interface Turn {
   /** The run broke mid-stream; the text is what had arrived before it did. */
   interrupted?: boolean;
   tools?: string[];
+  /** Run timing for the trace: live seconds while streaming, a settled duration after. */
+  startedAt?: number;
+  thinkingMs?: number;
   /** The reader's verdict on this answer; kept in the browser for review. */
   feedback?: 'up' | 'down';
   /** What the assistant is doing right now: writing or working between steps. */
@@ -220,7 +438,8 @@ interface Turn {
 
 type StreamEvent =
   | { type: 'delta'; text: string }
-  | { type: 'tool'; name: string; malformed?: boolean }
+  | { type: 'reasoning'; text: string }
+  | { type: 'tool'; name: string; malformed?: boolean; detail?: string; items?: string[] }
   | { type: 'widgets'; widgets: Widget[] }
   | {
       type: 'done';
@@ -235,6 +454,8 @@ type StreamEvent =
       traceId?: string;
       promptVersion?: string;
       cached?: boolean;
+      /** The run's full reasoning and steps; a cache hit replays them here. */
+      trace?: StoredTraceEntry[];
       usage?: { inputTokens: number; outputTokens: number; estimatedCostUsd?: number };
     }
   | { type: 'error'; message: string; status?: number };
@@ -247,6 +468,7 @@ export function ChatView({
   onPendingHandled,
   sessionId,
   onSessionChange,
+  practiceName,
 }: {
   onShowMap: (practiceIds: string[]) => void;
   onOpenBrain?: (documentTitle: string) => void;
@@ -257,6 +479,8 @@ export function ChatView({
   /** The conversation the rail has selected; null means a fresh, unsaved chat. */
   sessionId: string | null;
   onSessionChange?: (id: string | null) => void;
+  /** '(id) => name', for the Practice Brain overlay; from the workspace. */
+  practiceName?: (practiceId: string) => string;
 }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
@@ -275,6 +499,8 @@ export function ChatView({
   const [dashboardFull, setDashboardFull] = useState(false);
   /** The answer a task is being written from: title and finding prefilled. */
   const [assignTask, setAssignTask] = useState<{ title: string; note: string } | null>(null);
+  /** The Practice Brain overlay, opened from the footer pill. */
+  const [brainOpen, setBrainOpen] = useState(false);
 
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -391,7 +617,7 @@ export function ChatView({
         if (sessionIdRef.current === runSessionId) patchLast(p);
       };
 
-      const draft: Turn = { role: 'assistant', text: '', widgets: [], mapHighlight: [], sources: [], tools: [] };
+      const draft: Turn = { role: 'assistant', text: '', widgets: [], mapHighlight: [], sources: [], tools: [], startedAt: Date.now() };
       setTurns([...history, draft]);
 
       const messages = history.map((turn) => ({ role: turn.role, content: turn.text }));
@@ -437,10 +663,26 @@ export function ChatView({
 
             if (event.type === 'delta') {
               draft.chunks = [...(draft.chunks ?? []), event.text];
-              patch({ text: (draft.text += event.text), chunks: draft.chunks, phase: 'writing' });
+              // The first words end the thinking phase; the trace keeps the time.
+              if (draft.thinkingMs === undefined) draft.thinkingMs = Date.now() - (draft.startedAt ?? Date.now());
+              patch({ text: (draft.text += event.text), chunks: draft.chunks, phase: 'writing', thinkingMs: draft.thinkingMs });
+            } else if (event.type === 'reasoning') {
+              // Reasoning chunks grow the last paragraph; each entry keeps only
+              // its tail, so long runs stay bounded in memory and re-renders.
+              const entries = draft.trace ?? [];
+              const last = entries[entries.length - 1];
+              draft.trace = last && last.kind === 'reasoning'
+                ? [...entries.slice(0, -1), { kind: 'reasoning', text: (last.text + event.text).slice(-2000) }]
+                : [...entries, { kind: 'reasoning', text: event.text.slice(-2000) }];
+              patch({ trace: draft.trace, phase: 'working' });
             } else if (event.type === 'tool') {
               draft.tools = [...(draft.tools ?? []), event.name];
-              patch({ tools: draft.tools, phase: 'working' });
+              // The step joins the ordered trace beside the reasoning around it.
+              draft.trace = [
+                ...(draft.trace ?? []),
+                { kind: 'step', name: event.name, detail: event.detail, items: event.items },
+              ];
+              patch({ tools: draft.tools, trace: draft.trace, phase: 'working' });
             } else if (event.type === 'widgets') {
               draft.widgets = event.widgets;
               patch({ widgets: event.widgets, phase: 'working' });
@@ -449,6 +691,11 @@ export function ChatView({
               if (canvas.length > 0) showDashboard({ title: canvasTitle(canvas), widgets: canvas, sources: [] });
             } else if (event.type === 'done') {
               contextRef.current = event.context;
+              // A run with no words still gets a duration for its summary.
+              if (draft.thinkingMs === undefined) draft.thinkingMs = Date.now() - (draft.startedAt ?? Date.now());
+              // A cache hit sends no tool events, so its step list comes from
+              // the stored trace the server replays in the done event.
+              const storedSteps = (event.trace ?? []).flatMap((entry) => (entry.kind === 'step' ? [entry.name] : []));
               patch({
                 text: event.text,
                 // Settled: drop the chunks so history renders as plain text.
@@ -459,7 +706,9 @@ export function ChatView({
                 flagged: event.flagged,
                 flagReason: event.flagReason ?? null,
                 withdrawn: event.withdrawn ?? false,
-                tools: draft.tools,
+                tools: draft.tools && draft.tools.length > 0 ? draft.tools : storedSteps,
+                trace: event.trace ?? draft.trace,
+                thinkingMs: draft.thinkingMs,
               });
               // The answer settles: the panel takes the final widgets and the
               // sources that back them.
@@ -595,12 +844,14 @@ export function ChatView({
 
   // The send button follows the text, not a blank line under it: while the
   // trailing line is empty the button stays on the last line that has words.
-  // 22 is the textarea's line height; one step per blank trailing line.
+  // 22 is the textarea's line height; one step per blank trailing line. The
+  // cap keeps the 40px button inside the pill: it may never ride above the
+  // second line from the top, or it would poke out of the rounded corner.
   const trailingBlankLines = (() => {
     const lines = input.split('\n');
     let blank = 0;
     for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ''; i -= 1) blank += 1;
-    return Math.min(blank, Math.max(0, lines.length - 1));
+    return Math.min(blank, Math.max(0, lines.length - 2));
   })();
 
   // A question handed over from the map or Today is sent once the thread has
@@ -615,7 +866,7 @@ export function ChatView({
   }, [pendingQuestion, hydrated]);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0">
+    <div className="relative flex h-full min-h-0 min-w-0">
       {/* The chat keeps its column; a dashboard opens beside it, or takes the
           whole area when a dense chart needs the room. */}
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', dashboardFull && 'hidden')}>
@@ -701,6 +952,26 @@ export function ChatView({
                       ) : null}
                     </div>
 
+                    {/* Settled, the real steps fold to one summary line that
+                        opens the same rich timeline. */}
+                    {turn.tools && turn.tools.length > 0 && (!loading || index !== turns.length - 1) ? (
+                      <ThinkingTrace tools={turn.tools} thinkingMs={turn.thinkingMs} trace={turn.trace} />
+                    ) : null}
+
+                    {/* One live trace above the answer: it streams open while
+                        the run works, then folds to its summary line as soon
+                        as the words arrive, so reasoning and steps stay
+                        visible and can be opened at any time. */}
+                    {loading && index === turns.length - 1 ? (
+                      <ThinkingTrace
+                        tools={turn.tools ?? []}
+                        startedAt={turn.startedAt}
+                        active
+                        hasText={Boolean(turn.text)}
+                        trace={turn.trace}
+                      />
+                    ) : null}
+
                     {/* The written answer is always shown. A comparison card
                         used to hide it, which meant a question like "is this
                         hardcoded" appeared to get no answer at all. */}
@@ -718,11 +989,6 @@ export function ChatView({
                           <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-[var(--accent-500)] align-text-bottom" />
                         ) : null}
                       </p>
-                    ) : loading && index === turns.length - 1 && turn.widgets.length === 0 ? (
-                      <div className="space-y-3">
-                        <WorkingIndicator label="Thinking about your data" />
-                        <Skeleton className="h-16 w-full rounded-xl" />
-                      </div>
                     ) : null}
 
                     {turn.stopped ? (
@@ -855,14 +1121,6 @@ export function ChatView({
                           </motion.button>
                         ) : null}
                       </motion.div>
-                    ) : null}
-
-                    {/* The working indicator lives at the end of whatever has
-                        arrived: below text, below widgets, never at the top. */}
-                    {loading && index === turns.length - 1 && turn.phase !== 'writing' && (Boolean(turn.text) || turn.widgets.length > 0) ? (
-                      <WorkingIndicator
-                        label={turn.tools && turn.tools.length > 0 ? toolLabel(turn.tools[turn.tools.length - 1]) : 'Thinking about your data'}
-                      />
                     ) : null}
 
                     {!loading && index === turns.length - 1 ? (
@@ -1026,9 +1284,15 @@ export function ChatView({
               </motion.button>
             </div>
           </form>
-          <p className="mt-2 text-center text-xs text-[color:var(--ink-3)]">
-            Enter to send · Shift+Enter for new line
-          </p>
+          {/* The pill row: the Brain entry point on the left, the key hint
+              centred in the remaining space. Wrapping keeps both readable on
+              narrow windows instead of squeezing either one. */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <BrainPill onOpen={() => setBrainOpen(true)} />
+            <p className="mx-auto text-center text-xs text-[color:var(--ink-3)]">
+              Enter to send · Shift+Enter for new line
+            </p>
+          </div>
         </div>
       </div>
       </div>
@@ -1042,6 +1306,17 @@ export function ChatView({
           onExitFull={() => setDashboardFull(false)}
           onEnterFull={() => setDashboardFull(true)}
           onClose={() => showDashboard(null)}
+        />
+      ) : null}
+
+      {brainOpen ? (
+        <BrainOverlay
+          onClose={() => setBrainOpen(false)}
+          practiceName={practiceName}
+          onOpenDocument={(title) => {
+            setBrainOpen(false);
+            onOpenBrain?.(title);
+          }}
         />
       ) : null}
 

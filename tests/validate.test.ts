@@ -99,6 +99,15 @@ describe('sanitizeBrainOverrides', () => {
     expect(state.created).toEqual([{ ...created, origin: 'yours' }]);
   });
 
+  it('keeps a recorded review and drops a malformed date', () => {
+    const state = sanitizeBrainOverrides(
+      { overrides: { targets: { reviewed: '2026-10-12' }, warranty: { reviewed: 'yesterday' } }, created: [] },
+      practiceIds,
+    );
+    expect(state.overrides.targets?.reviewed).toBe('2026-10-12');
+    expect(state.overrides.warranty).toBeUndefined();
+  });
+
   it('drops unknown override ids and junk created documents', () => {
     const state = sanitizeBrainOverrides(
       {

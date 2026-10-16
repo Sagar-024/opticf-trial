@@ -3,6 +3,7 @@ import { monthLabel } from '../lib/months';
 import { getDataset } from './dataset';
 import { buildSystemPrompt } from './system-prompt';
 import { getTool, llmToolDefinitions, type ToolContext } from './tools';
+import { toolStep } from './tool-detail';
 import { sanitizeToolInput } from './validate';
 import { EMPTY_BRAIN_STATE, mergeBrainDocuments, type BrainState } from '../content/brain';
 import { allowedSet, findUnsupportedNumbers } from './guard';
@@ -19,7 +20,7 @@ import {
   type LlmToolCallRaw,
   type LlmToolDefinition,
 } from './llm';
-import type { ChatContext, ChatMessage, ChatResponse, ToolCallRecord, ToolOutput, Widget } from './types';
+import type { ChatContext, ChatMessage, ChatResponse, RunTraceEntry, ToolCallRecord, ToolOutput, Widget } from './types';
 
 /**
  * The chat orchestration loop (provider-agnostic).
@@ -48,6 +49,8 @@ export interface RunChatInput {
 export interface RunChatHandlers {
   /** Prose chunks, streamed as the model writes them. */
   onDelta?: (text: string) => void;
+  /** Live model thinking, forwarded as the provider streams it. */
+  onReasoning?: (text: string) => void;
   /** Fired after each tool has run. */
   onTool?: (record: ToolCallRecord) => void;
   /** Fired with the full widget list whenever it grows. */
@@ -61,7 +64,9 @@ export interface RunChatResult extends ChatResponse {
   /** True when the question hit the total time budget. */
   budgetExceeded: boolean;
   /** Per step timings for observability. */
-  trace: TraceSpan[];
+  spans: TraceSpan[];
+  /** The run's reasoning and steps, so a cache hit can replay the trace. */
+  trace?: RunTraceEntry[];
   /** Tokens used, and cost when prices are configured. */
   usage: TokenUsage;
   /** Version of the instructions that produced this answer. */
@@ -113,6 +118,24 @@ function dedupeWidgets(widgets: Widget[]): Widget[] {
 function sanitize(text: string): string {
   const clean = stripModelMarkup(text).text;
   return clean.split('\u2014').join('-').split('\u2013').join('-');
+}
+
+/**
+ * Collect the run's replay trace: reasoning paragraphs merge into the last
+ * entry, capped at 2000 chars keeping the tail so long runs stay bounded.
+ */
+function appendReasoning(entries: RunTraceEntry[], text: string): void {
+  const last = entries[entries.length - 1];
+  if (last && last.kind === 'reasoning') {
+    last.text = (last.text + text).slice(-2000);
+  } else {
+    entries.push({ kind: 'reasoning', text: text.slice(-2000) });
+  }
+}
+
+/** Record one tool step in the run's replay trace, straight from its record. */
+function appendStep(entries: RunTraceEntry[], record: ToolCallRecord): void {
+  entries.push({ kind: 'step', name: record.name, detail: record.detail, items: record.items });
 }
 
 function parseArgs(raw: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
@@ -194,6 +217,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
   const toolCalls: ToolCallRecord[] = [];
   const memo = new Map<string, ToolOutput>();
   const trace = new Trace();
+  const traceEntries: RunTraceEntry[] = [];
   let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   let context: ChatContext = input.context ?? emptyContext();
   let explicitHighlight: string[] | null = null;
@@ -233,6 +257,9 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
         text += delta;
         const clean = streamFilter.push(delta);
         if (clean) handlers.onDelta?.(clean);
+      }, (reasoning) => {
+        handlers.onReasoning?.(reasoning);
+        appendReasoning(traceEntries, reasoning);
       }),
     );
     const streamTail = streamFilter.flush();
@@ -300,11 +327,14 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
           trace.span(`tool.${call.name}`, Date.now() - toolStarted);
           memo.set(memoKey, output);
         }
+        // What this step actually found, named from its real output.
+        const step = toolStep(call.name, parsed.value, output);
         record = {
           name: call.name,
           input: parsed.value,
           widgetTypes: output.widgets.map((w) => w.type),
           mapHighlight: output.mapHighlight ?? [],
+          ...step,
         };
         executed += 1;
       }
@@ -317,6 +347,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
       if (output.context) context = mergeContext(context, output.context);
       toolCalls.push(record);
       handlers.onTool?.(record);
+      appendStep(traceEntries, record);
       emitWidgets();
 
       messages.push({
@@ -367,7 +398,7 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
         'That answer did not use any of the group data. Use the tools to look the figures up, then answer. If the data does not cover it, say so plainly.',
     });
     try {
-      const grounded = await runGroundingRetry(client, model, messages, dataset, toolContext, handlers, input.signal);
+      const grounded = await runGroundingRetry(client, model, messages, dataset, toolContext, traceEntries, handlers, input.signal);
       if (grounded.text) text = grounded.text;
       outputs.push(...grounded.outputs);
       toolCalls.push(...grounded.toolCalls);
@@ -484,7 +515,8 @@ export async function runChatStream(input: RunChatInput, handlers: RunChatHandle
     durationMs: Date.now() - started,
     iterations,
     budgetExceeded,
-    trace: trace.summary(),
+    spans: trace.summary(),
+    trace: traceEntries,
     usage: finalUsage,
     promptVersion: PROMPT_VERSION,
   };
@@ -505,6 +537,7 @@ async function runGroundingRetry(
   messages: LlmMessage[],
   dataset: ReturnType<typeof getDataset>,
   toolContext: ToolContext,
+  traceEntries: RunTraceEntry[],
   handlers: RunChatHandlers,
   signal?: AbortSignal,
 ): Promise<{ text: string; outputs: ToolOutput[]; toolCalls: ToolCallRecord[] }> {
@@ -518,6 +551,9 @@ async function runGroundingRetry(
       text += delta;
       const clean = streamFilter.push(delta);
       if (clean) handlers.onDelta?.(clean);
+    }, (reasoning) => {
+      handlers.onReasoning?.(reasoning);
+      appendReasoning(traceEntries, reasoning);
     });
     const streamTail = streamFilter.flush();
     if (streamTail) handlers.onDelta?.(streamTail);
@@ -552,14 +588,19 @@ async function runGroundingRetry(
         ? tool.run(dataset, sanitizeToolInput(parsed.value), toolContext)
         : { summary: `Tool ${call.name} could not be run.`, widgets: [], numbers: [] };
 
+      // Same detail the main loop attaches, so a grounding retry narrates too.
+      const step = toolStep(call.name, parsed.ok ? parsed.value : call.arguments, output);
       outputs.push(output);
-      toolCalls.push({
+      const record: ToolCallRecord = {
         name: call.name,
         input: parsed.ok ? parsed.value : call.arguments,
         widgetTypes: output.widgets.map((widget) => widget.type),
         mapHighlight: output.mapHighlight ?? [],
-      });
-      handlers.onTool?.(toolCalls[toolCalls.length - 1]);
+        ...step,
+      };
+      toolCalls.push(record);
+      handlers.onTool?.(record);
+      appendStep(traceEntries, record);
       handlers.onWidgets?.(dedupeWidgets(outputs.flatMap((entry) => entry.widgets)));
 
       messages.push({
