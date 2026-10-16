@@ -84,11 +84,25 @@ interface LabelLine {
  * themes: a light disc with quiet ink reads on cream paper and on near black.
  */
 const NODE_SURFACE = 'rgba(255, 255, 255, 0.96)';
-const NODE_EDGE = 'rgba(24, 20, 16, 0.12)';
+const NODE_EDGE = 'rgba(24, 20, 16, 0.16)';
+const TEAM_EDGE = 'rgba(104, 114, 134, 0.5)';
 const DOC_INK = '#8B857C';
 const TEAM_INK = '#4E5566';
 /** Connector threads: warm grey, readable on cream paper and on near black. */
 const EDGE_INK = 'rgba(168, 156, 144, 0.8)';
+
+/** A soft drop shadow, so a disc reads as a real node and not a flat dot. */
+function depthShadow(context: CanvasRenderingContext2D): void {
+  context.shadowColor = 'rgba(16, 12, 9, 0.30)';
+  context.shadowBlur = 4;
+  context.shadowOffsetY = 1;
+}
+
+function clearShadow(context: CanvasRenderingContext2D): void {
+  context.shadowColor = 'transparent';
+  context.shadowBlur = 0;
+  context.shadowOffsetY = 0;
+}
 
 const VIEWPORT_PADDING = { top: 16, right: 20, bottom: 64, left: 20 };
 const FIT_PADDING = 26;
@@ -100,6 +114,8 @@ const FIT_PADDING = 26;
 const MAX_FIT_SCALE = 1.15;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 5;
+/** The page opens larger than the whole-graph fit; Fit still shows it all. */
+const DEFAULT_ZOOM = 1.6;
 /** One node is a dot: filling the canvas with it would lose all context. */
 const SINGLE_NODE_MAX_ZOOM = 2.5;
 const PAN_STEP = 120;
@@ -110,10 +126,10 @@ const MAX_DOTS = 5000;
 /** Smallest screen radius each role keeps, so a node never becomes a speck.
     The hub floor also keeps the sparkle legible at the resting fit. */
 function radiusOf(role: BrainGraphNode['role'], screenR: number): number {
-  if (role === 'hub') return Math.max(32, screenR);
-  if (role === 'section') return Math.max(12, screenR);
-  if (role === 'owner') return Math.max(9, screenR);
-  return Math.max(7, screenR);
+  if (role === 'hub') return Math.max(34, screenR);
+  if (role === 'section') return Math.max(13, screenR);
+  if (role === 'owner') return Math.max(10, screenR);
+  return Math.max(8, screenR);
 }
 
 function collides(box: { x: number; y: number; w: number; h: number }, others: Array<{ x: number; y: number; w: number; h: number }>): boolean {
@@ -273,7 +289,7 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
 
   const paletteRef = useRef<Palette | null>(null);
 
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hovered, setHovered] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -485,9 +501,11 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.fillStyle = NODE_SURFACE;
+      depthShadow(context);
       context.fill();
+      clearShadow(context);
       context.lineWidth = 1;
-      context.strokeStyle = NODE_EDGE;
+      context.strokeStyle = TEAM_EDGE;
       context.stroke();
       if (radius >= 8) {
         context.font = '500 11px Inter, sans-serif';
@@ -511,7 +529,9 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.globalAlpha = alpha * 0.85;
       context.fillStyle = palette.colors.coral;
+      depthShadow(context);
       context.fill();
+      clearShadow(context);
       context.globalAlpha = alpha;
       context.lineWidth = 1.5;
       context.strokeStyle = palette.colors.coral;
@@ -538,7 +558,9 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.fillStyle = NODE_SURFACE;
+      depthShadow(context);
       context.fill();
+      clearShadow(context);
       // A conflict takes over the border: one coral ring, nothing added outside.
       context.lineWidth = flags?.conflict ? 1.5 : 1;
       context.strokeStyle = flags?.conflict ? palette.colors.coral : NODE_EDGE;
@@ -597,7 +619,9 @@ export const BrainCanvas = forwardRef<BrainCanvasHandle, BrainCanvasProps>(funct
         context.globalAlpha = alpha;
         roundedRectPath(context, point.x - mark / 2, point.y - mark / 2, mark, mark, mark * 0.3);
         context.fillStyle = palette.colors.coral;
+        depthShadow(context);
         context.fill();
+        clearShadow(context);
         drawSparkle(context, point.x, point.y, mark * 0.62, '#ffffff');
       }
     }

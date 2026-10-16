@@ -511,6 +511,7 @@ export function BrainOverlay({
   return (
     <DialogPrimitive.Root
       open
+      modal={false}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -521,6 +522,12 @@ export function BrainOverlay({
           event.preventDefault();
           inputRef.current?.focus();
         }}
+        // A page, not a modal: the rail and the top bar stay usable, and only
+        // Escape (or the close button) leaves. Outside interactions must not
+        // dismiss it.
+        onInteractOutside={(event) => event.preventDefault()}
+        onFocusOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
       >
           <motion.div
             className="flex h-full min-h-0 flex-col overflow-y-auto"
