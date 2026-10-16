@@ -632,9 +632,6 @@ export function PracticePanel({
               </motion.button>
             </div>
           </form>
-          <p className="mt-2 text-center text-[10px] text-[color:var(--ink-3)]">
-            Enter to send · Shift+Enter for new line
-          </p>
         </div>
       </div>
 

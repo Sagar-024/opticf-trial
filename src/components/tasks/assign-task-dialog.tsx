@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PeoplePicker } from '@/components/tasks/people-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { addTask, type TaskSource } from '@/lib/task-store';
 
@@ -103,21 +103,12 @@ export function AssignTaskDialog({
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
-            <div>
-              <label className="label-caps mb-2 block">Assign to</label>
-              <Select value={assigneeName} onValueChange={setAssigneeName}>
-                <SelectTrigger className="text-sm" aria-label="Assign to">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {assignees.map((person) => (
-                    <SelectItem key={person.name} value={person.name} className="text-xs">
-                      {person.name} · {person.role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <PeoplePicker
+              label="Assign to"
+              people={assignees}
+              value={assigneeName}
+              onChange={setAssigneeName}
+            />
             <div>
               <label className="label-caps mb-2 block" htmlFor="task-due">
                 Due

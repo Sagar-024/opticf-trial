@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Maximize2, Send, X } from 'lucide-react';
+import { Download, Maximize2, MoreHorizontal, Plus, Send, X } from 'lucide-react';
 import type { Widget } from '@/ai/types';
+import { AddToSheetDialog } from '@/components/chat/add-to-sheet-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,6 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WidgetRenderer } from '@/components/widgets/widget-renderer';
 import { forceVisibleIfStuck } from '@/lib/anim';
@@ -61,6 +68,12 @@ export function DashboardPanel({
   const [receipt, setReceipt] = useState<SendRecord | null>(null);
   /** Shown after the first export: how to get a clean page out of the dialog. */
   const [printHint, setPrintHint] = useState(false);
+  /** The chart singled out for export; while set, the panel prints it alone. */
+  const [printWidget, setPrintWidget] = useState<Widget | null>(null);
+  /** The chart being collected into a sheet, while its dialog is open. */
+  const [sheetWidget, setSheetWidget] = useState<Widget | null>(null);
+  /** A quiet line after a chart joins a sheet: "Added to Board pack". */
+  const [sheetNote, setSheetNote] = useState<string | null>(null);
   /** Null means the default 44 percent; a number is a width the reader chose. */
   const [width, setWidth] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -77,6 +90,37 @@ export function DashboardPanel({
   useEffect(() => {
     setReceipt(null);
   }, [title]);
+
+  // A single chart export prints after the chart is on the page: the state
+  // alone would not have rendered by the time window.print() runs.
+  useEffect(() => {
+    if (!printWidget) return;
+    let timer = 0;
+    // The chart's canvas paints a frame after it mounts; printing in the same
+    // tick captures an empty card. One frame plus a beat lets the bitmap land.
+    const frame = window.requestAnimationFrame(() => {
+      timer = window.setTimeout(() => {
+        // Paper is light: flip a dark theme to light for the print, then restore.
+        const root = document.documentElement;
+        const wasDark = root.classList.contains('dark');
+        if (wasDark) root.classList.remove('dark');
+        window.print();
+        if (wasDark) root.classList.add('dark');
+        setPrintWidget(null);
+      }, 200);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [printWidget]);
+
+  // The sheet note is a moment, not a record: it clears itself.
+  useEffect(() => {
+    if (!sheetNote) return;
+    const timer = window.setTimeout(() => setSheetNote(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [sheetNote]);
 
   // Escape leaves full view, the map's focus-mode pattern; a dialog on top
   // (Send) takes the key first and marks it handled.
@@ -106,6 +150,12 @@ export function DashboardPanel({
     if (wasDark) root.classList.remove('dark');
     window.print();
     if (wasDark) root.classList.add('dark');
+  }
+
+  /** Export one chart through the same print path as the whole panel. */
+  function exportChart(widget: Widget): void {
+    setPrintHint(true);
+    setPrintWidget(widget);
   }
 
   /** The widest this panel may go before the chat hits its own floor. */
@@ -270,18 +320,69 @@ export function DashboardPanel({
         </p>
       ) : null}
 
+      {sheetNote ? (
+        <p className="print-hide border-b border-border px-4 py-2 text-[11px] text-muted-foreground">
+          {sheetNote}
+        </p>
+      ) : null}
+
       <div className="print-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        {widgets.map((widget) => (
-          <WidgetRenderer
-            key={widget.id}
-            widget={widget}
-            hideTitle={widget.type === 'kpi' && widget.title === title}
-          />
-        ))}
+        {printWidget ? (
+          // The single-chart export: the one chart rides the panel's own
+          // print container, so the path stays the same as Export PDF.
+          <WidgetRenderer widget={printWidget} />
+        ) : (
+          widgets.map((widget) => (
+            <div key={widget.id} className="group/chart relative">
+              <WidgetRenderer
+                widget={widget}
+                hideTitle={widget.type === 'kpi' && widget.title === title}
+              />
+              {widget.type === 'chart' ? (
+                <div className="print-hide absolute right-2 top-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label={`Options for ${widget.title}`}
+                        className="grid size-7 cursor-pointer place-items-center rounded-md bg-card/90 text-muted-foreground transition-[opacity,color] hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" side="bottom" sideOffset={2}>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => exportChart(widget)}>
+                        <Download />
+                        Export this chart
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => {
+                          // Open after the menu has fully closed: its scroll lock
+                          // and the dialog's would otherwise interleave and leave
+                          // the page untappable.
+                          const chart = widget;
+                          window.setTimeout(() => setSheetWidget(chart), 0);
+                        }}
+                      >
+                        <Plus />
+                        Add to task
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
       </div>
 
       {sources.length > 0 ? (
-        <p className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
+        <p
+          className={cn(
+            'border-t border-border px-4 py-2 text-[11px] text-muted-foreground',
+            printWidget && 'print-hide',
+          )}
+        >
           From: {sources.join(' · ')}
         </p>
       ) : null}
@@ -313,7 +414,7 @@ export function DashboardPanel({
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               The figures, their sources and today's date go with it. Delivery connects when the
               platform has accounts; nothing is sent yet.
             </p>
@@ -328,6 +429,16 @@ export function DashboardPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Collect one chart into a sheet; the note above says where it went. */}
+      <AddToSheetDialog
+        open={Boolean(sheetWidget)}
+        onOpenChange={(open) => {
+          if (!open) setSheetWidget(null);
+        }}
+        chart={sheetWidget ? { title: sheetWidget.title, widget: sheetWidget } : null}
+        onAdded={(sheetName) => setSheetNote(`Added to ${sheetName}. Find it under Sheets in Tasks.`)}
+      />
     </motion.aside>
   );
 }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import {
   ArrowLeftRight,
-  ArrowUp,
   BookOpen,
   CalendarDays,
   Check,
@@ -298,7 +297,7 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
               const running = active && index === entries.length - 1;
               return (
                 <div key={index} className="flex items-start gap-2.5">
-                  <span className="relative z-10 flex size-3.5 shrink-0 items-center justify-center bg-background">
+                  <span className="relative z-10 flex h-5 w-3.5 shrink-0 items-center justify-center bg-background">
                     {running ? (
                       <span
                         className={cn(
@@ -339,7 +338,7 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
             const current = active && index === rows.length - 1;
             return (
               <li key={index} className="flex items-start gap-2.5">
-                <span className="mt-px flex size-3.5 shrink-0 items-center justify-center">
+                <span className="flex h-5 w-3.5 shrink-0 items-center justify-center">
                   {current ? (
                     <span
                       className={cn(
@@ -469,6 +468,7 @@ export function ChatView({
   sessionId,
   onSessionChange,
   practiceName,
+  onSidePanelChange,
 }: {
   onShowMap: (practiceIds: string[]) => void;
   onOpenBrain?: (documentTitle: string) => void;
@@ -481,6 +481,8 @@ export function ChatView({
   onSessionChange?: (id: string | null) => void;
   /** '(id) => name', for the Practice Brain overlay; from the workspace. */
   practiceName?: (practiceId: string) => string;
+  /** Told whether a side panel is open, so the workspace can fold its rail. */
+  onSidePanelChange?: (open: boolean) => void;
 }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
@@ -501,6 +503,17 @@ export function ChatView({
   const [assignTask, setAssignTask] = useState<{ title: string; note: string } | null>(null);
   /** The Practice Brain overlay, opened from the footer pill. */
   const [brainOpen, setBrainOpen] = useState(false);
+
+  // Moving to another conversation is moving on: the Brain page steps aside.
+  useEffect(() => {
+    setBrainOpen(false);
+  }, [sessionId]);
+
+  // The workspace folds its rail while a side panel is open, so the chat and
+  // the dashboard get the width; the full view needs no such help.
+  useEffect(() => {
+    onSidePanelChange?.(Boolean(dashboard) && !dashboardFull);
+  }, [dashboard, dashboardFull, onSidePanelChange]);
 
   const contextRef = useRef<ChatContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -840,7 +853,8 @@ export function ChatView({
 
   const empty = turns.length === 0;
   const lastIsAssistant = turns.length > 0 && turns[turns.length - 1].role === 'assistant';
-  const hasText = input.trim().length > 0;
+  // Enter sends from the textarea itself, so the composer needs no state
+  // about emptiness; the stop control appears only while answering.
 
   // The send button follows the text, not a blank line under it: while the
   // trailing line is empty the button stays on the last line that has words.
@@ -1261,38 +1275,27 @@ export function ChatView({
                 className="max-h-[130px] min-h-[38px] flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-[15px] md:text-[15px] leading-[22px] caret-[var(--accent-600)] shadow-none placeholder:text-[color:var(--ink-3)] focus-visible:ring-0"
                 disabled={loading}
               />
-              {/* Empty input: the gradient gives way to a soft wash with a
-                  visible orange arrow, still not clickable. With text: the
-                  full gradient. While answering, the same button is the stop
-                  control. */}
-              <motion.button
-                type={loading ? 'button' : 'submit'}
-                onClick={loading ? stop : undefined}
-                disabled={!loading && !hasText}
-                aria-label={loading ? 'Stop generating' : 'Send question'}
-                whileTap={loading || hasText ? { scale: 0.96 } : undefined}
-                transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-                style={{ marginBottom: trailingBlankLines * 22 }}
-                className={cn(
-                  'inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-[color,filter,box-shadow] duration-[160ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:pointer-events-none',
-                  loading || hasText
-                    ? 'text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95'
-                    : 'bg-[var(--accent-soft)] text-[var(--accent-600)]',
-                )}
-              >
-                {loading ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
-              </motion.button>
+              <span className="self-center">
+                <BrainPill onOpen={() => setBrainOpen(true)} />
+              </span>
+              {/* Enter sends, so no send button sits here. While answering,
+                  this spot is the stop control, the one action that cannot be
+                  done from the keyboard. */}
+              {loading ? (
+                <motion.button
+                  type="button"
+                  onClick={stop}
+                  aria-label="Stop generating"
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+                  style={{ marginBottom: trailingBlankLines * 22 }}
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] transition-[color,filter,box-shadow] duration-[160ms] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                >
+                  <Square className="size-3.5" />
+                </motion.button>
+              ) : null}
             </div>
           </form>
-          {/* The pill row: the Brain entry point on the left, the key hint
-              centred in the remaining space. Wrapping keeps both readable on
-              narrow windows instead of squeezing either one. */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <BrainPill onOpen={() => setBrainOpen(true)} />
-            <p className="mx-auto text-center text-xs text-[color:var(--ink-3)]">
-              Enter to send · Shift+Enter for new line
-            </p>
-          </div>
         </div>
       </div>
       </div>

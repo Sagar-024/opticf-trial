@@ -185,6 +185,23 @@ export function Workspace({
   const [chatFolded, setChatFolded] = useState(false);
   const undoTimerRef = useRef<number | null>(null);
 
+  /** A side panel folds the rail for room; closing it restores what was. */
+  const railBeforePanelRef = useRef<boolean | null>(null);
+  /** True once the reader reopens the rail during a panel session: their hand
+   *  wins for the rest of that session, the fold stops taking it back. */
+  const railManualRef = useRef(false);
+  function handleSidePanel(open: boolean): void {
+    if (open) {
+      if (railBeforePanelRef.current === null) railBeforePanelRef.current = railOpen;
+      if (!railManualRef.current) setRailOpen(false);
+      return;
+    }
+    const before = railBeforePanelRef.current;
+    railBeforePanelRef.current = null;
+    railManualRef.current = false;
+    if (before !== null) setRailOpen((current) => (current ? current : before));
+  }
+
   function openPracticeOnMap(practiceId: string): void {
     setHighlighted([practiceId]);
     setView('map');
@@ -629,6 +646,7 @@ export function Workspace({
                   size="icon"
                   className="ml-auto size-7 shrink-0 text-muted-foreground hover:text-foreground"
                   onClick={() => {
+                    if (railBeforePanelRef.current !== null) railManualRef.current = true;
                     if (railOpen) {
                       setRailOpen(false);
                       setRailHoverSuppressed(true);
@@ -914,6 +932,7 @@ export function Workspace({
               onPendingHandled={() => setPendingQuestion(null)}
               sessionId={chatSessionId}
               onSessionChange={setChatSessionId}
+              onSidePanelChange={handleSidePanel}
               practiceName={(practiceId) => mapModel.practices.find((practice) => practice.practiceId === practiceId)?.name ?? practiceId}
             />
           ) : null}

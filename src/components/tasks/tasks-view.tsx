@@ -14,7 +14,15 @@ import {
   type Task,
   type TaskSource,
 } from '@/lib/task-store';
+import {
+  createdLabel,
+  deleteSheet,
+  listSheets,
+  subscribeToSheets,
+  type Sheet,
+} from '@/lib/sheet-store';
 import { AssignTaskDialog } from '@/components/tasks/assign-task-dialog';
+import { SheetPreviewDialog } from '@/components/tasks/sheet-preview-dialog';
 import { LEADERSHIP } from '@/lib/people';
 import { cn } from '@/lib/utils';
 
@@ -170,6 +178,9 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showDone, setShowDone] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [sheets, setSheets] = useState<Sheet[]>([]);
+  /** The sheet whose preview is open, by id, so a delete closes it too. */
+  const [openSheetId, setOpenSheetId] = useState<string | null>(null);
 
   useEffect(() => {
     const refresh = () => setTasks(listTasks());
@@ -177,9 +188,16 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
     return subscribeToTasks(refresh);
   }, []);
 
+  useEffect(() => {
+    const refresh = () => setSheets(listSheets());
+    refresh();
+    return subscribeToSheets(refresh);
+  }, []);
+
   const open = tasks.filter((task) => task.status === 'open');
   const done = tasks.filter((task) => task.status === 'done');
   const visible = showDone ? tasks : open;
+  const openSheet = sheets.find((sheet) => sheet.id === openSheetId) ?? null;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -227,6 +245,61 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
             ))}
           </motion.ul>
         )}
+
+        {/* Sheets: charts collected from the BI panel, kept beside the work
+            they support. Their own count, so task rows and the count above
+            are untouched. */}
+        <section className="mt-10">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">Sheets</h2>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {sheets.length} {sheets.length === 1 ? 'sheet' : 'sheets'}
+            </span>
+          </div>
+          <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Charts collected from the BI panel, kept together for a meeting or a review. Sheets
+            live in this browser for now.
+          </p>
+
+          {sheets.length === 0 ? (
+            <p className="mt-8 text-sm text-muted-foreground">
+              Nothing collected yet. Use the menu on any chart in the BI panel to add one.
+            </p>
+          ) : (
+            <motion.ul variants={stagger} initial="hidden" animate="show" className="mt-6 space-y-2">
+              {sheets.map((sheet) => (
+                <motion.li
+                  key={sheet.id}
+                  variants={fadeUp}
+                  data-anim
+                  className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 [box-shadow:var(--hi),var(--shadow-raised)]"
+                >
+                  <button
+                    onClick={() => setOpenSheetId(sheet.id)}
+                    aria-label={`Open ${sheet.name}`}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{sheet.name}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {sheet.charts.length} {sheet.charts.length === 1 ? 'chart' : 'charts'} ·{' '}
+                        {createdLabel(sheet.createdAt)}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60" />
+                  </button>
+                  <button
+                    onClick={() => deleteSheet(sheet.id)}
+                    aria-label={`Delete ${sheet.name}`}
+                    className="grid size-7 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </motion.li>
+              ))}
+            </motion.ul>
+          )}
+        </section>
       </div>
 
       <AssignTaskDialog
@@ -235,6 +308,8 @@ export function TasksView({ onOpenSource }: { onOpenSource: (source: TaskSource)
         defaultTitle=""
         assignees={LEADERSHIP}
       />
+
+      <SheetPreviewDialog sheet={openSheet} onOpenChange={(open) => !open && setOpenSheetId(null)} />
     </div>
   );
 }

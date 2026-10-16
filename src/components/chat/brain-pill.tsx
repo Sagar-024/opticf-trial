@@ -1,15 +1,15 @@
 'use client';
 
 import { useMemo } from 'react';
-import { ArrowUpRight } from 'lucide-react';
+import { Brain } from 'lucide-react';
 import { brainStats } from '@/brain/graph';
 import { useBrainDocuments } from '@/lib/brain-store';
 
 /**
- * The live status pill in the chat's footer. The words say what the tap does
- * (open the Practice Brain), and the numbers come from the real documents, so
- * an edit here or in another tab moves them immediately. The pill never
- * truncates: the counts fold away first on narrow windows.
+ * The Brain entry in the composer bar, read at a glance: the icon says Brain
+ * before the word does, and a review due shows in accent. The full status
+ * (documents, reviews) lives in the label and title, so nothing is lost by
+ * keeping the chip short.
  */
 export function BrainPill({ onOpen }: { onOpen: () => void }) {
   const documents = useBrainDocuments();
@@ -30,23 +30,10 @@ export function BrainPill({ onOpen }: { onOpen: () => void }) {
       aria-haspopup="dialog"
       aria-label={aria}
       title="Open your Practice Brain"
-      className="group inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-[color:var(--line)] bg-card py-1 pl-2.5 pr-2.5 text-[11px] text-[color:var(--ink-2)] transition-colors hover:border-[color:var(--line-strong)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+      className="inline-flex h-10 w-[115px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full text-sm text-[color:var(--ink-2)] transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
     >
-      {/* The live dot: coral, with a quiet halo so "connected" reads at a glance. */}
-      <span aria-hidden className="relative flex size-2 shrink-0">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--coral)] opacity-30 motion-reduce:animate-none" />
-        <span className="relative inline-flex size-2 rounded-full bg-[var(--coral)]" />
-      </span>
-      <span>Open your Practice Brain</span>
-      {/* tabular-nums: a count change never nudges the row. The counts fold
-          away on narrow windows, the words never do. */}
-      <span className="hidden tabular-nums text-[color:var(--ink-3)] min-[560px]:inline">
-        {documentsLabel}
-      </span>
-      {stats.reviewDue > 0 ? (
-        <span className="hidden tabular-nums text-[var(--accent-600)] min-[700px]:inline">{reviewLabel}</span>
-      ) : null}
-      <ArrowUpRight aria-hidden className="size-3 shrink-0 text-[var(--accent-600)]" />
+      <Brain aria-hidden className="size-4 shrink-0 text-[var(--coral)]" />
+      <span>Brain</span>
     </button>
   );
 }

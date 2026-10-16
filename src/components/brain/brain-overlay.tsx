@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type FormEvent } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, FileText, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
+import { ArrowUp, FileText, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
 import type { BrainAskEvent, BrainCitation } from '@/brain/ask';
 import {
   buildBrainGraph,
@@ -229,6 +229,8 @@ export function BrainOverlay({
   const [highlighted, setHighlighted] = useState<string[]>([]);
   /** Focus mode: the graph owns the surface, chrome steps aside. */
   const [focused, setFocused] = useState(false);
+  /** The answers panel: hidden until the Ask AI button opens it. */
+  const [askOpen, setAskOpen] = useState(false);
 
   const canvasRef = useRef<BrainCanvasHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -295,11 +297,17 @@ export function BrainOverlay({
         event.preventDefault();
         event.stopPropagation();
         clearSelection();
+        return;
+      }
+      if (askOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setAskOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [clearSelection, focused, selectedId]);
+  }, [askOpen, clearSelection, focused, selectedId]);
 
   /** A canvas node click: select it, highlight its knowledge, and fly to it. */
   const selectNode = useCallback(
@@ -549,109 +557,97 @@ export function BrainOverlay({
         onPointerDownOutside={(event) => event.preventDefault()}
       >
           <motion.div
-            className="flex h-full min-h-0 flex-col overflow-y-auto"
+            className="relative flex h-full min-h-0 flex-col overflow-hidden"
             initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.28, ease: EASE }}
           >
-            {/* 1. Header (hidden in focus mode; Escape or the cluster brings it back) */}
-            <header
-              className={cn(
-                'flex w-full shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-3 md:px-8 md:pt-4',
-                focused && 'hidden',
-              )}
-            >
-              <div className="min-w-0">
-                <p className="text-[10px] leading-4 text-[color:var(--ink-3)]">Home / Behind your answers</p>
-                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0">
-                  <DialogPrimitive.Title className="text-lg font-semibold leading-6 tracking-tight md:text-xl">
-                    Your Practice Brain
-                  </DialogPrimitive.Title>
-                  <DialogPrimitive.Description className="text-xs leading-5 text-muted-foreground">
-                    The people, knowledge and systems behind every answer.
-                  </DialogPrimitive.Description>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Close"
-                className="mt-0.5 size-8 shrink-0 rounded-full"
-                onClick={onClose}
-              >
-                <X className="size-4" />
-              </Button>
-            </header>
+            {/* No chrome band: the graph owns every pixel below the top bar.
+                The title stays for screen readers. Two separate closes: the X
+                at the left leaves the Brain entirely, back to the chat; the
+                panel keeps its own X for itself. */}
+            <DialogPrimitive.Title className="sr-only">Your Practice Brain</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">
+              The people, knowledge and systems behind every answer.
+            </DialogPrimitive.Description>
 
-            {/* 2. The ask bar, always on top, held to a reading width at the
-                page's left. The conversation opens beside the graph only after
-                the first question is asked. */}
-            <div
-              className={cn(
-                'w-full max-w-[720px] shrink-0 px-4 md:px-8',
-                focused && 'hidden',
-              )}
-            >
-              <form
-                onSubmit={submitAsk}
-                className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2 [box-shadow:var(--shadow-floating)]"
-              >
-                <span
-                  aria-hidden
-                  className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-600)]"
+            {!focused ? (
+              <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Close the Practice Brain"
+                  title="Back to the chat"
+                  onClick={onClose}
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background/85 text-[color:var(--ink-2)] backdrop-blur-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
                 >
-                  <SparkleMark className="size-4" />
-                </span>
-                <input
-                  ref={inputRef}
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  placeholder="Ask your Practice Brain..."
-                  aria-label="Ask your Practice Brain"
-                  className="h-9 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[color:var(--ink-3)]"
-                />
-                {asking ? (
-                  <button
-                    type="button"
-                    onClick={stopAsk}
-                    aria-label="Stop answering"
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                  <X className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={askOpen}
+                  aria-label="Ask AI"
+                  onClick={() => {
+                    setAskOpen(true);
+                    window.requestAnimationFrame(() => inputRef.current?.focus());
+                  }}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border border-border bg-background/85 py-1 pl-1 pr-3 text-[11px] font-medium text-[color:var(--ink-2)] backdrop-blur-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]',
+                    askOpen &&
+                      'border-[color:var(--accent-border)] text-[color:var(--accent-600)] dark:border-[rgba(240,130,60,0.55)] dark:bg-[rgba(240,130,60,0.14)] dark:text-[#ffb27a] dark:[box-shadow:0_0_18px_rgba(240,130,60,0.35)]',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="flex size-6 items-center justify-center rounded-lg text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send),0_0_14px_rgba(240,130,60,0.55)]"
                   >
-                    <Square className="size-3.5" /> Stop
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={question.trim().length === 0}
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-medium text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:opacity-85"
-                  >
-                    Ask the Brain <ArrowRight className="size-3.5" />
-                  </button>
-                )}
-              </form>
-            </div>
+                    <SparkleMark className="size-3" />
+                  </span>
+                  Ask AI
+                </button>
+              </div>
+            ) : null}
 
-            {/* 3. The graph stays on the left; the conversation opens on the
-                right once the first question has been asked. With no turns
-                the graph owns the whole area right up to the ask bar, with no
-                divider between them. */}
-            <div className="mt-1 flex min-h-0 flex-1 flex-col-reverse lg:flex-row-reverse">
-              {turns.length > 0 && !focused ? (
+            {/* 2. The graph owns the page; the conversation opens on the
+                right once the first question has been asked. */}
+            <div className="flex min-h-0 flex-1 flex-col-reverse lg:flex-row-reverse">
+              {askOpen && !focused ? (
                 <aside
                   aria-label="Answers"
                   className="flex min-h-0 flex-col border-t border-border lg:w-[400px] lg:shrink-0 lg:border-l lg:border-t-0 xl:w-[440px]"
                 >
-                  <div className="flex shrink-0 items-center justify-between px-4 pt-3 md:px-6 lg:px-5">
-                    <span className="text-[11px] uppercase tracking-wide text-[color:var(--ink-3)]">Answers</span>
-                    <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" onClick={clearTurns}>
-                      Clear
-                    </Button>
+                  <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-2.5">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-[color:var(--ink-3)]">
+                      Answers
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={clearTurns}
+                        className="h-7 shrink-0 rounded-full px-2 text-[11px] text-[color:var(--ink-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Hide the answers panel"
+                        onClick={() => setAskOpen(false)}
+                        className="flex size-7 shrink-0 items-center justify-center rounded-full text-[color:var(--ink-3)] transition-colors hover:bg-[var(--accent-soft)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                <div className="max-h-[42dvh] min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-2 md:px-6 lg:max-h-none lg:px-5">
+                <div className="max-h-[42dvh] min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 lg:max-h-none">
+                  {turns.length === 0 ? (
+                    <p className="text-[13px] leading-5 text-[color:var(--ink-3)]">
+                      Ask anything about the group's written guidance. Answers cite the documents behind them, and
+                      the graph lights them up.
+                    </p>
+                  ) : null}
                   {turns.map((entry, index) => (
-                    <section key={index} aria-label="Answer from the Practice Brain" className="space-y-1.5">
-                      <p className="text-xs text-[color:var(--ink-3)]">{entry.question}</p>
+                    <section key={index} aria-label="Answer from the Practice Brain" className="space-y-2">
+                      <p className="text-[13px] font-medium leading-5 text-foreground">{entry.question}</p>
 
                       {entry.withdrawn ? (
                         <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-[color:var(--ink-2)]">
@@ -660,10 +656,12 @@ export function BrainOverlay({
                         </div>
                       ) : (
                         <div className="rounded-xl border border-border bg-card px-3.5 py-3 [box-shadow:var(--shadow-raised)]">
-                          <p className="whitespace-pre-wrap text-sm leading-6">
+                          <p className="whitespace-pre-wrap text-[13px] leading-[1.6]">
                             {entry.draft ||
                               (entry.status === 'streaming' ? (
-                                <span className="text-[color:var(--ink-3)]">Reading the Brain...</span>
+                                <span className="animate-pulse text-[color:var(--ink-3)] motion-reduce:animate-none">
+                                  Reading the Brain...
+                                </span>
                               ) : (
                                 ''
                               ))}
@@ -727,10 +725,48 @@ export function BrainOverlay({
                     </section>
                   ))}
                 </div>
+
+                {/* A real composer, like every other chat here: the pill, the
+                    round send, Stop while answering. */}
+                <div className="shrink-0 border-t border-border px-5 py-3.5">
+                  <form
+                    onSubmit={submitAsk}
+                    className="flex items-center gap-2 rounded-full border border-border bg-card py-1.5 pl-4 pr-1.5 [box-shadow:var(--shadow-floating)]"
+                  >
+                    <input
+                      ref={inputRef}
+                      value={question}
+                      onChange={(event) => setQuestion(event.target.value)}
+                      placeholder="Ask your Practice Brain..."
+                      aria-label="Ask your Practice Brain"
+                      className="h-9 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[color:var(--ink-3)]"
+                    />
+                    {asking ? (
+                      <button
+                        type="button"
+                        onClick={stopAsk}
+                        aria-label="Stop answering"
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] transition-[filter,box-shadow] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]"
+                      >
+                        <Square className="size-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={question.trim().length === 0}
+                        aria-label="Ask the Brain"
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-white transition-[filter,box-shadow] [background:var(--send-gradient)] [box-shadow:var(--shadow-send)] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] disabled:opacity-85"
+                      >
+                        <ArrowUp className="size-4" />
+                      </button>
+                    )}
+                  </form>
+                </div>
               </aside>
               ) : null}
 
-              {/* The graph, the hero, staying on the left, edge to edge. */}
+              {/* The graph, the hero, edge to edge, under the floating
+                  buttons. The ask box lives in the answers panel. */}
               <div className="relative min-h-[320px] min-w-0 flex-1 lg:min-h-0">
                 <BrainCanvas
                   ref={canvasRef}
