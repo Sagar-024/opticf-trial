@@ -280,12 +280,12 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
       {entries.length > 0 ? (
         // The rail spans the rows behind the icons, from first to last centre.
         <div className="relative">
-          <span aria-hidden className="absolute bottom-2 left-[7px] top-2 w-px bg-border" />
+          <span aria-hidden className="absolute bottom-2 left-[8px] top-2 w-px bg-border" />
           <div className="space-y-2.5">
             {entries.map((entry, index) => {
               if (entry.kind === 'reasoning') {
                 return (
-                  <p key={index} className="mb-2 whitespace-pre-wrap pl-[22px] text-[13px] leading-5 text-muted-foreground">
+                  <p key={index} className="mb-2 whitespace-pre-wrap pl-[26px] text-[13px] leading-5 text-muted-foreground">
                     {entry.text}
                   </p>
                 );
@@ -297,7 +297,7 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
               const running = active && index === entries.length - 1;
               return (
                 <div key={index} className="flex items-start gap-2.5">
-                  <span className="relative z-10 flex h-5 w-3.5 shrink-0 items-center justify-center bg-background">
+                  <span className="relative z-10 flex h-5 w-4 shrink-0 items-center justify-center bg-background">
                     {running ? (
                       <span
                         className={cn(
@@ -306,7 +306,7 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
                         )}
                       />
                     ) : (
-                      <StepIcon className="size-3.5 text-muted-foreground" />
+                      <StepIcon className="size-4 text-muted-foreground" />
                     )}
                   </span>
                   <div className="min-w-0">
@@ -338,7 +338,7 @@ function ThinkingTrace({ tools, startedAt, thinkingMs, active = false, hasText =
             const current = active && index === rows.length - 1;
             return (
               <li key={index} className="flex items-start gap-2.5">
-                <span className="flex h-5 w-3.5 shrink-0 items-center justify-center">
+                <span className="flex h-5 w-4 shrink-0 items-center justify-center">
                   {current ? (
                     <span
                       className={cn(
